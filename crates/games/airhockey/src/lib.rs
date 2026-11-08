@@ -2,8 +2,12 @@
 
 pub mod mallet;
 pub mod params;
+pub mod puck;
 pub mod vec2;
+pub mod world;
 
 pub use mallet::{Mallet, Region, Side};
 pub use params::{BadBody, Body, Params};
+pub use puck::Puck;
 pub use vec2::Vec2;
+pub use world::{World, goal_crossing, puck_mallet, regions};

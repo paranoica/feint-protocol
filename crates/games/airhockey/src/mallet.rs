@@ -109,6 +109,29 @@ impl Mallet {
         self.stop_at_edges(region);
     }
 
+    /// Move out to `distance` from `from` (the puck pinned by a rail or the other mallet)
+    /// and drop the velocity towards it. A contact force: it may exceed the body's
+    /// acceleration, unlike the controller. `fallback` is the direction when the centres
+    /// coincide.
+    pub(crate) fn push_off(&mut self, from: Vec2, distance: f64, fallback: Vec2, region: &Region) {
+        let offset = self.pos - from;
+        let gap = offset.length();
+        if gap >= distance {
+            return;
+        }
+        let normal = if gap > 0.0 {
+            offset * (1.0 / gap)
+        } else {
+            fallback
+        };
+        self.pos = from + normal * distance;
+        let towards = self.vel.dot(normal);
+        if towards < 0.0 {
+            self.vel -= normal * towards;
+        }
+        self.stop_at_edges(region);
+    }
+
     /// Only reached when the mallet was already moving faster than it could brake, such as
     /// right after being pushed by the puck: the edge stops it like a wall.
     fn stop_at_edges(&mut self, region: &Region) {
