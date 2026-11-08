@@ -22,7 +22,8 @@
       "tests/test_codecheck.py",
       "plugins/bedrock/skills/code-review/*",
       "plugins/bedrock/skills/design-creator/*",
-      "plugins/bedrock/skills/humanize/*"
+      "plugins/bedrock/skills/humanize/*",
+      "crates/feint-protocol/src/generated/*"
     ]
   },
   "commands": {
@@ -38,6 +39,9 @@
     },
     "format": {
       "run": "cargo fmt --all"
+    },
+    "gen-check": {
+      "run": "scripts/gen-protocol.sh --check"
     },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
