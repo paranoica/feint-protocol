@@ -1,0 +1,17 @@
+[package]
+name = "airhockey-check"
+description = "Runs one scripted air-hockey match and returns its digest, natively and as wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+airhockey = { path = "../airhockey" }
+
+[lints]
+workspace = true

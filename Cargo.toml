@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/feint-protocol", "crates/games/airhockey"]
+members = [
+    "crates/feint-protocol",
+    "crates/games/airhockey",
+    "crates/games/airhockey-check",
+]
 
 [workspace.package]
 version = "0.1.0"

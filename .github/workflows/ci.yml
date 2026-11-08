@@ -26,3 +26,23 @@ jobs:
       - run: black --check .
       - run: pytest
       - run: python plugins/bedrock/scripts/skillcheck.py --strict
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the toolchain pinned in rust-toolchain.toml
+        run: |
+          channel="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal \
+            --component rustfmt,clippy --target wasm32-unknown-unknown
+      - name: Install flatc 25.12.19 (must match the flatbuffers crate)
+        run: |
+          curl -sSfL -o flatc.zip "https://github.com/google/flatbuffers/releases/download/v25.12.19/Linux.flatc.binary.g%2B%2B-13.zip"
+          echo "9f87066dc5dfa7fe02090b55bab5f3e55df03e32c9b0cdf229004ade7d091039  flatc.zip" | sha256sum -c -
+          unzip -q flatc.zip flatc && sudo mv flatc /usr/local/bin/
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: scripts/gen-protocol.sh --check
+      - run: scripts/wasm-check.sh

@@ -43,6 +43,10 @@
     "gen-check": {
       "run": "scripts/gen-protocol.sh --check"
     },
+    "wasm-check": {
+      "run": "scripts/wasm-check.sh",
+      "heavy": true
+    },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
       "heavy": true
