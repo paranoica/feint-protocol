@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["crates/feint-protocol", "crates/games/airhockey"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+feint-protocol = { path = "crates/feint-protocol" }
+flatbuffers = "=25.12.19"
+rand_chacha = "0.9"
+
+[workspace.lints.rust]
+unsafe_code = "deny"

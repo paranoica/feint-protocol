@@ -9,3 +9,10 @@ __pycache__/
 plugins/bedrock/evals/results/
 plugins/bedrock/evals-bench
 bench/results/
+
+# Feint
+/target/
+/data/
+node_modules/
+/web/dist/
+/AGENTS.md

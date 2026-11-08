@@ -1,5 +1,5 @@
 {
-  "project": "bedrock",
+  "project": "feint",
   "leaks": {
     "allow": [
       "claude",
@@ -27,20 +27,42 @@
   },
   "commands": {
     "test": {
-      "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
+      "run": "cargo test --workspace --locked -q",
       "heavy": true
     },
     "test-related": {
-      "run": "uvx pytest -p no:cacheprovider -q -o addopts= {args}"
+      "run": "cargo test --workspace --locked -q {args}"
     },
     "lint": {
-      "run": "uvx ruff check ."
+      "run": "cargo clippy --workspace --all-targets --locked -q -- -D warnings && cargo fmt --all --check"
     },
     "format": {
+      "run": "cargo fmt --all"
+    },
+    "test-bedrock": {
+      "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
+      "heavy": true
+    },
+    "lint-bedrock": {
+      "run": "uvx ruff check ."
+    },
+    "format-bedrock": {
       "run": "uvx black -q ."
     },
     "skills": {
       "run": "python3 plugins/bedrock/scripts/skillcheck.py --root plugins/bedrock --strict"
     }
+  },
+  "critical_zones": [
+    "schema/**",
+    "crates/feint-protocol/src/adapter.rs",
+    "crates/games/airhockey/src/**",
+    "clippy.toml",
+    ".gitignore"
+  ],
+  "kb": {
+    "roots": [
+      "crates"
+    ]
   }
 }
