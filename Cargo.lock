@@ -5,6 +5,10 @@ version = 4
 [[package]]
 name = "airhockey"
 version = "0.1.0"
+dependencies = [
+ "feint-protocol",
+ "rand_chacha",
+]
 
 [[package]]
 name = "bitflags"

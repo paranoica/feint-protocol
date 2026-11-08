@@ -74,6 +74,37 @@ impl Match {
         game
     }
 
+    /// A match rebuilt from what a player observed; the stall half follows the puck.
+    #[must_use]
+    pub fn from_observed(
+        params: Params,
+        bodies: [Body; 2],
+        world: World,
+        tick: u64,
+        score: [u32; 2],
+        stall_ticks: u32,
+    ) -> Self {
+        let x = world.puck.pos.x;
+        let stall_half = (x != 0.0).then_some(if x < 0.0 { Side::Low } else { Side::High });
+        Self {
+            params,
+            bodies,
+            world,
+            seed: 0,
+            tick,
+            score,
+            stall_half,
+            stall_ticks,
+            over: false,
+        }
+    }
+
+    /// Ticks the puck has spent in its current half.
+    #[must_use]
+    pub fn stall_ticks(&self) -> u32 {
+        self.stall_ticks
+    }
+
     #[must_use]
     pub fn seed(&self) -> u64 {
         self.seed

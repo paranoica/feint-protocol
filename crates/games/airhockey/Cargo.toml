@@ -6,5 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+feint-protocol.workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true
+
 [lints]
 workspace = true
