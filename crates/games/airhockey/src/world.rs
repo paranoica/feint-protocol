@@ -93,10 +93,10 @@ pub fn puck_mallet(puck: &mut Puck, mallet: &Mallet, owner: Side, params: &Param
     }
 }
 
-const SIDES: [Side; 2] = [Side::Low, Side::High];
+pub(crate) const SIDES: [Side; 2] = [Side::Low, Side::High];
 
 /// The direction from a side's goal towards the other end.
-fn away_from_goal(side: Side) -> Vec2 {
+pub(crate) fn away_from_goal(side: Side) -> Vec2 {
     match side {
         Side::Low => Vec2::new(1.0, 0.0),
         Side::High => Vec2::new(-1.0, 0.0),

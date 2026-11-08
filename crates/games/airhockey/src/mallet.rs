@@ -10,6 +10,25 @@ pub enum Side {
     High,
 }
 
+impl Side {
+    #[must_use]
+    pub fn other(self) -> Self {
+        match self {
+            Self::Low => Self::High,
+            Self::High => Self::Low,
+        }
+    }
+
+    /// The index of this side's player and mallet.
+    #[must_use]
+    pub fn index(self) -> usize {
+        match self {
+            Self::Low => 0,
+            Self::High => 1,
+        }
+    }
+}
+
 /// The box a mallet's centre must stay in: its own half, inside the rails.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
