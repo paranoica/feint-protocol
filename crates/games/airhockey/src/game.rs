@@ -58,11 +58,19 @@ impl Match {
     /// The first serve goes to the side picked by the seed's lowest bit.
     ///
     /// # Panics
-    /// When `params` fail [`Params::validate`]: they are configuration, not input.
+    /// When `params` fail [`Params::validate`] or a body is beyond their declared limits:
+    /// both are configuration, not input (untrusted bodies go through [`Params::body`]).
     #[must_use]
     pub fn new(params: Params, bodies: [Body; 2], seed: u64) -> Self {
         if let Err(why) = params.validate() {
             panic!("invalid Params: {why}");
+        }
+        for body in &bodies {
+            assert!(
+                body.max_speed() <= params.max_body_speed
+                    && body.max_accel() <= params.max_body_accel,
+                "body beyond the declared limits: {body:?}"
+            );
         }
         let world = World::new(&params);
         let mut game = Self {

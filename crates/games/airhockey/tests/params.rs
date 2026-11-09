@@ -61,3 +61,18 @@ fn a_match_refuses_broken_params() {
     };
     let _ = airhockey::Match::new(params, [airhockey::Body::default(); 2], 0);
 }
+
+#[test]
+#[should_panic(expected = "body beyond the declared limits")]
+fn a_match_refuses_a_body_beyond_the_declared_limits() {
+    let too_fast = airhockey::Body::new(100.0, 60.0).expect("positive and finite");
+    let _ = airhockey::Match::new(Params::default(), [too_fast, airhockey::Body::default()], 0);
+}
+
+#[test]
+fn a_match_accepts_bodies_at_the_declared_limits() {
+    let params = Params::default();
+    let fastest = params.body(12.0, 200.0).unwrap();
+    let m = airhockey::Match::new(params, [fastest; 2], 0);
+    assert_eq!(m.tick(), 0);
+}
