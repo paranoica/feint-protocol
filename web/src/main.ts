@@ -241,6 +241,7 @@ async function main() {
   await init();
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-level]")) {
     button.addEventListener("click", () => void begin(Number(button.dataset.level)));
+    button.disabled = false;
   }
   $("again").addEventListener("click", () => show(again(screen)));
   canvas.addEventListener("pointerdown", (e) => canvas.setPointerCapture(e.pointerId));
