@@ -43,7 +43,7 @@ fn presets_follow_the_spec_table() {
     );
     assert_eq!(
         levels.iter().map(|d| d.repertoire).collect::<Vec<_>>(),
-        vec![0, 1, 1, 1, 1]
+        vec![0, 1, 2, 2, 2]
     );
     assert_eq!(Difficulty::preset(0), None);
     assert_eq!(Difficulty::preset(6), None);

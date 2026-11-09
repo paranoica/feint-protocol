@@ -54,7 +54,11 @@ impl Difficulty {
             physique,
             spread,
             anticipate: level >= 2,
-            repertoire: u8::from(level >= 2),
+            repertoire: match level {
+                1 => 0,
+                2 => 1,
+                _ => 2,
+            },
             depth,
             deception,
             memory,
