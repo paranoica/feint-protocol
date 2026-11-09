@@ -99,10 +99,12 @@ pub fn puck_mallet(puck: &mut Puck, mallet: &Mallet, owner: Side, params: &Param
 /// When a mallet could not give way (held at the edge of its half), the puck slides off it
 /// along the rail instead, so that neither ends a substep inside the other.
 fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
+    // Overlaps at rounding level are what push_off leaves behind, not contacts.
+    const SLACK: f64 = 1e-12;
     let reach = params.puck_radius + params.mallet_radius;
     let offset = puck.pos - mallet.pos;
     let distance = offset.length();
-    if distance >= reach {
+    if distance >= reach - SLACK {
         return;
     }
     let normal = if distance > 0.0 {
@@ -119,11 +121,22 @@ fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
         let dx = (reach * reach - dy * dy).max(0.0).sqrt();
         pos.x = mallet.pos.x + if offset.x >= 0.0 { dx } else { -dx };
     }
-    puck.pos = Vec2::new(pos.x.clamp(-x_max, x_max), pos.y);
-    let normal = (puck.pos - mallet.pos) * (1.0 / reach);
-    let closing = (puck.vel - mallet.vel).dot(normal);
-    if closing < 0.0 {
-        puck.vel -= normal * closing;
+    // Inside the mouth the puck may stand past the rail line, but stays short of the goal
+    // line: the goal check has already run for this substep and runs again on the next.
+    let x_limit = if pos.y.abs() < params.mouth_half_width {
+        params.half_length - SLACK
+    } else {
+        x_max
+    };
+    puck.pos = Vec2::new(pos.x.clamp(-x_limit, x_limit), pos.y);
+    let offset = puck.pos - mallet.pos;
+    let gap = offset.length();
+    if gap > 0.0 {
+        let normal = offset * (1.0 / gap);
+        let closing = (puck.vel - mallet.vel).dot(normal);
+        if closing < 0.0 {
+            puck.vel -= normal * closing;
+        }
     }
     if puck.pos.y.abs() >= y_max && puck.vel.y * puck.pos.y > 0.0 {
         puck.vel.y = 0.0;
@@ -147,4 +160,66 @@ pub fn regions(params: &Params) -> [Region; 2] {
         Region::of(Side::Low, params),
         Region::of(Side::High, params),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reach(params: &Params) -> f64 {
+        params.puck_radius + params.mallet_radius
+    }
+
+    #[test]
+    fn rounding_level_touch_leaves_a_puck_in_the_mouth_alone() {
+        let params = Params::default();
+        let mallet = Mallet::at_rest(Vec2::new(-0.8728, 0.0965));
+        let dir = Vec2::new(-0.09, -0.004) * (1.0 / Vec2::new(-0.09, -0.004).length());
+        let puck_pos = mallet.pos + dir * (reach(&params) - 1e-15);
+        let mut puck = Puck {
+            pos: puck_pos,
+            vel: Vec2::new(-3.0, 0.0),
+        };
+        assert!(
+            puck.pos.x < -(params.half_length - params.puck_radius),
+            "set-up: in the mouth"
+        );
+        assert!(
+            (puck.pos - mallet.pos).length() < reach(&params),
+            "set-up: a real overlap"
+        );
+        let before = puck;
+        slide_off(&mut puck, &mallet, &params);
+        assert_eq!(puck, before);
+    }
+
+    #[test]
+    fn real_overlap_in_the_mouth_is_resolved_without_pulling_the_puck_out() {
+        let params = Params::default();
+        let mallet = Mallet::at_rest(Vec2::new(-0.9, 0.0));
+        let mut puck = Puck {
+            pos: Vec2::new(-0.989, 0.0),
+            vel: Vec2::new(-2.0, 0.0),
+        };
+        slide_off(&mut puck, &mallet, &params);
+        assert!(
+            (puck.pos - mallet.pos).length() >= reach(&params) - 1e-12,
+            "{puck:?}"
+        );
+        assert!(puck.pos.x < -0.96, "pulled out of the mouth: {puck:?}");
+    }
+
+    #[test]
+    fn velocity_correction_uses_a_unit_normal_after_the_rail_clamp() {
+        let params = Params::default();
+        let mallet = Mallet::at_rest(Vec2::new(0.9, 0.42));
+        let mut puck = Puck {
+            pos: Vec2::new(0.96, 0.46),
+            vel: Vec2::new(-1.0, -1.0),
+        };
+        slide_off(&mut puck, &mallet, &params);
+        let offset = puck.pos - mallet.pos;
+        let normal = offset * (1.0 / offset.length());
+        assert!(puck.vel.dot(normal) >= -1e-12, "still closing: {puck:?}");
+    }
 }

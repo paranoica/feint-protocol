@@ -498,3 +498,46 @@ fn observed_winning_score_means_the_match_is_over() {
     obs.score = Some(vec![3, 6]);
     assert!(!game.state_from_observation(&obs, &mut rng).is_over());
 }
+
+#[test]
+fn lowered_body_limits_still_build_a_game() {
+    let params = Params {
+        max_body_speed: 6.0,
+        max_body_accel: 40.0,
+        ..Params::default()
+    };
+    assert_eq!(params.validate(), Ok(()));
+    let game = AirHockey::new(params, 1);
+    let body = game.live().bodies[0];
+    assert_eq!((body.max_speed(), body.max_accel()), (6.0, 40.0));
+}
+
+#[test]
+fn rebuilt_state_keeps_a_puck_inside_the_mouth() {
+    let mut game = fresh();
+    game.game_mut().world.puck = Puck {
+        pos: Vec2::new(0.985, 0.0),
+        vel: Vec2::new(2.0, 0.0),
+    };
+    let mut rng = ChaCha8Rng::seed_from_u64(4);
+    let guess = game.state_from_observation(&observe(&game, 0), &mut rng);
+    assert!(
+        (guess.world.puck.pos.x - 0.985).abs() < 1e-6,
+        "{:?}",
+        guess.world.puck
+    );
+}
+
+#[test]
+fn the_published_body_maximum_is_accepted_by_reset() {
+    let params = Params {
+        max_body_speed: 8.1,
+        ..Params::default()
+    };
+    let mut game = AirHockey::new(params, 1);
+    let declared = game.spec().body_params.unwrap();
+    let (speed, accel) = (declared[0].max, declared[1].max);
+    game.reset(1, &[body(speed, accel), body(speed, accel)])
+        .expect("the declared maximum is legal");
+    assert_eq!(game.live().bodies[0].max_speed(), 8.1);
+}

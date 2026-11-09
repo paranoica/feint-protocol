@@ -4,7 +4,6 @@ use feint_protocol::{
 };
 
 use crate::game::{Input, InputError, Match, MatchEvent};
-use crate::mallet::Region;
 use crate::mallet::{Mallet, Side};
 use crate::params::{Body, Params};
 use crate::puck::Puck;
@@ -26,10 +25,18 @@ pub struct AirHockey {
 }
 
 impl AirHockey {
+    /// # Panics
+    /// When `params` fail [`Params::validate`].
     #[must_use]
     pub fn new(params: Params, level: u8) -> Self {
+        let default = Body::default();
+        let body = Body::new(
+            default.max_speed().min(params.max_body_speed),
+            default.max_accel().min(params.max_body_accel),
+        )
+        .unwrap_or_default();
         Self {
-            game: Match::new(params, [Body::default(); 2], 0),
+            game: Match::new(params, [body; 2], 0),
             level,
             scratch: Vec::with_capacity(4),
         }
@@ -102,9 +109,21 @@ impl GameAdapter for AirHockey {
     fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
         const WHY: &str = "two positive finite values per player";
         let params = &self.game.params;
+        // The spec publishes the limits as f32, which may round up: a value equal to the
+        // published maximum is taken as the maximum itself.
+        let within = |value: f32, max: f64| {
+            if value <= max as f32 {
+                f64::from(value).min(max)
+            } else {
+                f64::INFINITY
+            }
+        };
         let parse = |b: &BodyParamsT| match b.values.as_deref() {
             Some(&[speed, accel]) => params
-                .body(f64::from(speed), f64::from(accel))
+                .body(
+                    within(speed, params.max_body_speed),
+                    within(accel, params.max_body_accel),
+                )
                 .map_err(|_| AdapterError::BadBody(WHY)),
             _ => Err(AdapterError::BadBody(WHY)),
         };
@@ -198,16 +217,14 @@ impl GameAdapter for AirHockey {
         let read = |i: usize| frame.to_world(Vec2::new(value(i), value(i + 1)));
         let regions = regions(params);
         let me = usize::from(obs.player.min(1));
-        let mallet = |pos: Vec2, vel: Vec2, target: Vec2, region: &Region| {
-            let pos = region.clamp(pos);
-            Mallet {
-                pos,
-                vel: vel.clamp_length(params.max_body_speed),
-                target,
-            }
+        let bodies = &self.game.bodies;
+        let mallet = |pos: Vec2, vel: Vec2, target: Vec2, side: usize| Mallet {
+            pos: regions[side].clamp(pos),
+            vel: vel.clamp_length(bodies[side].max_speed()),
+            target,
         };
-        let mine = mallet(read(4), read(6), read(8), &regions[me]);
-        let theirs = mallet(read(10), read(12), read(10), &regions[1 - me]);
+        let mine = mallet(read(4), read(6), read(8), me);
+        let theirs = mallet(read(10), read(12), read(10), 1 - me);
         let theirs = Mallet {
             target: theirs.pos,
             ..theirs
@@ -217,13 +234,18 @@ impl GameAdapter for AirHockey {
         } else {
             [theirs, mine]
         };
-        let edge = Vec2::new(
-            params.half_length - params.puck_radius,
-            params.half_width - params.puck_radius,
-        );
+        let seen = read(0);
+        let y_max = params.half_width - params.puck_radius;
+        let y = seen.y.clamp(-y_max, y_max);
+        // Inside the mouth the puck may legally stand up to the goal line.
+        let x_max = if y.abs() < params.mouth_half_width {
+            params.half_length
+        } else {
+            params.half_length - params.puck_radius
+        };
         let world = World {
             puck: Puck {
-                pos: read(0).clamp_each(-edge, edge),
+                pos: Vec2::new(seen.x.clamp(-x_max, x_max), y),
                 vel: read(2).clamp_length(params.puck_speed_cap),
             },
             mallets,
