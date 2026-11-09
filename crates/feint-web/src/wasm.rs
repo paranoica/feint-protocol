@@ -51,6 +51,10 @@ impl WebMatch {
         self.session.positions().to_vec()
     }
 
+    pub fn serve_pause(&self) -> f32 {
+        self.session.serve_pause()
+    }
+
     pub fn score(&self) -> Vec<u32> {
         self.session.score().to_vec()
     }

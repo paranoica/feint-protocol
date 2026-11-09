@@ -15,6 +15,7 @@ pub struct Params {
     pub decision_hz: u32,
     pub goals_to_win: u32,
     pub stall_seconds: f64,
+    pub serve_pause_seconds: f64,
     pub max_body_speed: f64,
     pub max_body_accel: f64,
 }
@@ -24,21 +25,22 @@ impl Default for Params {
         Self {
             half_length: 1.0,
             half_width: 0.5,
-            mouth_half_width: 0.125,
-            puck_radius: 0.04,
-            mallet_radius: 0.05,
+            mouth_half_width: 0.15,
+            puck_radius: 0.05,
+            mallet_radius: 0.07,
             rail_restitution: 0.9,
             post_restitution: 0.9,
             mallet_restitution: 0.8,
             damping: 0.1,
-            puck_speed_cap: 20.0,
+            puck_speed_cap: 7.0,
             tick_hz: 240,
             substeps: 4,
             decision_hz: 60,
             goals_to_win: 7,
             stall_seconds: 7.0,
-            max_body_speed: 12.0,
-            max_body_accel: 200.0,
+            serve_pause_seconds: 1.0,
+            max_body_speed: 7.0,
+            max_body_accel: 120.0,
         }
     }
 }
@@ -91,6 +93,9 @@ impl Params {
         if self.decision_hz > self.tick_hz {
             return Err("decisions cannot be more frequent than ticks");
         }
+        if !(0.0..=60.0).contains(&self.serve_pause_seconds) {
+            return Err("the serve pause must be between 0 and 60 seconds");
+        }
         if self.goals_to_win == 0 {
             return Err("a match needs at least one goal to win");
         }
@@ -114,6 +119,11 @@ impl Params {
         } else {
             Err(BadBody)
         }
+    }
+
+    #[must_use]
+    pub fn serve_pause_ticks(&self) -> u32 {
+        (self.serve_pause_seconds * f64::from(self.tick_hz)).round() as u32
     }
 
     #[must_use]
@@ -158,7 +168,7 @@ impl Body {
 impl Default for Body {
     fn default() -> Self {
         Self {
-            max_speed: 8.0,
+            max_speed: 5.0,
             max_accel: 60.0,
         }
     }

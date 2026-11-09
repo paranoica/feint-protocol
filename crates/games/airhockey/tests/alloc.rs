@@ -65,7 +65,7 @@ fn tick_does_not_allocate() {
 fn adapter_tick_does_not_allocate() {
     let mut game = AirHockey::new(Params::default(), 1);
     let mut body = BodyParamsT::default();
-    body.values = Some(vec![8.0, 60.0]);
+    body.values = Some(vec![5.0, 40.0]);
     game.reset(5, &[body.clone(), body]).unwrap();
     let mut events = Vec::with_capacity(8);
     let mut obs = [ObservationT::default(), ObservationT::default()];

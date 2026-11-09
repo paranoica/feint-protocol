@@ -10,9 +10,9 @@ use crate::puck::Puck;
 use crate::vec2::Vec2;
 use crate::world::{World, regions};
 
-pub const GAME_VERSION: u32 = 1;
+pub const GAME_VERSION: u32 = 2;
 
-pub const OBSERVATION_LEN: usize = 15;
+pub const OBSERVATION_LEN: usize = 16;
 
 pub struct AirHockey {
     game: Match,
@@ -75,6 +75,7 @@ impl GameAdapter for AirHockey {
             ("opponent_vx", -mallet, mallet, "m/s"),
             ("opponent_vy", -mallet, mallet, "m/s"),
             ("stall", 0.0, p.stall_seconds as f32, "s"),
+            ("serve_pause", 0.0, p.serve_pause_seconds as f32, "s"),
         ]));
         spec.body_params = Some(dims(&[
             ("max_speed", 0.0, mallet, "m/s"),
@@ -175,7 +176,9 @@ impl GameAdapter for AirHockey {
         for v in [theirs.pos, theirs.vel] {
             frame.push(obs, v);
         }
-        obs.push((f64::from(state.stall_ticks()) / f64::from(state.params.tick_hz)) as f32);
+        let hz = f64::from(state.params.tick_hz);
+        obs.push((f64::from(state.stall_ticks()) / hz) as f32);
+        obs.push((f64::from(state.pause_ticks()) / hz) as f32);
 
         let signals = out.opponent_signals.get_or_insert_with(Vec::new);
         signals.clear();
@@ -233,6 +236,7 @@ impl GameAdapter for AirHockey {
         };
         let limit = (params.stall_seconds * f64::from(params.tick_hz)).round() as u32;
         let stall_ticks = ((value(14) * f64::from(params.tick_hz)).round() as u32).min(limit);
+        let pause_ticks = (value(15) * f64::from(params.tick_hz)).round() as u32;
         let score = obs.score.as_deref().unwrap_or_default();
         let goals = |i: usize| {
             score
@@ -248,6 +252,7 @@ impl GameAdapter for AirHockey {
             [goals(0), goals(1)],
             stall_ticks,
         )
+        .with_pause(pause_ticks)
     }
 
     fn simulate(&self, state: &Match, actions: &[ActionT], ticks: u32) -> Match {

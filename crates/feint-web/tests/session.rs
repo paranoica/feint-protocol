@@ -246,7 +246,7 @@ fn play_script(session: &mut Session, ticks: u64) {
 #[test]
 fn a_profile_changes_the_bot_and_carries_forward() {
     let mut first = Session::new(5, 77).unwrap();
-    play_script(&mut first, 4_000);
+    play_script(&mut first, 16_000);
     let v1 = first.profile().expect("level 5 keeps a profile");
     assert!(
         v1.shot_events + v1.bite_events.iter().sum::<u32>() > 0,
@@ -255,8 +255,8 @@ fn a_profile_changes_the_bot_and_carries_forward() {
 
     let mut fresh = Session::new(5, 78).unwrap();
     let mut primed = Session::with_profile(5, 78, Some(&v1)).unwrap();
-    play_script(&mut fresh, 3_000);
-    play_script(&mut primed, 3_000);
+    play_script(&mut fresh, 6_000);
+    play_script(&mut primed, 6_000);
     let bot = |s: &Session| {
         decode_record(&s.record())
             .unwrap()
@@ -325,4 +325,33 @@ fn a_replayer_reproduces_a_session_record_byte_for_byte() {
     )
     .unwrap();
     assert_eq!(feint_ai::encode_record(&report.record()), bytes);
+}
+
+#[test]
+fn a_goal_starts_the_serve_pause_the_front_can_show() {
+    let mut session = Session::new(1, 7).unwrap();
+    assert_eq!(session.serve_pause(), 0.0);
+    let mut ticks = 0;
+    while session
+        .advance(1)
+        .iter()
+        .all(|e| e.kind != feint_protocol::EventKind::Score)
+    {
+        let p = session.positions();
+        session.set_pointer(p[0], p[1]);
+        ticks += 1;
+        assert!(ticks < 240 * 300, "no goal in five minutes");
+    }
+    let full = airhockey::Params::default().serve_pause_seconds as f32;
+    assert!(
+        (session.serve_pause() - full).abs() < 1e-6,
+        "{}",
+        session.serve_pause()
+    );
+    session.advance(120);
+    assert!(
+        (session.serve_pause() - full / 2.0).abs() < 1e-6,
+        "{}",
+        session.serve_pause()
+    );
 }

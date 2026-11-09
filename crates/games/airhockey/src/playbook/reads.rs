@@ -2,13 +2,13 @@ use feint_ai::Read;
 use feint_protocol::PlayerId;
 
 use super::HockeyPlaybook;
-use super::geometry::{AIM_Y, attack, frame};
+use super::geometry::{AIM_SHARE, attack, frame};
 use crate::game::Match;
 use crate::vec2::Vec2;
 
 const SHIFT: f64 = 0.03;
 const COVER_REACH: f64 = 0.06;
-const SHOT_SPEED: f64 = 2.0;
+const SHOT_SPEED: f64 = 1.4;
 const CORNER_SPLIT: f64 = 0.035;
 const MAX_BOUNCES: usize = 4;
 
@@ -18,7 +18,7 @@ impl HockeyPlaybook {
         let mallet = state.world.mallets[usize::from(defender.min(1))].pos;
         let puck = state.world.puck.pos;
         let mut best: Option<(u8, f64)> = None;
-        for class in 0..AIM_Y.len() as u8 {
+        for class in 0..AIM_SHARE.len() as u8 {
             let corner = self.corner_aim(attacker, class);
             let gap = distance_to_segment(mallet, corner, puck);
             if best.is_none_or(|(_, b)| gap < b) {

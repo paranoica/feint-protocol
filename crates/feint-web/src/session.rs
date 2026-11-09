@@ -228,6 +228,12 @@ impl Session {
     }
 
     #[must_use]
+    pub fn serve_pause(&self) -> f32 {
+        let live = self.game.live();
+        (f64::from(live.pause_ticks()) / f64::from(live.params.tick_hz)) as f32
+    }
+
+    #[must_use]
     pub fn score(&self) -> [u32; 2] {
         self.game.live().score()
     }

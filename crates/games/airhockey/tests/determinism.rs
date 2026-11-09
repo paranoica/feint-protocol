@@ -76,10 +76,15 @@ fn same_seed_and_inputs_are_bit_identical() {
 
 #[test]
 fn different_inputs_diverge() {
-    let (a, _, _) = play(42, 20_000, None);
-    let (b, _, _) = play(42, 20_000, Some(500));
-    assert_ne!(a.digest(), b.digest());
-    assert_ne!(bits(&a.world), bits(&b.world));
+    let (a, _, plain) = play(42, 20_000, None);
+    let mut changed_the_end = false;
+    for at in [500, 1_500, 2_500, 3_500] {
+        let (b, _, tweaked) = play(42, 20_000, Some(at));
+        let at = usize::try_from(at).unwrap();
+        assert_ne!(plain[at], tweaked[at], "the tweak at {at} changed nothing");
+        changed_the_end |= a.digest() != b.digest() && bits(&a.world) != bits(&b.world);
+    }
+    assert!(changed_the_end, "no tweak changed the end of the match");
 }
 
 #[test]

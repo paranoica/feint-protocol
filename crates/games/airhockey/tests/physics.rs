@@ -7,10 +7,22 @@ use airhockey::{
 
 const EPS: f64 = 1e-9;
 
+fn geometry() -> Params {
+    Params {
+        mouth_half_width: 0.125,
+        puck_radius: 0.04,
+        mallet_radius: 0.05,
+        puck_speed_cap: 20.0,
+        max_body_speed: 12.0,
+        max_body_accel: 200.0,
+        ..Params::default()
+    }
+}
+
 fn no_damping() -> Params {
     Params {
         damping: 0.0,
-        ..Params::default()
+        ..geometry()
     }
 }
 
@@ -59,7 +71,7 @@ fn comes_back(from: Vec2, speed: f64, params: &Params) -> Option<World> {
 
 #[test]
 fn free_puck_follows_discrete_damping() {
-    let params = Params::default();
+    let params = geometry();
     let dt = params.tick_dt();
     let mut world = parked(&params);
     let v0 = Vec2::new(0.5, 0.1);
@@ -109,7 +121,7 @@ fn puck_energy_never_grows_without_mallets_in_play() {
     let params = Params {
         damping: 0.0,
         mouth_half_width: 0.0,
-        ..Params::default()
+        ..geometry()
     };
     let mut world = parked(&params);
     world.puck = Puck {
@@ -197,7 +209,7 @@ fn post_grazed_at_cap_speed_deflects() {
 
 #[test]
 fn goal_is_decided_by_the_crossing_point() {
-    let params = Params::default();
+    let params = geometry();
     let at = |x0, y0, x1, y1| goal_crossing(Vec2::new(x0, y0), Vec2::new(x1, y1), &params);
     assert_eq!(at(0.99, 0.10, 1.01, 0.14), Some(Side::Low));
     assert_eq!(at(0.99, 0.06, 1.01, 0.20), None);
@@ -341,17 +353,23 @@ fn assert_no_overlap(world: &World, params: &Params) {
 
 #[test]
 fn puck_pinned_against_rail_stays_on_table_and_finite() {
-    let params = Params::default();
-    let mut world = parked(&params);
+    for params in [geometry(), Params::default()] {
+        puck_pinned_against_rail_stays_on_table_and_finite_on(&params);
+    }
+}
+
+fn puck_pinned_against_rail_stays_on_table_and_finite_on(params: &Params) {
+    let mut world = parked(params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.5, 0.2));
     world.mallets[0].target = Vec2::new(-0.5, 0.45);
     world.puck = Puck::at_rest(Vec2::new(-0.5, 0.46));
     for t in 0..480 {
-        assert_eq!(world.tick(&params, &bodies()), None);
-        assert_sane(&world, &params, &format!("tick {t}"));
-        assert_no_overlap(&world, &params);
+        assert_eq!(world.tick(params, &bodies()), None);
+        assert_sane(&world, params, &format!("tick {t}"));
+        assert_no_overlap(&world, params);
     }
-    let gap = (world.puck.pos - world.mallets[0].pos).length() - 0.09;
+    let gap = (world.puck.pos - world.mallets[0].pos).length()
+        - (params.puck_radius + params.mallet_radius);
     assert!(
         gap.abs() < 1e-3,
         "the mallet is not pressing the puck: gap {gap}"
@@ -360,17 +378,23 @@ fn puck_pinned_against_rail_stays_on_table_and_finite() {
 
 #[test]
 fn puck_squeezed_at_centre_line_is_finite() {
-    let params = Params::default();
-    let mut world = World::new(&params);
+    for params in [geometry(), Params::default()] {
+        puck_squeezed_at_centre_line_is_finite_on(&params);
+    }
+}
+
+fn puck_squeezed_at_centre_line_is_finite_on(params: &Params) {
+    let mut world = World::new(params);
     world.mallets[0].target = Vec2::new(-0.05, 0.0);
     world.mallets[1].target = Vec2::new(0.05, 0.0);
     for t in 0..480 {
-        assert_eq!(world.tick(&params, &bodies()), None);
-        assert_sane(&world, &params, &format!("tick {t}"));
-        assert_no_overlap(&world, &params);
+        assert_eq!(world.tick(params, &bodies()), None);
+        assert_sane(&world, params, &format!("tick {t}"));
+        assert_no_overlap(&world, params);
     }
     for mallet in &world.mallets {
-        let gap = (world.puck.pos - mallet.pos).length() - 0.09;
+        let gap =
+            (world.puck.pos - mallet.pos).length() - (params.puck_radius + params.mallet_radius);
         assert!(
             gap.abs() < 1e-3,
             "a mallet is not pressing the puck: gap {gap}"
@@ -380,8 +404,13 @@ fn puck_squeezed_at_centre_line_is_finite() {
 
 #[test]
 fn random_play_keeps_state_finite_and_puck_in_bounds() {
-    let params = Params::default();
-    let mut world = World::new(&params);
+    for params in [geometry(), Params::default()] {
+        random_play_keeps_state_finite_and_puck_in_bounds_on(&params);
+    }
+}
+
+fn random_play_keeps_state_finite_and_puck_in_bounds_on(params: &Params) {
+    let mut world = World::new(params);
     let mut rng = Lcg(2026);
     let mut goals = 0;
     for t in 0..1_000_000u32 {
@@ -393,19 +422,24 @@ fn random_play_keeps_state_finite_and_puck_in_bounds() {
         if t % 997 == 0 {
             world.puck.vel = Vec2::new(rng.range(-30.0, 30.0), rng.range(-30.0, 30.0));
         }
-        if world.tick(&params, &bodies()).is_some() {
+        if world.tick(params, &bodies()).is_some() {
             goals += 1;
             world.puck = Puck::at_rest(Vec2::new(rng.range(-0.5, 0.5), 0.0));
         }
-        assert_sane(&world, &params, &format!("tick {t}"));
+        assert_sane(&world, params, &format!("tick {t}"));
     }
     assert!(goals > 10, "too few goals for a meaningful run: {goals}");
 }
 
 #[test]
 fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
-    let params = Params::default();
-    let mut world = World::new(&params);
+    for params in [geometry(), Params::default()] {
+        puck_wedged_between_rail_and_centre_line_mallet_slides_out_on(&params);
+    }
+}
+
+fn puck_wedged_between_rail_and_centre_line_mallet_slides_out_on(params: &Params) {
+    let mut world = World::new(params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4));
     world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, 0.42));
     world.mallets[1].target = Vec2::new(-1.0, 0.42);
@@ -413,20 +447,27 @@ fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
         pos: Vec2::new(0.172, 0.41),
         vel: Vec2::new(-12.0, 16.0),
     };
-    assert_eq!(world.tick(&params, &bodies()), None);
-    assert_sane(&world, &params, "wedge");
-    assert_no_overlap(&world, &params);
+    assert_eq!(world.tick(params, &bodies()), None);
+    assert_sane(&world, params, "wedge");
+    assert_no_overlap(&world, params);
 }
 
 #[test]
 fn no_overlap_anywhere_near_the_centre_line_corners() {
-    let params = Params::default();
+    for params in [geometry(), Params::default()] {
+        no_overlap_anywhere_near_the_centre_line_corners_on(&params);
+    }
+}
+
+fn no_overlap_anywhere_near_the_centre_line_corners_on(params: &Params) {
     let mut ticks = 0;
-    for my in [0.30, 0.36, 0.42, 0.45] {
+    let reach = params.puck_radius + params.mallet_radius;
+    let edge = params.half_width - params.mallet_radius;
+    for my in [0.30, 0.36, edge - 0.03, edge] {
         for side in [-1.0, 1.0] {
             for k in 0..12 {
                 let angle_x = -1.0 + f64::from(k) / 6.0;
-                let mut world = World::new(&params);
+                let mut world = World::new(params);
                 world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4 * side));
                 world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, my * side));
                 world.mallets[1].target = Vec2::new(-1.0, my * side);
@@ -435,13 +476,13 @@ fn no_overlap_anywhere_near_the_centre_line_corners() {
                     vel: Vec2::new(angle_x, 1.0 * side) * (params.puck_speed_cap / 1.5),
                 };
                 for _ in 0..60 {
-                    let goal = world.tick(&params, &bodies());
-                    assert_sane(&world, &params, "corner sweep");
+                    let goal = world.tick(params, &bodies());
+                    assert_sane(&world, params, "corner sweep");
                     let gap = (world.puck.pos - world.mallets[1].pos).length();
                     assert!(
-                        gap >= 0.09 - 1e-6,
+                        gap >= reach - 1e-6,
                         "inside the mallet by {}: {world:?}",
-                        0.09 - gap
+                        reach - gap
                     );
                     ticks += 1;
                     if goal.is_some() {
@@ -456,17 +497,22 @@ fn no_overlap_anywhere_near_the_centre_line_corners() {
 
 #[test]
 fn fastest_declared_body_never_passes_through_a_resting_puck() {
-    let params = Params::default();
+    for params in [geometry(), Params::default()] {
+        fastest_declared_body_never_passes_through_a_resting_puck_on(&params);
+    }
+}
+
+fn fastest_declared_body_never_passes_through_a_resting_puck_on(params: &Params) {
     let fastest = params
         .body(params.max_body_speed, params.max_body_accel)
         .unwrap();
-    let mut world = parked(&params);
+    let mut world = parked(params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, 0.0));
     world.mallets[0].target = Vec2::new(-0.05, 0.0);
     world.puck = Puck::at_rest(Vec2::new(-0.5, 0.0));
     let mut hit = false;
     for _ in 0..120 {
-        world.tick(&params, &[fastest, Body::default()]);
+        world.tick(params, &[fastest, Body::default()]);
         assert!(
             world.puck.pos.x > world.mallets[0].pos.x,
             "passed through: {world:?}"
@@ -478,14 +524,19 @@ fn fastest_declared_body_never_passes_through_a_resting_puck() {
 
 #[test]
 fn puck_speed_never_exceeds_cap_under_repeated_hits() {
-    let params = Params::default();
+    for params in [geometry(), Params::default()] {
+        puck_speed_never_exceeds_cap_under_repeated_hits_on(&params);
+    }
+}
+
+fn puck_speed_never_exceeds_cap_under_repeated_hits_on(params: &Params) {
     let fastest = params
         .body(params.max_body_speed, params.max_body_accel)
         .unwrap();
-    let mut world = World::new(&params);
+    let mut world = World::new(params);
     world.puck = Puck {
         pos: Vec2::new(-0.3, 0.1),
-        vel: Vec2::new(-19.0, 3.0),
+        vel: Vec2::new(-19.0, 3.0) * (params.puck_speed_cap / 20.0),
     };
     let mut top: f64 = 0.0;
     for _ in 0..4_000 {
@@ -493,10 +544,10 @@ fn puck_speed_never_exceeds_cap_under_repeated_hits() {
         for mallet in &mut world.mallets {
             mallet.target = puck;
         }
-        if world.tick(&params, &[fastest; 2]).is_some() {
+        if world.tick(params, &[fastest; 2]).is_some() {
             world.puck = Puck {
                 pos: Vec2::new(0.3, -0.1),
-                vel: Vec2::new(19.0, -3.0),
+                vel: Vec2::new(19.0, -3.0) * (params.puck_speed_cap / 20.0),
             };
         }
         let speed = world.puck.vel.length();

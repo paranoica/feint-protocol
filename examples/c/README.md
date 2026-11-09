@@ -12,7 +12,7 @@ line with the native match.
   does nothing. Using a handle after freeing it, or freeing it twice, is undefined.
 - Threads. Handles are not thread-safe. Calls that take a game must be serialized; a bot reads
   its game while it decides, so never mutate that game in the same moment.
-- Levels. 0 is a human at the human maxima (12 m/s, 200 m/s²); 1–5 are the bot presets.
+- Levels. 0 is a human at the human maxima (7 m/s, 120 m/s²); 1–5 are the bot presets.
 - Buffers. Inputs are `(pointer, length)`; a length of 0 is an empty input whatever the pointer.
   Outputs are `(pointer, capacity)`. Input and output may be the same buffer. Input lengths above
   `PTRDIFF_MAX` are refused (a NULL input with a non-zero length is `FEINT_ERR_NULL` first). `FEINT_OBSERVATION_MAX` and `FEINT_ACTION_MAX` always suffice.

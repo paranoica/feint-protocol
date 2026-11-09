@@ -4,7 +4,7 @@ use super::HockeyPlaybook;
 use crate::game::Match;
 use crate::vec2::Vec2;
 
-pub(super) const AIM_Y: [f64; 3] = [-0.07, 0.0, 0.07];
+pub(super) const AIM_SHARE: [f64; 3] = [-0.56, 0.0, 0.56];
 pub(super) const RUN_UP: f64 = 0.1;
 pub(super) const LINE_TOLERANCE: f64 = 0.01;
 pub(super) const DEFENCE_DEPTH: f64 = 0.15;
@@ -88,13 +88,15 @@ impl HockeyPlaybook {
     }
 
     pub(super) fn corner_aim(&self, attacker: PlayerId, class: u8) -> Vec2 {
-        let k = usize::from(class).min(AIM_Y.len() - 1);
-        frame(attacker, Vec2::new(self.params.half_length, AIM_Y[k]))
+        let k = usize::from(class).min(AIM_SHARE.len() - 1);
+        let y = AIM_SHARE[k] * self.params.mouth_half_width;
+        frame(attacker, Vec2::new(self.params.half_length, y))
     }
 
     pub(super) fn own_corner(&self, defender: PlayerId, class: u8) -> Vec2 {
-        let k = usize::from(class).min(AIM_Y.len() - 1);
-        frame(defender, Vec2::new(-self.params.half_length, AIM_Y[k]))
+        let k = usize::from(class).min(AIM_SHARE.len() - 1);
+        let y = AIM_SHARE[k] * self.params.mouth_half_width;
+        frame(defender, Vec2::new(-self.params.half_length, y))
     }
 
     pub(super) fn guard(corner: Vec2, puck: Vec2) -> Vec2 {

@@ -91,7 +91,10 @@ fn cover_spot_stands_on_the_line_from_the_shown_corner_to_the_puck() {
         let defender = 1 - attacker;
         let puck = side(attacker, Vec2::new(-0.4, 0.05));
         let state = scene(puck, [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)], [0, 0]);
-        let corner = side(attacker, Vec2::new(1.0, 0.07));
+        let corner = side(
+            attacker,
+            Vec2::new(1.0, 0.56 * Params::default().mouth_half_width),
+        );
         let expected = corner + unit(puck - corner) * 0.15;
         let got = playbook().cover_spot(&state, defender, 2);
         assert!(
@@ -167,12 +170,13 @@ fn contact_aiming_leaves_along_the_aim_from_any_side() {
     let puck = Vec2::new(-0.4, 0.0);
     let aim = Vec2::new(1.0, 0.07);
     let wanted = unit(aim - puck);
+    let beside = puck.x - (params.puck_radius + params.mallet_radius) - 0.04;
     for start in [
         Vec2::new(-0.8, 0.0),
         Vec2::new(-0.65, 0.2),
         Vec2::new(-0.65, -0.2),
-        Vec2::new(-0.53, 0.10),
-        Vec2::new(-0.53, -0.10),
+        Vec2::new(beside, 0.10),
+        Vec2::new(beside, -0.10),
     ] {
         let mut world = World {
             puck: Puck::at_rest(puck),
@@ -188,17 +192,25 @@ fn contact_aiming_leaves_along_the_aim_from_any_side() {
             world.mallets[0].target = p.contact_target(&state, 0, aim);
             world.tick(&params, &[Body::default(); 2]);
             if world.puck.vel.length() > 0.5 {
-                hit = Some(world.puck.vel);
+                hit = Some((world.puck.pos, world.puck.vel));
                 break;
             }
         }
-        let v = hit.unwrap_or_else(|| panic!("from {start:?}: never hit the puck"));
-        let cos = unit(v).dot(wanted);
+        let (at, v) = hit.unwrap_or_else(|| panic!("from {start:?}: never hit the puck"));
         assert!(
-            cos > 2.0f64.to_radians().cos_approx(),
-            "from {start:?}: exit {v:?}, wanted {wanted:?}"
+            lands_in_corner(at, v, aim.y),
+            "from {start:?}: exit {v:?} at {at:?}, wanted {wanted:?}"
         );
     }
+}
+
+fn lands_in_corner(pos: Vec2, vel: Vec2, corner: f64) -> bool {
+    let params = Params::default();
+    if vel.x <= 0.0 {
+        return false;
+    }
+    let y = pos.y + vel.y * (params.half_length - pos.x) / vel.x;
+    y * corner > 0.0 && y.abs() < params.mouth_half_width
 }
 
 trait CosApprox {
@@ -235,7 +247,8 @@ fn the_show_point_stands_to_one_side_behind_the_puck() {
             [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)],
             [0, 0],
         );
-        let reach = 0.09;
+        let params = Params::default();
+        let reach = params.puck_radius + params.mallet_radius;
         let right = p.show_point(&state, me, 0);
         let left = p.show_point(&state, me, 2);
         assert!(
@@ -252,7 +265,8 @@ fn the_show_point_stands_to_one_side_behind_the_puck() {
 #[test]
 fn the_bank_aim_corrects_for_rail_restitution_on_the_open_side() {
     let p = playbook();
-    let y_rail: f64 = 0.5 - 0.04;
+    let params = Params::default();
+    let y_rail: f64 = params.half_width - params.puck_radius;
     let beyond = y_rail + y_rail / 0.9;
     for me in [0u8, 1] {
         let with_opponent_at = |y: f64| {
@@ -401,12 +415,11 @@ fn a_fake_wind_up_shows_one_side_then_shoots_the_other() {
         .iter()
         .find(|w| w.puck.vel.length() > 0.5)
         .expect("the puck was struck");
-    let wanted = unit(Vec2::new(1.0, 0.07) - Vec2::new(-0.4, 0.0));
-    let cos = unit(hit.puck.vel).dot(wanted);
     assert!(
-        cos > 2.0f64.to_radians().cos_approx(),
-        "shown right, so it must go into the left corner: exit {:?}, wanted {wanted:?}",
-        hit.puck.vel
+        lands_in_corner(hit.puck.pos, hit.puck.vel, 1.0),
+        "shown right, so it must go into the left corner: exit {:?} at {:?}",
+        hit.puck.vel,
+        hit.puck.pos
     );
 }
 
@@ -747,8 +760,10 @@ fn a_tiny_rail_restitution_offers_no_bank_and_a_restrike_is_read() {
 #[test]
 fn class_points_are_the_corner_aims_in_the_attackers_frame() {
     let p = playbook();
-    assert_eq!(p.class_point(0, 0), Vec2::new(1.0, -0.07));
-    assert_eq!(p.class_point(0, 2), Vec2::new(1.0, 0.07));
-    assert_eq!(p.class_point(1, 0), Vec2::new(-1.0, 0.07));
-    assert_eq!(p.class_point(1, 9), Vec2::new(-1.0, -0.07));
+    let aim = 0.56 * Params::default().mouth_half_width;
+    assert_eq!(p.class_point(0, 0), Vec2::new(1.0, -aim));
+    assert_eq!(p.class_point(0, 1), Vec2::new(1.0, 0.0));
+    assert_eq!(p.class_point(0, 2), Vec2::new(1.0, aim));
+    assert_eq!(p.class_point(1, 0), Vec2::new(-1.0, aim));
+    assert_eq!(p.class_point(1, 9), Vec2::new(-1.0, -aim));
 }

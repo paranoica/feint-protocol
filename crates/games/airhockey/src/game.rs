@@ -36,6 +36,7 @@ pub struct Match {
     score: [u32; 2],
     stall_half: Option<Side>,
     stall_ticks: u32,
+    pause_ticks: u32,
     over: bool,
 }
 
@@ -62,6 +63,7 @@ impl Match {
             score: [0, 0],
             stall_half: None,
             stall_ticks: 0,
+            pause_ticks: 0,
             over: false,
         };
         game.serve(if seed & 1 == 0 { Side::Low } else { Side::High });
@@ -89,8 +91,20 @@ impl Match {
             score,
             stall_half,
             stall_ticks,
+            pause_ticks: 0,
             over,
         }
+    }
+
+    #[must_use]
+    pub fn with_pause(mut self, ticks: u32) -> Self {
+        self.pause_ticks = ticks.min(self.params.serve_pause_ticks());
+        self
+    }
+
+    #[must_use]
+    pub fn pause_ticks(&self) -> u32 {
+        self.pause_ticks
     }
 
     #[must_use]
@@ -147,6 +161,11 @@ impl Match {
         }
         let tick = self.tick;
         self.tick = self.tick.saturating_add(1);
+        if self.pause_ticks > 0 {
+            self.pause_ticks -= 1;
+            self.world.hold(&self.params, &self.bodies);
+            return;
+        }
         if let Some(scorer) = self.world.tick(&self.params, &self.bodies) {
             let goals = &mut self.score[scorer.index()];
             *goals += 1;
@@ -156,6 +175,9 @@ impl Match {
                 events.push(MatchEvent::Over { tick });
             }
             self.serve(scorer.other());
+            if !self.over {
+                self.pause_ticks = self.params.serve_pause_ticks();
+            }
             return;
         }
         let x = self.world.puck.pos.x;
@@ -175,13 +197,14 @@ impl Match {
                 to: stalled.other(),
             });
             self.serve(stalled.other());
+            self.pause_ticks = self.params.serve_pause_ticks();
         }
     }
 
     #[must_use]
     pub fn digest(&self) -> u64 {
         let w = &self.world;
-        let mut words = [0u64; 22];
+        let mut words = [0u64; 23];
         let mut i = 0;
         let mut put = |word: u64| {
             words[i] = word;
@@ -196,6 +219,7 @@ impl Match {
             Some(Side::High) => 2,
         });
         put(u64::from(self.stall_ticks));
+        put(u64::from(self.pause_ticks));
         put(u64::from(self.over));
         for v in [w.puck.pos, w.puck.vel] {
             put(v.x.to_bits());

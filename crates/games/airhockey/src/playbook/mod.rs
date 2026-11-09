@@ -10,7 +10,7 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS,
+    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS,
     MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack,
     frame,
 };
@@ -164,7 +164,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
                 });
             }
         }
-        if let Some(twitch) = cue.twitch.filter(|&t| usize::from(t) < AIM_Y.len()) {
+        if let Some(twitch) = cue.twitch.filter(|&t| usize::from(t) < AIM_SHARE.len()) {
             for real in [0u8, 2].into_iter().filter(|&r| r != twitch) {
                 out.push(Choice {
                     shown: None,
@@ -183,7 +183,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
     fn act(&self, s: &Match, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
         let noise = frame(me, Vec2::new(aim[0], aim[1]));
         let lateral = frame(me, Vec2::new(0.0, aim[1] * AIM_SCALE));
-        let k = (c.param[0].max(0.0) as usize).min(AIM_Y.len() - 1);
+        let k = (c.param[0].max(0.0) as usize).min(AIM_SHARE.len() - 1);
         let waiting = Self::slow(c) && elapsed < u64::from(SLOW_TICKS);
         let real = self.corner_aim(me, k as u8) + lateral;
         let target = match c.id {
@@ -211,6 +211,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
     fn opponent_move(&self, s: &Match, them: PlayerId, stance: Stance) -> ActionT {
         let mine = Self::puck_in_half_of(s, them);
         let target = match stance {
+            Stance::Still => s.world.mallets[usize::from(them.min(1))].pos,
             Stance::Cover(class) if !mine => self.cover_spot(s, them, class),
             Stance::Shoot(class) if mine => {
                 self.strike_target(s, them, self.corner_aim(them, class))
