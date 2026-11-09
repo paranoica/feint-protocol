@@ -688,7 +688,7 @@ fn a_verification_keeps_its_slot_after_the_client_leaves() {
             (t, finished(1, seed, None).record())
         })
         .collect();
-    let paused = s.arena.pause().unwrap();
+    let paused = s.arena.pause();
     for (t, bytes) in &runs {
         let mut c = TcpStream::connect(s.addr).unwrap();
         let head = format!(
@@ -748,7 +748,7 @@ fn a_ticket_that_expires_while_its_upload_waits_is_refused() {
     let s = start("expiring");
     let (t, seed) = ticket(&s);
     let bytes = finished(1, seed, None).record();
-    let paused = s.arena.pause().unwrap();
+    let paused = s.arena.pause();
     let addr = s.addr;
     let upload = std::thread::spawn(move || {
         call(

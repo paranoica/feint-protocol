@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
 use axum::Router;
@@ -68,13 +68,15 @@ impl Arena {
         self.gate.available_permits()
     }
 
+    #[doc(hidden)]
     #[must_use]
     pub fn verifying(&self) -> usize {
         self.verifying.load(Ordering::SeqCst)
     }
 
-    pub fn pause(&self) -> Option<RwLockWriteGuard<'_, ()>> {
-        self.pause.write().ok()
+    #[doc(hidden)]
+    pub fn pause(&self) -> RwLockWriteGuard<'_, ()> {
+        self.pause.write().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn with_store<T>(
@@ -225,6 +227,21 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
     }
 }
 
+struct Counted<'a>(&'a AtomicUsize);
+
+impl<'a> Counted<'a> {
+    fn new(counter: &'a AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for Counted<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 enum Refusal {
     Bad(&'static str),
     Conflict,
@@ -300,10 +317,8 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
     let work = arena.clone();
     let verified = blocking(move || {
         let _slot = permit;
-        work.verifying.fetch_add(1, Ordering::SeqCst);
-        let result = accept(&work, &claim, &bytes);
-        work.verifying.fetch_sub(1, Ordering::SeqCst);
-        result
+        let _counted = Counted::new(&work.verifying);
+        accept(&work, &claim, &bytes)
     });
     match verified.await {
         Some(Ok(saved)) => {
@@ -321,7 +336,7 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
 }
 
 fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
-    let _running = arena.pause.read().map_err(|_| Refusal::Internal)?;
+    let _running = arena.pause.read().unwrap_or_else(PoisonError::into_inner);
     let now = (arena.clock)();
     let blob = match claim.used {
         Some(v) => Some(
