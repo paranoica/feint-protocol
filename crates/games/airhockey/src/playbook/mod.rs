@@ -11,8 +11,8 @@ mod reads;
 
 use geometry::{
     AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, DEFENCE_SCALE, FAKE_LANE, FAKE_SPEED,
-    HOLD_RESERVE_SECONDS, HOLD_TICKS, MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS,
-    SLOW_TICKS, STRIKE_TICKS, attack, frame,
+    HOLD_RESERVE_SECONDS, HOLD_TICKS, MIN_BANK_RESTITUTION, PUMP_GAP, PUMP_TICKS, SHOW_TICKS,
+    SHOW_WIDE, SLOW_TICKS, STRIKE_TICKS, WINDUP, attack, frame,
 };
 
 pub struct HockeyPlaybook {
@@ -42,13 +42,25 @@ impl HockeyPlaybook {
 
     #[must_use]
     pub fn show_point(&self, state: &Match, player: PlayerId, shown: u8) -> Vec2 {
+        self.on_show_line(state, player, shown, WINDUP)
+    }
+
+    fn on_show_line(&self, state: &Match, player: PlayerId, shown: u8, back: f64) -> Vec2 {
         let reach = self.params.puck_radius + self.params.mallet_radius;
-        let side = match shown {
-            0 => SHOW_SIDE,
-            2 => -SHOW_SIDE,
+        let wide = match shown {
+            0 => -SHOW_WIDE,
+            2 => SHOW_WIDE,
             _ => 0.0,
         };
-        state.world.puck.pos + frame(player, Vec2::new(-(reach + SHOW_BACK), side))
+        let puck = state.world.puck.pos;
+        let aim = frame(player, Vec2::new(self.params.half_length, wide));
+        let line = aim - puck;
+        puck - line * ((reach + back) / line.length())
+    }
+
+    #[must_use]
+    pub fn pump_point(&self, state: &Match, player: PlayerId, shown: u8) -> Vec2 {
+        self.on_show_line(state, player, shown, PUMP_GAP)
     }
 
     #[must_use]
@@ -96,7 +108,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         out.clear();
         let pace = cue.pace;
         let shot_ticks = STRIKE_TICKS + if pace < 0.5 { SLOW_TICKS } else { 0 };
-        let fake_ticks = STRIKE_TICKS + SHOW_TICKS as u32;
+        let fake_ticks = STRIKE_TICKS + (SHOW_TICKS + PUMP_TICKS) as u32;
         let choice = |id: u16, intent: u8, horizon_ticks: u32, k: f32, corner: Option<u8>| Choice {
             id,
             intent,

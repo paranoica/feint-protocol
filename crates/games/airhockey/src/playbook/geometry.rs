@@ -21,8 +21,10 @@ pub(super) const FAKE_LANE: f64 = 0.25;
 pub(super) const FAKE_SPEED: f64 = 2.5;
 pub(super) const APPROACH_COS: f64 = 0.5;
 pub(super) const SIDE_SPEED: f64 = 0.3;
-pub(super) const SHOW_SIDE: f64 = 0.10;
-pub(super) const SHOW_BACK: f64 = 0.04;
+pub(super) const SHOW_WIDE: f64 = 0.3;
+pub(super) const WINDUP: f64 = 0.2;
+pub(super) const PUMP_GAP: f64 = 0.02;
+pub(super) const PUMP_TICKS: u64 = 36;
 pub(super) const SHOW_TICKS: u64 = 96;
 pub(super) const CONTROL_SPEED: f64 = 1.0;
 pub(super) const SLOW_TICKS: u32 = 120;
@@ -143,8 +145,11 @@ impl HockeyPlaybook {
             let ahead = Vec2::new(attack(player) * self.params.half_length, puck.pos.y);
             return self.contact_with(state, player, ahead, self.soft_drive(state, player));
         }
-        if elapsed < SHOW_TICKS || forward < FIRE_X {
+        if elapsed < SHOW_TICKS {
             return self.show_point(state, player, shown);
+        }
+        if elapsed < SHOW_TICKS + PUMP_TICKS || forward < FIRE_X {
+            return self.pump_point(state, player, shown);
         }
         let away = (attack(player) * puck.vel.x).clamp(0.0, NUDGE_SPEED);
         self.contact_with(state, player, real, self.drive_after(state, player, away))

@@ -239,26 +239,32 @@ fn stalled(puck: Vec2, mallets: [Vec2; 2], stall_ticks: u32) -> Match {
 }
 
 #[test]
-fn the_show_point_stands_to_one_side_behind_the_puck() {
+fn the_show_point_winds_up_on_a_wide_line_and_the_pump_stops_short() {
     let p = playbook();
     for me in [0u8, 1] {
-        let state = scene(
-            side(me, Vec2::new(-0.4, 0.0)),
-            [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)],
-            [0, 0],
-        );
+        let puck = side(me, Vec2::new(-0.4, 0.0));
+        let state = scene(puck, [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)], [0, 0]);
         let params = Params::default();
         let reach = params.puck_radius + params.mallet_radius;
-        let right = p.show_point(&state, me, 0);
-        let left = p.show_point(&state, me, 2);
-        assert!(
-            (right - side(me, Vec2::new(-0.4 - (reach + 0.04), 0.10))).length() < 1e-9,
-            "side {me}: {right:?}"
-        );
-        assert!(
-            (left - side(me, Vec2::new(-0.4 - (reach + 0.04), -0.10))).length() < 1e-9,
-            "side {me}: {left:?}"
-        );
+        for (shown, wide) in [(0u8, -0.3), (2, 0.3)] {
+            let aim = side(me, Vec2::new(1.0, wide));
+            let back = unit(aim - puck) * -1.0;
+            let show = p.show_point(&state, me, shown);
+            let pump = p.pump_point(&state, me, shown);
+            assert!(
+                (show - (puck + back * (reach + 0.2))).length() < 1e-9,
+                "side {me}, shown {shown}: {show:?}"
+            );
+            assert!(
+                (pump - (puck + back * (reach + 0.02))).length() < 1e-9,
+                "side {me}, shown {shown}: {pump:?}"
+            );
+            let lateral = side(me, show - puck).y;
+            assert!(
+                lateral * wide < 0.0 && lateral.abs() > 0.06,
+                "side {me}: the wind-up must sit visibly on the far side: {lateral}"
+            );
+        }
     }
 }
 
@@ -881,4 +887,45 @@ fn a_fake_from_deep_nudges_the_puck_forward_and_fires_from_close_range() {
             "side {me}: shown right, so the left corner: {vel:?} at {pos:?}"
         );
     }
+}
+
+#[test]
+fn a_fake_winds_up_pumps_short_of_the_puck_then_fires_the_other_corner() {
+    let params = Params::default();
+    let reach = params.puck_radius + params.mallet_radius;
+    let state = scene(
+        Vec2::new(-0.25, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
+        [0, 0],
+    );
+    let fake = option(&state, &Cue::default(), HockeyPlaybook::FAKES[0]);
+    let (worlds, _) = run_choice(&state, &fake, 480);
+    let strike = worlds
+        .iter()
+        .position(|w| w.puck.vel.length() > 0.6 * params.puck_speed_cap)
+        .expect("struck hard");
+    let before = &worlds[..strike];
+    let gap = |w: &World| (w.mallets[0].pos - w.puck.pos).length();
+    let pump = before
+        .iter()
+        .position(|w| gap(w) < reach + 0.04 && w.puck.vel.length() < 0.3)
+        .expect("no pump that comes up to the puck");
+    assert!(
+        before[pump..].iter().any(|w| gap(w) > reach + 0.08),
+        "the pump went on into the puck instead of stopping short"
+    );
+    assert!(
+        before[..pump].iter().any(|w| {
+            let rel = w.mallets[0].pos - w.puck.pos;
+            gap(w) > reach + 0.15 && rel.x < 0.0 && rel.y > 0.06
+        }),
+        "no wind-up far back on the shown side before the pump"
+    );
+    let at = worlds[strike];
+    assert!(
+        lands_in_corner(at.puck.pos, at.puck.vel, 1.0),
+        "shown right, fired left: {:?} at {:?}",
+        at.puck.vel,
+        at.puck.pos
+    );
 }

@@ -2,7 +2,7 @@ use feint_protocol::{ActionT, GameAdapter};
 
 use super::{Bot, SIMULATION_BUDGET};
 
-const STYLE_MARGINS: f64 = 3.0;
+const STYLE_MARGINS: f64 = 6.0;
 use crate::playbook::{Choice, Cue, Playbook, Stance};
 
 impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
