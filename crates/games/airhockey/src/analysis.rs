@@ -11,6 +11,7 @@ const SHOW_MIN: f64 = 0.06;
 const SHIFT_MIN: f64 = 0.03;
 const CONTACT_SLACK: f64 = 0.01;
 const SCORE_WINDOW_TICKS: u64 = 240;
+const RETURN_SLACK: f64 = 0.02;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
@@ -171,10 +172,19 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
             }
             let goal = frames[k].tick;
             let recent = span(frames, goal.saturating_sub(SCORE_WINDOW_TICKS), goal);
-            let Some(last) = recent.rev().find(|&j| starts[j][0] || starts[j][1]) else {
+            let Some(last) = recent.rev().find(|&j| starts[j][me]) else {
                 continue;
             };
             if starts[last][them] {
+                continue;
+            }
+            let mut furthest = f64::NEG_INFINITY;
+            let turned = frames[last..k].iter().any(|f| {
+                let x = seen(player, f.puck).x;
+                furthest = furthest.max(x);
+                x < furthest - RETURN_SLACK
+            });
+            if turned {
                 continue;
             }
             let touched = frames[last].tick;

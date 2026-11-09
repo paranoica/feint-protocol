@@ -411,3 +411,104 @@ fn probe_fakes() {
         );
     }
 }
+
+#[test]
+#[ignore = "probe"]
+fn probe_fake_anatomy() {
+    let mut printed = 0;
+    for seed in 0..20u64 {
+        let me = (seed % 2) as u8;
+        let sides = if me == 0 {
+            [Side::Level(5), Side::Human]
+        } else {
+            [Side::Human, Side::Level(5)]
+        };
+        let (_, frames) = record(seed, sides);
+        let report = record(seed, sides).0;
+        let sign = if me == 0 { 1.0 } else { -1.0 };
+        for a in attempts(&params(), &frames, &report.actions)
+            .iter()
+            .filter(|a| a.player == me && a.deceptive)
+        {
+            let Some(c) = a.contact else { continue };
+            let at = |t: u64| frames.iter().find(|f| f.tick == t).copied();
+            let (Some(f0), Some(f1)) = (at(c), at(c + 8)) else {
+                continue;
+            };
+            let vx = sign * (f1.puck.x - f0.puck.x) * 30.0;
+            let vy = sign * (f1.puck.y - f0.puck.y) * 30.0;
+            let them = usize::from(1 - me);
+            let crossing = frames
+                .iter()
+                .filter(|f| f.tick > c && f.tick < c + 480)
+                .find(|f| sign * f.puck.x > 0.8 || sign * (f.puck.x - f0.puck.x) < -0.05);
+            let (dt, gap) = crossing.map_or((-1.0, 0.0), |f| {
+                (
+                    (f.tick - c) as f64 / 240.0,
+                    sign * (f.puck.y - f.mallets[them].y),
+                )
+            });
+            eprintln!(
+                "PROBE seed {seed} shown {:?} shifted {} scored {} | strike at x {:.2} y {:.2}, v ({vx:.1}, {vy:.1}), reaches 0.8 after {dt:.2}s, puck-defender gap {gap:.2}, show {} ticks",
+                a.shown,
+                a.shifted,
+                a.scored,
+                sign * f0.puck.x,
+                sign * f0.puck.y,
+                c - a.start
+            );
+            printed += 1;
+            if printed >= 25 {
+                return;
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "probe"]
+fn probe_goal_credit() {
+    let p = params();
+    let reach = p.puck_radius + p.mallet_radius + 0.01;
+    let (mut total, mut defender_last, mut credited, mut no_touch) = (0, 0, 0, 0);
+    for seed in 0..20u64 {
+        let me = (seed % 2) as usize;
+        let sides = if me == 0 {
+            [Side::Level(5), Side::Human]
+        } else {
+            [Side::Human, Side::Level(5)]
+        };
+        let (report, frames) = record(seed, sides);
+        let found = attempts(&p, &frames, &report.actions);
+        credited += found
+            .iter()
+            .filter(|a| usize::from(a.player) == me && a.scored)
+            .count();
+        for k in 1..frames.len() {
+            if frames[k].score[me] <= frames[k - 1].score[me] {
+                continue;
+            }
+            total += 1;
+            let start = k.saturating_sub(240);
+            let last = (start..k).rev().find_map(|j| {
+                let f = frames[j];
+                let near = |m: usize| (f.puck - f.mallets[m]).length() < reach;
+                if near(me) {
+                    Some(me)
+                } else if near(1 - me) {
+                    Some(1 - me)
+                } else {
+                    None
+                }
+            });
+            match last {
+                None => no_touch += 1,
+                Some(w) if w != me => defender_last += 1,
+                _ => {}
+            }
+        }
+    }
+    eprintln!(
+        "PROBE bot goals {total}: credited to attempts {credited}, defender touched last {defender_last}, no touch in 1 s {no_touch}"
+    );
+}

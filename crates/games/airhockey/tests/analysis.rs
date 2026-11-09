@@ -229,8 +229,16 @@ fn a_goal_is_credited_only_when_the_attempt_touched_last() {
     let credited = |frames: &[Frame]| attempts(&Params::default(), frames, &actions)[0].scored;
     assert!(credited(&log(None)), "the fake touched last");
     assert!(
-        !credited(&log(Some((60, 1)))),
-        "the opponent touched it after the fake"
+        credited(&log(Some((60, 1)))),
+        "a touch that does not turn the puck back is a deflection of the fake's shot"
+    );
+    let mut returned = log(Some((60, 1)));
+    for f in returned.iter_mut().filter(|f| f.tick > 60 && f.tick < 100) {
+        f.puck = v(-0.4 - 0.005 * (f.tick - 60) as f64, 0.0);
+    }
+    assert!(
+        !credited(&returned),
+        "the opponent turned the puck back after the fake"
     );
     assert!(
         !credited(&log(Some((60, 0)))),

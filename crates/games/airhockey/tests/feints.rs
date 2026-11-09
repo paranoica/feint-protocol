@@ -385,7 +385,7 @@ fn option(state: &Match, cue: &Cue, id: u16) -> Choice {
 #[test]
 fn a_fake_wind_up_shows_one_side_then_shoots_the_other() {
     let state = scene(
-        Vec2::new(-0.4, 0.0),
+        Vec2::new(-0.25, 0.0),
         [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
         [0, 0],
     );
@@ -789,11 +789,17 @@ fn a_weaker_body_strikes_the_puck_softer() {
             ],
         };
         let mut top: f64 = 0.0;
-        for _ in 0..480 {
+        let mut since: Option<u32> = None;
+        for t in 0..480 {
             let state = Match::from_observed(params.clone(), bodies, world, 0, [0, 0], 0);
             world.mallets[0].target = p.contact_target(&state, 0, aim);
             world.tick(&params, &bodies);
-            top = top.max(world.puck.vel.length());
+            if world.puck.vel.length() > 0.3 && since.is_none() {
+                since = Some(t);
+            }
+            if since.is_some_and(|s| t <= s + 24) {
+                top = top.max(world.puck.vel.length());
+            }
         }
         top
     };
@@ -804,4 +810,67 @@ fn a_weaker_body_strikes_the_puck_softer() {
         "level-1 body hit at {weak} m/s"
     );
     assert!(strong > 0.9 * cap, "a full body hit at only {strong} m/s");
+}
+
+#[test]
+fn a_fake_from_deep_nudges_the_puck_forward_and_fires_from_close_range() {
+    for me in [0u8, 1] {
+        let state = scene(
+            side(me, Vec2::new(-0.6, 0.05)),
+            if me == 0 {
+                [Vec2::new(-0.85, 0.0), Vec2::new(0.95, -0.45)]
+            } else {
+                [Vec2::new(-0.95, 0.45), Vec2::new(0.85, 0.0)]
+            },
+            [0, 0],
+        );
+        let mut out = Vec::new();
+        playbook().options(&state, me, 2, &Cue::default(), &mut out);
+        let fake = out
+            .into_iter()
+            .find(|c| c.id == HockeyPlaybook::FAKES[0])
+            .expect("offered");
+        let params = Params::default();
+        let p = playbook();
+        let game = AirHockey::new(params.clone(), 4);
+        let mut s = state.clone();
+        let mut worlds = Vec::new();
+        for t in 0..480u64 {
+            let mine = p.act(&s, me, &fake, t, [0.0; 2]);
+            s = game.simulate(&s, &[mine], 1);
+            worlds.push(s.world);
+            if s.score() != [0, 0] {
+                break;
+            }
+        }
+        let forward = |w: &World| side(me, w.puck.pos).x;
+        let strike = worlds
+            .iter()
+            .position(|w| w.puck.vel.length() > 0.6 * params.puck_speed_cap)
+            .unwrap_or_else(|| panic!("side {me}: never struck hard"));
+        let before = &worlds[..strike];
+        assert!(
+            before.iter().any(|w| w.puck.vel.length() > 0.2),
+            "side {me}: the puck was not nudged before the strike"
+        );
+        let at = worlds[strike];
+        assert!(
+            forward(&at) >= -0.35,
+            "side {me}: struck from deep, x {}",
+            forward(&at)
+        );
+        let shown = before
+            .iter()
+            .filter(|w| {
+                let rel = side(me, w.mallets[usize::from(me)].pos - w.puck.pos);
+                rel.x < 0.0 && rel.y > 0.06
+            })
+            .count();
+        assert!(shown >= 30, "side {me}: shown for only {shown} ticks");
+        let (pos, vel) = (side(me, at.puck.pos), side(me, at.puck.vel));
+        assert!(
+            lands_in_corner(pos, vel, 1.0),
+            "side {me}: shown right, so the left corner: {vel:?} at {pos:?}"
+        );
+    }
 }

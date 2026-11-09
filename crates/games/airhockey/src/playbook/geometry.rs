@@ -13,6 +13,11 @@ pub(super) const CHASE_SCALE: f64 = 0.5;
 pub(super) const DEFENCE_SCALE: f64 = 2.0;
 pub(super) const CONTACT_DRIVE: f64 = 0.15;
 pub(super) const MIN_DRIVE: f64 = 0.005;
+pub(super) const MIN_NUDGE: f64 = 0.0005;
+pub(super) const NUDGE_SPEED: f64 = 0.9;
+pub(super) const NUDGE_STILL: f64 = 0.3;
+pub(super) const FIRE_X: f64 = -0.3;
+pub(super) const FAKE_LANE: f64 = 0.25;
 pub(super) const APPROACH_COS: f64 = 0.5;
 pub(super) const SIDE_SPEED: f64 = 0.3;
 pub(super) const SHOW_SIDE: f64 = 0.10;
@@ -65,9 +70,14 @@ impl HockeyPlaybook {
     }
 
     pub(super) fn drive(&self, state: &Match, player: PlayerId) -> f64 {
+        self.drive_after(state, player, 0.0)
+    }
+
+    fn drive_after(&self, state: &Match, player: PlayerId, away: f64) -> f64 {
         let body = state.bodies[usize::from(player.min(1))];
         let power = (body.max_speed() / self.params.max_body_speed).clamp(0.0, 1.0);
-        let contact = power * self.params.puck_speed_cap / (1.0 + self.params.mallet_restitution);
+        let contact =
+            power * self.params.puck_speed_cap / (1.0 + self.params.mallet_restitution) + away;
         (contact * contact / (2.0 * body.max_accel())).clamp(MIN_DRIVE, CONTACT_DRIVE)
     }
 
@@ -112,7 +122,38 @@ impl HockeyPlaybook {
         corner + unit(puck - corner, Vec2::ZERO) * DEFENCE_DEPTH
     }
 
+    pub(super) fn soft_drive(&self, state: &Match, player: PlayerId) -> f64 {
+        let body = state.bodies[usize::from(player.min(1))];
+        let contact = NUDGE_SPEED / (1.0 + self.params.mallet_restitution);
+        (contact * contact / (2.0 * body.max_accel())).clamp(MIN_NUDGE, MIN_DRIVE)
+    }
+
+    pub(super) fn fake_target(
+        &self,
+        state: &Match,
+        player: PlayerId,
+        shown: u8,
+        real: Vec2,
+        elapsed: u64,
+    ) -> Vec2 {
+        let puck = state.world.puck;
+        let forward = attack(player) * puck.pos.x;
+        if forward < FIRE_X && puck.vel.length() < NUDGE_STILL {
+            let ahead = Vec2::new(attack(player) * self.params.half_length, puck.pos.y);
+            return self.contact_with(state, player, ahead, self.soft_drive(state, player));
+        }
+        if elapsed < SHOW_TICKS || forward < FIRE_X {
+            return self.show_point(state, player, shown);
+        }
+        let away = (attack(player) * puck.vel.x).clamp(0.0, NUDGE_SPEED);
+        self.contact_with(state, player, real, self.drive_after(state, player, away))
+    }
+
     pub(super) fn contact(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
+        self.contact_with(state, player, aim, self.drive(state, player))
+    }
+
+    fn contact_with(&self, state: &Match, player: PlayerId, aim: Vec2, drive: f64) -> Vec2 {
         let puck = state.world.puck.pos;
         let body = state.world.mallets[usize::from(player.min(1))];
         let mallet = body.pos;
@@ -125,7 +166,7 @@ impl HockeyPlaybook {
             && (mallet - puck).dot(line) < 0.0
             && drift < SIDE_SPEED
         {
-            touch + approach * self.drive(state, player)
+            touch + approach * drive
         } else {
             self.set_up(state, player, aim)
         }
