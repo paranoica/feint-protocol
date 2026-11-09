@@ -393,3 +393,33 @@ fn two_bots_play_a_match_for_a_watcher() {
     );
     assert!(!Session::new(1, 0).unwrap().record().is_empty());
 }
+
+#[test]
+fn a_pad_sends_every_one_shot_and_a_held_target_only_when_it_changes() {
+    use feint_web::{HumanInput, Pad};
+    let game = AirHockey::new(Params::default(), 1);
+    let spec = game.spec();
+    let mut pad = Pad::default();
+    Controller::<AirHockey>::new_match(&mut pad, &spec, 0, 1);
+    let mut obs = ObservationT::default();
+    let mut tick = |pad: &mut Pad| {
+        obs.tick += 1;
+        Controller::<AirHockey>::on_tick(pad, &game, &obs).and_then(|a| a.values)
+    };
+    assert_eq!(tick(&mut pad), None, "nothing held, nothing pushed");
+    pad.set(&[0.5, 0.0]);
+    assert_eq!(tick(&mut pad), Some(vec![0.5, 0.0]));
+    assert_eq!(tick(&mut pad), None, "the same target is not resent");
+    pad.push(&[1.0]);
+    pad.push(&[1.0]);
+    assert_eq!(tick(&mut pad), Some(vec![1.0]));
+    assert_eq!(
+        tick(&mut pad),
+        Some(vec![1.0]),
+        "a repeated press is not dropped"
+    );
+    assert_eq!(tick(&mut pad), None);
+    pad.set(&[f32::NAN, 0.0]);
+    pad.push(&[f32::INFINITY]);
+    assert_eq!(tick(&mut pad), None, "non-finite input is ignored");
+}

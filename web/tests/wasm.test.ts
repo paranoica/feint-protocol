@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { initSync, WebMatch } from "../src/wasm/feint_web.js";
+import { games, initSync, WebMatch } from "../src/wasm/feint_web.js";
 
 initSync({ module: readFileSync(new URL("../src/wasm/feint_web_bg.wasm", import.meta.url)) });
 
@@ -97,4 +97,24 @@ test("two bots play for a watcher and each shows its own mind", () => {
   assert.ok(game.shown_of(0) >= -1 && game.real_of(1) <= 2);
   assert.equal(game.likely_shot_of(0), -1);
   game.free();
+});
+
+test("the hub builds a game by id and keeps the hockey entry points", () => {
+  assert.deepEqual(Array.from(games()), ["airhockey"]);
+  const game = WebMatch.create("airhockey", 2, 5);
+  assert.equal(game.game_id(), "airhockey");
+  assert.equal(game.arena(), true);
+  assert.deepEqual(Array.from(game.layout()), Array.from(game.table()));
+  game.set_input(new Float32Array([-0.5, 0.2]));
+  game.advance(8);
+  assert.equal(game.view().length, 12);
+  const same = new WebMatch(2, 5);
+  same.set_pointer(-0.5, 0.2);
+  same.advance(8);
+  assert.equal(game.digest_hex(), same.digest_hex(), "create and new play the same hockey match");
+  assert.throws(() => WebMatch.create("chess", 2, 5));
+  assert.throws(() => WebMatch.watch("chess", 1, 2, 5));
+  assert.equal(WebMatch.watch("airhockey", 1, 5, 0).spectating(), true);
+  game.free();
+  same.free();
 });

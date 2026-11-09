@@ -1,11 +1,11 @@
-use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
+use airhockey::{AirHockey, Params};
 use feint_ai::{
     Bot, Controller, Difficulty, InsightView, Memory, Profile, RunHeader, RunReport, Runner,
     encode_record,
 };
-use feint_protocol::{
-    ActionT, BodyParamsT, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId,
-};
+use feint_protocol::{ActionT, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
+
+use crate::hub::{HubGame, HumanInput};
 
 pub const GAME_ID: &str = "airhockey";
 
@@ -71,21 +71,17 @@ impl Controller<AirHockey> for Pointer {
     }
 }
 
-pub struct Session {
-    game: AirHockey,
-    bot: Bot<AirHockey, HockeyPlaybook>,
-    left: Option<Bot<AirHockey, HockeyPlaybook>>,
-    human: Pointer,
+pub struct Play<G: HubGame> {
+    game: G,
+    bot: Bot<G, G::Book>,
+    left: Option<Bot<G, G::Book>>,
+    human: G::Human,
     runner: Option<Runner>,
     report: Option<RunReport>,
     events: Vec<EventT>,
 }
 
-fn body(values: [f64; 2]) -> BodyParamsT {
-    let mut b = BodyParamsT::default();
-    b.values = Some(values.map(|v| v as f32).to_vec());
-    b
-}
+pub type Session = Play<AirHockey>;
 
 pub struct Replayer {
     actions: Vec<ActionT>,
@@ -104,13 +100,13 @@ impl Replayer {
     }
 }
 
-impl Controller<AirHockey> for Replayer {
+impl<A: GameAdapter> Controller<A> for Replayer {
     fn new_match(&mut self, _spec: &GameSpecT, me: PlayerId, _seed: u64) {
         self.next = 0;
         self.me = me;
     }
 
-    fn on_tick(&mut self, _game: &AirHockey, obs: &ObservationT) -> Option<ActionT> {
+    fn on_tick(&mut self, _game: &A, obs: &ObservationT) -> Option<ActionT> {
         while self
             .actions
             .get(self.next)
@@ -126,7 +122,7 @@ impl Controller<AirHockey> for Replayer {
     }
 }
 
-impl Session {
+impl<G: HubGame> Play<G> {
     pub fn new(level: u8, seed: u64) -> Result<Self, SessionError> {
         Self::with_profile(level, seed, None)
     }
@@ -140,16 +136,15 @@ impl Session {
         if profile.is_some() && difficulty.memory != Memory::MatchAndProfile {
             return Err(SessionError::Profile);
         }
-        let params = Params::default();
-        let mut game = AirHockey::new(params.clone(), level);
+        let mut game = G::build(level);
         let header = Self::header(level, seed, &game).ok_or(SessionError::Level)?;
-        let mut bot = Bot::new(difficulty, HockeyPlaybook::new(params), &game.spec())
-            .map_err(|_| SessionError::Level)?;
+        let mut bot =
+            Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| SessionError::Level)?;
         if let Some(profile) = profile {
-            bot.load_profile(profile, GAME_ID)
+            bot.load_profile(profile, G::ID)
                 .map_err(|_| SessionError::Profile)?;
         }
-        let mut human = Pointer::new();
+        let mut human = G::Human::default();
         let runner = Runner::start(&mut game, [&mut human, &mut bot], header)
             .map_err(|_| SessionError::Level)?;
         Ok(Self {
@@ -164,20 +159,18 @@ impl Session {
     }
 
     pub fn spectate(left: u8, right: u8, seed: u64) -> Result<Self, SessionError> {
-        let params = Params::default();
-        let mut game = AirHockey::new(params.clone(), right);
+        let mut game = G::build(right);
         let spec = game.spec();
         let make = |level: u8| {
             let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
-            let bot = Bot::new(difficulty, HockeyPlaybook::new(params.clone()), &spec)
-                .map_err(|_| SessionError::Level)?;
+            let bot = Bot::new(difficulty, G::book(), &spec).map_err(|_| SessionError::Level)?;
             Ok::<_, SessionError>((bot, difficulty.body(&spec)))
         };
         let (mut left_bot, left_body) = make(left)?;
         let (mut bot, right_body) = make(right)?;
         let header = RunHeader {
-            game_id: GAME_ID.into(),
-            game_version: GAME_VERSION,
+            game_id: G::ID.into(),
+            game_version: G::VERSION,
             seed,
             bodies: vec![left_body, right_body],
             levels: [left, right],
@@ -188,7 +181,7 @@ impl Session {
             game,
             bot,
             left: Some(left_bot),
-            human: Pointer::new(),
+            human: G::Human::default(),
             runner: Some(runner),
             report: None,
             events: Vec::new(),
@@ -210,28 +203,27 @@ impl Session {
 
     #[must_use]
     pub fn profile(&self) -> Option<Profile> {
-        self.bot.profile(GAME_ID)
+        self.bot.profile(G::ID)
     }
 
     #[must_use]
-    pub fn header(level: u8, seed: u64, game: &AirHockey) -> Option<RunHeader> {
+    pub fn header(level: u8, seed: u64, game: &G) -> Option<RunHeader> {
         let difficulty = Difficulty::preset(level)?;
-        let spec = game.spec();
-        let params = Params::default();
         Some(RunHeader {
-            game_id: GAME_ID.into(),
-            game_version: GAME_VERSION,
+            game_id: G::ID.into(),
+            game_version: G::VERSION,
             seed,
-            bodies: vec![
-                body([params.max_body_speed, params.max_body_accel]),
-                difficulty.body(&spec),
-            ],
+            bodies: vec![G::human_body(), difficulty.body(&game.spec())],
             levels: [0, level],
         })
     }
 
-    pub fn set_pointer(&mut self, x: f32, y: f32) {
-        self.human.aim(x, y);
+    pub fn set_input(&mut self, values: &[f32]) {
+        self.human.set(values);
+    }
+
+    pub fn push_input(&mut self, values: &[f32]) {
+        self.human.push(values);
     }
 
     pub fn advance(&mut self, ticks: u32) -> &[EventT] {
@@ -240,7 +232,7 @@ impl Session {
             let Some(runner) = self.runner.as_mut() else {
                 break;
             };
-            let first: &mut dyn Controller<AirHockey> = match self.left.as_mut() {
+            let first: &mut dyn Controller<G> = match self.left.as_mut() {
                 Some(left) => left,
                 None => &mut self.human,
             };
@@ -252,7 +244,7 @@ impl Session {
         if self.game.result().is_some()
             && let Some(runner) = self.runner.take()
         {
-            let first: &mut dyn Controller<AirHockey> = match self.left.as_mut() {
+            let first: &mut dyn Controller<G> = match self.left.as_mut() {
                 Some(left) => left,
                 None => &mut self.human,
             };
@@ -262,40 +254,33 @@ impl Session {
     }
 
     #[must_use]
-    pub fn positions(&self) -> [f32; 12] {
-        let world = &self.game.live().world;
-        let [a, b] = world.mallets;
-        [
-            world.puck.pos.x,
-            world.puck.pos.y,
-            world.puck.vel.x,
-            world.puck.vel.y,
-            a.pos.x,
-            a.pos.y,
-            a.vel.x,
-            a.vel.y,
-            b.pos.x,
-            b.pos.y,
-            b.vel.x,
-            b.vel.y,
-        ]
-        .map(|v| v as f32)
+    pub fn view(&self) -> Vec<f32> {
+        self.game.view()
+    }
+
+    #[must_use]
+    pub fn layout(&self) -> Vec<f32> {
+        self.game.layout()
     }
 
     #[must_use]
     pub fn serve_pause(&self) -> f32 {
-        let live = self.game.live();
-        (f64::from(live.pause_ticks()) / f64::from(live.params.tick_hz)) as f32
+        self.game.pause()
     }
 
     #[must_use]
     pub fn score(&self) -> [u32; 2] {
-        self.game.live().score()
+        self.game.score()
     }
 
     #[must_use]
     pub fn tick(&self) -> u64 {
-        self.game.live().tick()
+        self.game.tick()
+    }
+
+    #[must_use]
+    pub fn tick_hz(&self) -> u32 {
+        self.game.tick_hz()
     }
 
     #[must_use]
@@ -309,8 +294,13 @@ impl Session {
     }
 
     #[must_use]
-    pub fn playbook(&self) -> &HockeyPlaybook {
+    pub fn playbook(&self) -> &G::Book {
         self.bot.playbook()
+    }
+
+    #[must_use]
+    pub fn class_point(&self, attacker: u8, class: u8) -> [f32; 2] {
+        G::class_point(self.bot.playbook(), attacker, class)
     }
 
     #[must_use]
@@ -329,5 +319,17 @@ impl Session {
             (None, None) => return Vec::new(),
         };
         encode_record(&report.record())
+    }
+}
+
+impl Play<AirHockey> {
+    pub fn set_pointer(&mut self, x: f32, y: f32) {
+        self.human.aim(x, y);
+    }
+
+    #[must_use]
+    pub fn positions(&self) -> [f32; 12] {
+        let v = self.game.view();
+        std::array::from_fn(|i| v[i])
     }
 }

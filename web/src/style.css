@@ -40,6 +40,34 @@ body {
 .screen[hidden] {
   display: none;
 }
+.hub {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.hub-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.games {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 520px));
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+}
+.game-card {
+  max-width: none;
+  padding: 24px;
+}
+.game-card h2 {
+  font-size: 28px;
+}
 .card {
   display: flex;
   flex-direction: column;

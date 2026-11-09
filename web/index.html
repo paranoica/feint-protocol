@@ -3,32 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Feint — air hockey</title>
+    <title>Feint — game hub</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <section id="level" class="screen">
-      <div class="card">
+    <section id="level" class="screen hub">
+      <div class="hub-head">
         <h1>Feint</h1>
-        <p class="tagline">Air hockey against a bot that reads you and lies with its body.</p>
+        <p class="tagline">Small games against bots that read you and lie with their bodies.</p>
         <label class="nick">Nick <input id="nick" maxlength="64" autocomplete="nickname" /></label>
-        <div class="levels">
-          <button data-level="1" disabled><b>1</b><span>Rookie</span></button>
-          <button data-level="2" disabled><b>2</b><span>Novice</span></button>
-          <button data-level="3" disabled><b>3</b><span>Amateur</span></button>
-          <button data-level="4" disabled><b>4</b><span>Pro</span></button>
-          <button data-level="5" disabled><b>5</b><span>Feint</span></button>
-        </div>
-        <p class="hint">Hold the mouse button or a finger on the table and drag your mallet. First to 7. Press D to see what the bot is thinking.</p>
-        <div class="watch">
-          <span>Watch two bots</span>
-          <select id="watch-left" aria-label="left bot level"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
-          <span>vs</span>
-          <select id="watch-right" aria-label="right bot level"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5" selected>5</option></select>
-          <button id="watch" disabled>Watch</button>
-        </div>
+        <p class="hint">Press D in a match to see what a bot is thinking, F to speed up a watched match.</p>
       </div>
+      <div id="games" class="games"></div>
     </section>
     <section id="game" class="screen game" hidden>
       <canvas id="table"></canvas>

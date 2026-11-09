@@ -4,10 +4,10 @@ import { again, cleanNick, finish, first, start, watch } from "../src/screens.ts
 
 test("level, game with score, result, again", () => {
   const level = first("ann");
-  const game = start(level, 3, "ann");
-  assert.deepEqual(game, { name: "game", nick: "ann", level: 3 });
+  const game = start(level, "airhockey", 3, "ann");
+  assert.deepEqual(game, { name: "game", game: "airhockey", nick: "ann", level: 3 });
   const result = finish(game, [7, 4]);
-  assert.deepEqual(result, { name: "result", nick: "ann", level: 3, score: [7, 4] });
+  assert.deepEqual(result, { name: "result", game: "airhockey", nick: "ann", level: 3, score: [7, 4] });
   assert.deepEqual(again(result), { name: "level", nick: "ann" });
 });
 
@@ -15,11 +15,12 @@ test("out-of-order moves and bad levels change nothing", () => {
   const level = first("ann");
   assert.equal(finish(level, [1, 2]), level);
   assert.equal(again(level), level);
-  assert.equal(start(level, 0, "ann"), level);
-  assert.equal(start(level, 6, "ann"), level);
-  assert.equal(start(level, 2.5, "ann"), level);
-  const game = start(level, 1, "ann");
-  assert.equal(start(game, 2, "ann"), game);
+  assert.equal(start(level, "airhockey", 0, "ann"), level);
+  assert.equal(start(level, "airhockey", 6, "ann"), level);
+  assert.equal(start(level, "airhockey", 2.5, "ann"), level);
+  assert.equal(start(level, "", 2, "ann"), level, "a game is named");
+  const game = start(level, "airhockey", 1, "ann");
+  assert.equal(start(game, "airhockey", 2, "ann"), game);
 });
 
 test("nicks are trimmed, capped at 24 characters and never empty", () => {
@@ -39,13 +40,22 @@ test("control and direction characters are dropped from nicks", () => {
 
 test("watching two bots goes from the menu to a result naming the winner", () => {
   const level = first("ann");
-  const game = watch(level, 1, 5, "ann");
-  assert.deepEqual(game, { name: "game", nick: "ann", level: 5, watch: [1, 5] });
+  const game = watch(level, "airhockey", 1, 5, "ann");
+  assert.deepEqual(game, { name: "game", game: "airhockey", nick: "ann", level: 5, watch: [1, 5] });
   const result = finish(game, [2, 7]);
-  assert.deepEqual(result, { name: "result", nick: "ann", level: 5, score: [2, 7], watch: [1, 5] });
+  assert.deepEqual(result, {
+    name: "result",
+    game: "airhockey",
+    nick: "ann",
+    level: 5,
+    score: [2, 7],
+    watch: [1, 5],
+  });
   assert.deepEqual(again(result), { name: "level", nick: "ann" });
-  assert.equal(watch(level, 0, 5, "ann"), level);
-  assert.equal(watch(level, 3, 6, "ann"), level);
-  assert.equal(watch(game, 1, 2, "ann"), game, "only from the menu");
-  assert.equal(start(level, 2, "ann").watch, undefined, "a human game is not a watch");
+  assert.equal(watch(level, "airhockey", 0, 5, "ann"), level);
+  assert.equal(watch(level, "airhockey", 3, 6, "ann"), level);
+  assert.equal(watch(level, "", 1, 2, "ann"), level);
+  assert.equal(watch(game, "airhockey", 1, 2, "ann"), game, "only from the menu");
+  const human = start(level, "airhockey", 2, "ann");
+  assert.equal(human.name === "game" ? human.watch : null, undefined, "a human game is not a watch");
 });
