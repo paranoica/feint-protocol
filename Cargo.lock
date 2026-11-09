@@ -34,6 +34,7 @@ name = "feint-ai"
 version = "0.1.0"
 dependencies = [
  "feint-protocol",
+ "rand_chacha",
 ]
 
 [[package]]
