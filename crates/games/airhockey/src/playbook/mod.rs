@@ -10,9 +10,9 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS,
-    MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack,
-    frame,
+    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, DEFENCE_SCALE, HOLD_RESERVE_SECONDS,
+    HOLD_TICKS, MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS,
+    attack, frame,
 };
 
 pub struct HockeyPlaybook {
@@ -188,9 +188,9 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         let real = self.corner_aim(me, k as u8) + lateral;
         let target = match c.id {
             Self::CHASE => s.world.puck.pos + noise * CHASE_SCALE,
-            Self::DEFEND => self.defence_spot(s, me),
+            Self::DEFEND => self.defence_spot(s, me) + noise * DEFENCE_SCALE,
             id if Self::DEFENDS.contains(&id) => {
-                Self::guard(self.own_corner(me, k as u8), s.world.puck.pos)
+                Self::guard(self.own_corner(me, k as u8), s.world.puck.pos) + noise * DEFENCE_SCALE
             }
             id if (Self::FAKES.contains(&id) || id == Self::FAKE_BANK) && elapsed < SHOW_TICKS => {
                 self.show_point(s, me, c.shown.unwrap_or(1))

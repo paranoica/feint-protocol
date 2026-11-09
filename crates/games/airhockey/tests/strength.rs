@@ -4,11 +4,12 @@ use airhockey::analysis::{Frame, Tally, attempts, tally};
 use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, RunHeader, RunReport, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use opponents::{Reader, Recorder};
+use opponents::{Human, Reader, Recorder};
 
 const GOALS: u32 = 3;
 const CAP_TICKS: u64 = 240 * 600;
 const PANEL_BODY_LEVEL: u8 = 3;
+const HUMAN_NOISE: f64 = 0.04;
 
 fn params() -> Params {
     Params {
@@ -56,6 +57,7 @@ enum Side {
     Level(u8),
     Reader,
     Anticipator,
+    Human,
 }
 
 fn controller(side: Side, game: &AirHockey) -> Box<dyn Controller<AirHockey>> {
@@ -64,6 +66,7 @@ fn controller(side: Side, game: &AirHockey) -> Box<dyn Controller<AirHockey>> {
         Side::Level(l) => Box::new(bot(l, game)),
         Side::Reader => Box::new(Reader::new(params(), false)),
         Side::Anticipator => Box::new(Reader::new(params(), true)),
+        Side::Human => Box::new(Human::new(params(), HUMAN_NOISE)),
     }
 }
 
@@ -71,7 +74,7 @@ fn body(side: Side, game: &AirHockey) -> feint_protocol::BodyParamsT {
     let level = match side {
         Side::Level(l) => l,
         Side::Reader | Side::Anticipator => PANEL_BODY_LEVEL,
-        Side::Idle => 5,
+        Side::Idle | Side::Human => 5,
     };
     Difficulty::preset(level).unwrap().body(&game.spec())
 }
@@ -278,4 +281,133 @@ fn fakes_that_score_are_recorded_as_won() {
         "the faker should score against an opponent standing aside"
     );
     assert!(profile.fake_wins > 0.0, "no fake was ever recorded as won");
+}
+
+#[test]
+#[ignore = "probe"]
+fn probe_levels_against_the_human() {
+    for level in 1..=5u8 {
+        let (mut w, mut gf, mut ga) = (0, 0, 0);
+        for seed in 0..40u64 {
+            let me = (seed % 2) as usize;
+            let sides = if me == 0 {
+                [Side::Level(level), Side::Human]
+            } else {
+                [Side::Human, Side::Level(level)]
+            };
+            let r = record(seed, sides).0;
+            w += usize::from(won(&r, me));
+            gf += r.score[me];
+            ga += r.score[1 - me];
+        }
+        eprintln!("PROBE level {level}: won {w}/20, goals {gf}:{ga}");
+    }
+}
+
+fn share_against_human(d: Difficulty, seeds: u64) -> (u32, u32) {
+    let (mut gf, mut ga) = (0, 0);
+    for seed in 0..seeds {
+        let me = (seed % 2) as usize;
+        let mut game = AirHockey::new(params(), 3);
+        let spec = game.spec();
+        let mut bot = Bot::new(d, HockeyPlaybook::new(params()), &spec).unwrap();
+        let mut human = Human::new(params(), HUMAN_NOISE);
+        let bot_body = d.body(&spec);
+        let human_body = body(Side::Human, &game);
+        let (bodies, levels) = if me == 0 {
+            (vec![bot_body, human_body], [3, 0])
+        } else {
+            (vec![human_body, bot_body], [0, 3])
+        };
+        let header = RunHeader {
+            game_id: "airhockey".into(),
+            game_version: airhockey::GAME_VERSION,
+            seed,
+            bodies,
+            levels,
+        };
+        let r = if me == 0 {
+            run_match(&mut game, [&mut bot, &mut human], header, CAP_TICKS)
+        } else {
+            run_match(&mut game, [&mut human, &mut bot], header, CAP_TICKS)
+        }
+        .unwrap();
+        gf += r.score[me] as u32;
+        ga += r.score[1 - me] as u32;
+    }
+    (gf, ga)
+}
+
+#[test]
+#[ignore = "probe"]
+fn probe_what_makes_level_two() {
+    let one = Difficulty::preset(1).unwrap();
+    let two = Difficulty::preset(2).unwrap();
+    let variants: [(&str, Difficulty); 6] = [
+        ("level 1", one),
+        ("level 2", two),
+        (
+            "2 with reaction 400",
+            Difficulty {
+                reaction_ms: 400,
+                ..two
+            },
+        ),
+        (
+            "2 with physique 0.4",
+            Difficulty {
+                physique: 0.4,
+                ..two
+            },
+        ),
+        (
+            "2 with spread 0.08",
+            Difficulty {
+                spread: 0.08,
+                ..two
+            },
+        ),
+        (
+            "2 without strikes",
+            Difficulty {
+                repertoire: 0,
+                anticipate: false,
+                ..two
+            },
+        ),
+    ];
+    for (name, d) in variants {
+        let (gf, ga) = share_against_human(d, 20);
+        eprintln!("PROBE {name}: bot {gf} : {ga} human");
+    }
+}
+
+#[test]
+#[ignore = "probe"]
+fn probe_spread() {
+    for level in 2..=5u8 {
+        for spread in [0.06, 0.1, 0.14] {
+            let d = Difficulty {
+                spread,
+                ..Difficulty::preset(level).unwrap()
+            };
+            let (gf, ga) = share_against_human(d, 20);
+            eprintln!("PROBE level {level} spread {spread}: bot {gf} : {ga} human");
+        }
+    }
+}
+
+#[test]
+#[ignore = "probe"]
+fn probe_fakes() {
+    for level in [4u8, 5] {
+        eprintln!(
+            "PROBE level {level} vs human: {:?}",
+            bot_tally(level, Side::Human, 0..40)
+        );
+        eprintln!(
+            "PROBE level {level} vs reader: {:?}",
+            bot_tally(level, Side::Reader, 0..40)
+        );
+    }
 }

@@ -767,3 +767,41 @@ fn class_points_are_the_corner_aims_in_the_attackers_frame() {
     assert_eq!(p.class_point(1, 0), Vec2::new(-1.0, aim));
     assert_eq!(p.class_point(1, 9), Vec2::new(-1.0, -aim));
 }
+
+#[test]
+fn a_weaker_body_strikes_the_puck_softer() {
+    let params = Params::default();
+    let p = playbook();
+    let aim = Vec2::new(1.0, 0.0);
+    let exit = |physique: f64| {
+        let body = params
+            .body(
+                params.max_body_speed * physique,
+                params.max_body_accel * physique,
+            )
+            .unwrap();
+        let bodies = [body, Body::default()];
+        let mut world = World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.95, 0.45)),
+            ],
+        };
+        let mut top: f64 = 0.0;
+        for _ in 0..480 {
+            let state = Match::from_observed(params.clone(), bodies, world, 0, [0, 0], 0);
+            world.mallets[0].target = p.contact_target(&state, 0, aim);
+            world.tick(&params, &bodies);
+            top = top.max(world.puck.vel.length());
+        }
+        top
+    };
+    let (weak, strong) = (exit(0.4), exit(1.0));
+    let cap = params.puck_speed_cap;
+    assert!(
+        (weak - 0.4 * cap).abs() < 0.25 * 0.4 * cap,
+        "level-1 body hit at {weak} m/s"
+    );
+    assert!(strong > 0.9 * cap, "a full body hit at only {strong} m/s");
+}

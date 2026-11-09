@@ -10,7 +10,9 @@ pub(super) const LINE_TOLERANCE: f64 = 0.01;
 pub(super) const DEFENCE_DEPTH: f64 = 0.15;
 pub(super) const AIM_SCALE: f64 = 2.0;
 pub(super) const CHASE_SCALE: f64 = 0.5;
+pub(super) const DEFENCE_SCALE: f64 = 2.0;
 pub(super) const CONTACT_DRIVE: f64 = 0.15;
+pub(super) const MIN_DRIVE: f64 = 0.005;
 pub(super) const APPROACH_COS: f64 = 0.5;
 pub(super) const SIDE_SPEED: f64 = 0.3;
 pub(super) const SHOW_SIDE: f64 = 0.10;
@@ -56,10 +58,17 @@ impl HockeyPlaybook {
         let along = rel.dot(line);
         let lateral = (rel.x * line.y - rel.y * line.x).abs();
         if along < -reach && lateral < LINE_TOLERANCE {
-            puck + line * 0.15
+            puck + line * (self.drive(state, player) - reach)
         } else {
             self.set_up(state, player, aim)
         }
+    }
+
+    pub(super) fn drive(&self, state: &Match, player: PlayerId) -> f64 {
+        let body = state.bodies[usize::from(player.min(1))];
+        let power = (body.max_speed() / self.params.max_body_speed).clamp(0.0, 1.0);
+        let contact = power * self.params.puck_speed_cap / (1.0 + self.params.mallet_restitution);
+        (contact * contact / (2.0 * body.max_accel())).clamp(MIN_DRIVE, CONTACT_DRIVE)
     }
 
     pub(super) fn set_up(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
@@ -116,7 +125,7 @@ impl HockeyPlaybook {
             && (mallet - puck).dot(line) < 0.0
             && drift < SIDE_SPEED
         {
-            touch + approach * CONTACT_DRIVE
+            touch + approach * self.drive(state, player)
         } else {
             self.set_up(state, player, aim)
         }
