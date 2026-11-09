@@ -26,6 +26,61 @@ impl WebMatch {
             .map_err(|_| JsValue::from_str("this level takes no profile"))
     }
 
+    pub fn spectate(left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
+        Session::spectate(left, right, u64::from(seed))
+            .map(|session| WebMatch { session })
+            .map_err(|_| JsValue::from_str("unknown level"))
+    }
+
+    pub fn spectating(&self) -> bool {
+        self.session.spectating()
+    }
+
+    pub fn intent_of(&self, seat: u8) -> i32 {
+        self.session
+            .insight_of(seat)
+            .intent
+            .map_or(-1, |(intent, deceptive)| {
+                i32::from(intent) * 2 + i32::from(deceptive)
+            })
+    }
+
+    pub fn memory_of(&self, seat: u8) -> bool {
+        self.session.insight_of(seat).memory
+    }
+
+    pub fn likely_shot_of(&self, seat: u8) -> i32 {
+        self.session
+            .insight_of(seat)
+            .likely_shot
+            .map_or(-1, i32::from)
+    }
+
+    pub fn likely_cover_of(&self, seat: u8) -> Vec<i32> {
+        self.session
+            .insight_of(seat)
+            .likely_cover
+            .iter()
+            .map(|c| c.map_or(-1, i32::from))
+            .collect()
+    }
+
+    pub fn shown_of(&self, seat: u8) -> i32 {
+        self.session
+            .insight_of(seat)
+            .current
+            .and_then(|c| c.shown)
+            .map_or(-1, i32::from)
+    }
+
+    pub fn real_of(&self, seat: u8) -> i32 {
+        self.session
+            .insight_of(seat)
+            .current
+            .and_then(|c| c.real)
+            .map_or(-1, i32::from)
+    }
+
     pub fn profile(&self) -> Vec<u8> {
         self.session
             .profile()
@@ -72,45 +127,27 @@ impl WebMatch {
     }
 
     pub fn intent(&self) -> i32 {
-        self.session
-            .insight()
-            .intent
-            .map_or(-1, |(intent, deceptive)| {
-                i32::from(intent) * 2 + i32::from(deceptive)
-            })
+        self.intent_of(1)
     }
 
     pub fn memory(&self) -> bool {
-        self.session.insight().memory
+        self.memory_of(1)
     }
 
     pub fn likely_shot(&self) -> i32 {
-        self.session.insight().likely_shot.map_or(-1, i32::from)
+        self.likely_shot_of(1)
     }
 
     pub fn likely_cover(&self) -> Vec<i32> {
-        self.session
-            .insight()
-            .likely_cover
-            .iter()
-            .map(|c| c.map_or(-1, i32::from))
-            .collect()
+        self.likely_cover_of(1)
     }
 
     pub fn current_shown(&self) -> i32 {
-        self.session
-            .insight()
-            .current
-            .and_then(|c| c.shown)
-            .map_or(-1, i32::from)
+        self.shown_of(1)
     }
 
     pub fn current_real(&self) -> i32 {
-        self.session
-            .insight()
-            .current
-            .and_then(|c| c.real)
-            .map_or(-1, i32::from)
+        self.real_of(1)
     }
 
     pub fn table(&self) -> Vec<f32> {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { again, cleanNick, finish, first, start } from "../src/screens.ts";
+import { again, cleanNick, finish, first, start, watch } from "../src/screens.ts";
 
 test("level, game with score, result, again", () => {
   const level = first("ann");
@@ -35,4 +35,17 @@ test("control and direction characters are dropped from nicks", () => {
   assert.equal(cleanNick("a\u0007b"), "ab");
   assert.equal(cleanNick("a\u202eb\u2067c"), "abc");
   assert.equal(cleanNick("\u200f"), "player");
+});
+
+test("watching two bots goes from the menu to a result naming the winner", () => {
+  const level = first("ann");
+  const game = watch(level, 1, 5, "ann");
+  assert.deepEqual(game, { name: "game", nick: "ann", level: 5, watch: [1, 5] });
+  const result = finish(game, [2, 7]);
+  assert.deepEqual(result, { name: "result", nick: "ann", level: 5, score: [2, 7], watch: [1, 5] });
+  assert.deepEqual(again(result), { name: "level", nick: "ann" });
+  assert.equal(watch(level, 0, 5, "ann"), level);
+  assert.equal(watch(level, 3, 6, "ann"), level);
+  assert.equal(watch(game, 1, 2, "ann"), game, "only from the menu");
+  assert.equal(start(level, 2, "ann").watch, undefined, "a human game is not a watch");
 });

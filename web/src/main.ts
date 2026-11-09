@@ -4,8 +4,8 @@ import { idle, press, release, steers, type Drag } from "./drag.ts";
 import { fit, pixels, toCanvas, toTable, TABLE, type Fit, type Table } from "./geometry.ts";
 import { countdown, follow, goalBanner, shade } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
-import { describe } from "./overlay.ts";
-import { again, finish, first, start, type Screen } from "./screens.ts";
+import { cornerName, describe, describeBot, intentColor, LEGEND, type Insight } from "./overlay.ts";
+import { again, finish, first, start, watch, type Screen } from "./screens.ts";
 
 const TICK_CAP = 12;
 const NICK_KEY = "feint.nick";
@@ -19,6 +19,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("table");
 const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 const debugBox = $<HTMLPreElement>("debug");
+const debugLeft = $<HTMLPreElement>("debug-left");
+const WATCH_SPEEDS = [1, 2, 4];
 const dragHint = $<HTMLParagraphElement>("drag-hint");
 const params = new URLSearchParams(location.search);
 const speed = Math.max(1, Math.min(16, Number(params.get("speed")) || 1));
@@ -56,6 +58,8 @@ let scorer: 0 | 1 | null = null;
 let pauseFull = 1;
 let trail: Array<[number, number]> = [];
 let playing: { ticket: Ticket | null; profile: number | null } = { ticket: null, profile: null };
+let watching: [number, number] | null = null;
+let watchSpeed = 1;
 
 function readNick(): string {
   try {
@@ -94,6 +98,8 @@ function readColors(): Colors {
 
 function show(next: Screen) {
   screen = next;
+  debugBox.classList.toggle("right", watching !== null);
+  debugLeft.hidden = !showDebug || watching === null;
   for (const name of ["level", "game", "result"]) {
     $(name).hidden = screen.name !== name;
   }
@@ -102,9 +108,16 @@ function show(next: Screen) {
   }
   if (screen.name === "result") {
     const [you, bot] = screen.score;
-    $("verdict").textContent = you > bot ? "You win" : "Feint wins";
+    const pair = screen.watch;
+    $("verdict").textContent = pair
+      ? `Level ${you > bot ? pair[0] : pair[1]} (${you > bot ? "left" : "right"}) wins`
+      : you > bot
+        ? "You win"
+        : "Feint wins";
     $("verdict").style.color = you > bot ? colors.you : colors.bot;
-    $("final").textContent = `${you} : ${bot} · level ${screen.level} · ${screen.nick}`;
+    $("final").textContent = pair
+      ? `${you} : ${bot} · level ${pair[0]} vs level ${pair[1]}`
+      : `${you} : ${bot} · level ${screen.level} · ${screen.nick}`;
   }
 }
 
@@ -284,14 +297,15 @@ function draw(match: WebMatch, now: number) {
     ctx.drawImage(surface, 0, 0, rect.width, rect.height);
   }
   const p = match.positions();
-  mallet(p[4], p[5], colors.you);
-  mallet(p[8], p[9], colors.bot);
+  mallet(p[4], p[5], showDebug && watching ? intentColor(match.intent_of(0)) : colors.you);
+  mallet(p[8], p[9], showDebug ? intentColor(match.intent_of(1)) : colors.bot);
   puck(p[0], p[1]);
   const big = Math.max(24, view.scale * 0.08);
   const banner = goalBanner(match.serve_pause(), pauseFull, scorer);
   if (banner) {
     const color = banner.side === 0 ? colors.you : colors.bot;
-    centreText(banner.text, color, big);
+    const text = watching ? `Level ${watching[banner.side]} scores` : banner.text;
+    centreText(text, color, big);
     const [cx, cy] = at(0, 0);
     const width = view.scale * 0.5;
     ctx.fillStyle = "rgba(255,255,255,0.12)";
@@ -308,7 +322,55 @@ function draw(match: WebMatch, now: number) {
   }
 }
 
+function insightOf(match: WebMatch, seat: number): Insight {
+  return {
+    intent: match.intent_of(seat),
+    memory: match.memory_of(seat),
+    likelyShot: match.likely_shot_of(seat),
+    likelyCover: Array.from(match.likely_cover_of(seat)),
+    shown: match.shown_of(seat),
+    real: match.real_of(seat),
+  };
+}
+
+function cornerNames(match: WebMatch, attacker: number): string[] {
+  return [0, 1, 2].map((k) => cornerName(match.class_point(attacker, k)[1], view.horizontal));
+}
+
+function mark(match: WebMatch, attacker: number, cls: number, color: string, filled: boolean) {
+  if (cls < 0) {
+    return;
+  }
+  const [x, y] = Array.from(match.class_point(attacker, cls));
+  const [cx, cy] = at(x, y);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  if (filled) {
+    ctx.fillRect(cx - 6, cy - 6, 12, 12);
+  } else {
+    ctx.strokeRect(cx - 8, cy - 8, 16, 16);
+  }
+}
+
+function drawWatchDebug(match: WebMatch, pair: [number, number]) {
+  const boxes = [debugLeft, debugBox];
+  for (const seat of [0, 1]) {
+    const insight = insightOf(match, seat);
+    const label = `${seat === 0 ? "left" : "right"} · level ${pair[seat]}`;
+    const lines = describeBot(label, insight, cornerNames(match, seat), cornerNames(match, 1 - seat));
+    boxes[seat].textContent = (seat === 0 ? [LEGEND, ...lines] : lines).join("\n");
+    const color = intentColor(insight.intent);
+    mark(match, seat, insight.shown, color, false);
+    mark(match, seat, insight.real, color, true);
+  }
+}
+
 function drawDebug(match: WebMatch) {
+  if (watching) {
+    drawWatchDebug(match, watching);
+    return;
+  }
   const insight = {
     intent: match.intent(),
     memory: match.memory(),
@@ -317,25 +379,10 @@ function drawDebug(match: WebMatch) {
     shown: match.current_shown(),
     real: match.current_real(),
   };
-  debugBox.textContent = describe(insight).join("\n");
-  const mark = (attacker: number, cls: number, color: string, filled: boolean) => {
-    if (cls < 0) {
-      return;
-    }
-    const [x, y] = Array.from(match.class_point(attacker, cls));
-    const [cx, cy] = at(x, y);
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 2;
-    if (filled) {
-      ctx.fillRect(cx - 6, cy - 6, 12, 12);
-    } else {
-      ctx.strokeRect(cx - 8, cy - 8, 16, 16);
-    }
-  };
-  mark(0, insight.likelyShot, colors.you, false);
-  mark(1, insight.shown, colors.bot, false);
-  mark(1, insight.real, colors.bot, true);
+  debugBox.textContent = [LEGEND, ...describe(insight)].join("\n");
+  mark(match, 0, insight.likelyShot, colors.you, false);
+  mark(match, 1, insight.shown, colors.bot, false);
+  mark(match, 1, insight.real, colors.bot, true);
 }
 
 function step(match: WebMatch, now: number) {
@@ -343,7 +390,8 @@ function step(match: WebMatch, now: number) {
     clock = makeClock();
     return;
   }
-  const ticks = due(clock, now, document.hidden, match.tick_hz(), TICK_CAP * speed, speed);
+  const rate = speed * (watching ? watchSpeed : 1);
+  const ticks = due(clock, now, document.hidden, match.tick_hz(), TICK_CAP * rate, rate);
   for (let done = 0; done < ticks; ) {
     if (match.tick() >= pointerTick + POINTER_TICKS) {
       match.set_pointer(pointer[0], pointer[1]);
@@ -377,7 +425,11 @@ function frame(now: number) {
       game = null;
       endDrag();
       show(finish(screen, [you, bot]));
-      void upload(lastRecord);
+      if (watching) {
+        $("saved").textContent = "";
+      } else {
+        void upload(lastRecord);
+      }
     }
   }
   requestAnimationFrame(frame);
@@ -443,10 +495,20 @@ async function begin(level: number) {
     playing = { ticket, profile: null };
     game = new WebMatch(level, seed);
   }
+  watching = null;
   pointerTick = -Infinity;
   starting = false;
   $("saved").textContent = "";
-  const [halfLength, halfWidth, mouth, puckR, malletR] = Array.from(game.table());
+  setUp(game);
+  dragHint.hidden = false;
+  $("who").textContent = next.nick;
+  $("lvl").textContent = `level ${level}`;
+  show(next);
+  resize();
+}
+
+function setUp(match: WebMatch) {
+  const [halfLength, halfWidth, mouth, puckR, malletR] = Array.from(match.table());
   table = { halfLength, halfWidth };
   sizes = { mouth, puck: puckR, mallet: malletR };
   clock = makeClock();
@@ -454,9 +516,28 @@ async function begin(level: number) {
   scorer = null;
   trail = [];
   startAt = performance.now() + 3 * COUNTDOWN_STEP;
-  dragHint.hidden = false;
-  $("who").textContent = next.nick;
-  $("lvl").textContent = `level ${level}`;
+}
+
+function speedLabel(): string {
+  return watching ? `level ${watching[1]} · ×${watchSpeed} (F)` : "";
+}
+
+function beginWatch() {
+  const left = Number($<HTMLSelectElement>("watch-left").value);
+  const right = Number($<HTMLSelectElement>("watch-right").value);
+  const next = watch(screen, left, right, $<HTMLInputElement>("nick").value);
+  if (next.name !== "game" || starting) {
+    return;
+  }
+  game = WebMatch.spectate(left, right, localSeed(Math.random));
+  playing = { ticket: null, profile: null };
+  watching = [left, right];
+  watchSpeed = 1;
+  $("saved").textContent = "";
+  setUp(game);
+  dragHint.hidden = true;
+  $("who").textContent = `level ${left}`;
+  $("lvl").textContent = speedLabel();
   show(next);
   resize();
 }
@@ -468,6 +549,9 @@ function endDrag() {
 
 function main() {
   canvas.addEventListener("pointerdown", (e) => {
+    if (watching) {
+      return;
+    }
     const primary = e.isPrimary && (e.pointerType !== "mouse" || e.button === 0);
     const next = press(drag, e.pointerId, primary);
     if (next === drag) {
@@ -507,6 +591,11 @@ function main() {
     if (e.key === "d" || e.key === "D") {
       showDebug = !showDebug;
       debugBox.hidden = !showDebug;
+      debugLeft.hidden = !showDebug || !watching;
+    }
+    if ((e.key === "f" || e.key === "F") && watching) {
+      watchSpeed = WATCH_SPEEDS[(WATCH_SPEEDS.indexOf(watchSpeed) + 1) % WATCH_SPEEDS.length];
+      $("lvl").textContent = speedLabel();
     }
   });
 }
@@ -519,6 +608,9 @@ async function boot() {
     button.disabled = false;
   }
   $("again").addEventListener("click", () => show(again(screen)));
+  const watchButton = $<HTMLButtonElement>("watch");
+  watchButton.addEventListener("click", () => beginWatch());
+  watchButton.disabled = false;
   Object.assign(window, { feintRecord: () => lastRecord, feintPositions: () => game?.positions() ?? null });
   show(screen);
   requestAnimationFrame(frame);

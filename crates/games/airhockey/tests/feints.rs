@@ -239,26 +239,32 @@ fn stalled(puck: Vec2, mallets: [Vec2; 2], stall_ticks: u32) -> Match {
 }
 
 #[test]
-fn the_show_point_stands_to_one_side_behind_the_puck() {
+fn the_show_point_winds_up_on_a_wide_line_and_the_pump_stops_short() {
     let p = playbook();
     for me in [0u8, 1] {
-        let state = scene(
-            side(me, Vec2::new(-0.4, 0.0)),
-            [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)],
-            [0, 0],
-        );
+        let puck = side(me, Vec2::new(-0.4, 0.0));
+        let state = scene(puck, [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)], [0, 0]);
         let params = Params::default();
         let reach = params.puck_radius + params.mallet_radius;
-        let right = p.show_point(&state, me, 0);
-        let left = p.show_point(&state, me, 2);
-        assert!(
-            (right - side(me, Vec2::new(-0.4 - (reach + 0.04), 0.10))).length() < 1e-9,
-            "side {me}: {right:?}"
-        );
-        assert!(
-            (left - side(me, Vec2::new(-0.4 - (reach + 0.04), -0.10))).length() < 1e-9,
-            "side {me}: {left:?}"
-        );
+        for (shown, wide) in [(0u8, -0.3), (2, 0.3)] {
+            let aim = side(me, Vec2::new(1.0, wide));
+            let back = unit(aim - puck) * -1.0;
+            let show = p.show_point(&state, me, shown);
+            let pump = p.pump_point(&state, me, shown);
+            assert!(
+                (show - (puck + back * (reach + 0.2))).length() < 1e-9,
+                "side {me}, shown {shown}: {show:?}"
+            );
+            assert!(
+                (pump - (puck + back * (reach + 0.02))).length() < 1e-9,
+                "side {me}, shown {shown}: {pump:?}"
+            );
+            let lateral = side(me, show - puck).y;
+            assert!(
+                lateral * wide < 0.0 && lateral.abs() > 0.06,
+                "side {me}: the wind-up must sit visibly on the far side: {lateral}"
+            );
+        }
     }
 }
 
@@ -320,6 +326,7 @@ fn feints_are_offered_with_their_signals_and_dashes_follow_a_twitch() {
         let cue = Cue {
             pace: 1.0,
             twitch: Some(twitch),
+            held: None,
         };
         p.options(&state, 0, 2, &cue, &mut out);
         let d = found(&out, HockeyPlaybook::DASHES[dash]).expect("a dash away from the twitch");
@@ -342,15 +349,23 @@ fn feints_are_offered_with_their_signals_and_dashes_follow_a_twitch() {
         "repertoire 1 has no feints"
     );
 
-    for speed in [1.5, 0.5] {
+    for speed in [3.0, 1.5, 0.5] {
         let mut moving = state.clone();
         moving.world.puck.vel = Vec2::new(0.0, speed);
         p.options(&moving, 0, 2, &Cue::default(), &mut out);
-        let controlled = speed < 1.0;
+        let corner_fake = out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id));
+        let held = out
+            .iter()
+            .any(|c| c.id == HockeyPlaybook::HOLD || c.id == HockeyPlaybook::FAKE_BANK);
         assert_eq!(
-            out.iter().any(|c| c.deceptive),
-            controlled,
-            "puck speed {speed}"
+            corner_fake,
+            speed < 2.5,
+            "corner fakes at puck speed {speed}"
+        );
+        assert_eq!(
+            held,
+            speed < 1.0,
+            "holds and bank fakes at puck speed {speed}"
         );
         assert!(
             found(&out, HockeyPlaybook::STRIKES[1]).is_some(),
@@ -385,7 +400,7 @@ fn option(state: &Match, cue: &Cue, id: u16) -> Choice {
 #[test]
 fn a_fake_wind_up_shows_one_side_then_shoots_the_other() {
     let state = scene(
-        Vec2::new(-0.4, 0.0),
+        Vec2::new(-0.25, 0.0),
         [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
         [0, 0],
     );
@@ -451,7 +466,10 @@ fn a_slow_rally_waits_before_striking() {
         [0, 0],
     );
     let contact = |pace: f32| {
-        let cue = Cue { pace, twitch: None };
+        let cue = Cue {
+            pace,
+            ..Cue::default()
+        };
         let strike = option(&state, &cue, HockeyPlaybook::STRIKES[0]);
         let (worlds, _) = run_choice(&state, &strike, 360);
         worlds
@@ -612,6 +630,7 @@ fn every_class_can_be_shown_falsely_and_dashes_need_a_real_twitch() {
             &Cue {
                 pace: 1.0,
                 twitch: Some(twitch),
+                held: None,
             },
             &mut out,
         );
@@ -665,6 +684,7 @@ fn a_dash_strikes_into_the_corner_away_from_the_twitch() {
     let cue = Cue {
         pace: 1.0,
         twitch: Some(0),
+        held: None,
     };
     let dash = option(&state, &cue, HockeyPlaybook::DASHES[2]);
     let (worlds, _) = run_choice(&state, &dash, 240);
@@ -766,4 +786,190 @@ fn class_points_are_the_corner_aims_in_the_attackers_frame() {
     assert_eq!(p.class_point(0, 2), Vec2::new(1.0, aim));
     assert_eq!(p.class_point(1, 0), Vec2::new(-1.0, aim));
     assert_eq!(p.class_point(1, 9), Vec2::new(-1.0, -aim));
+}
+
+#[test]
+fn a_weaker_body_strikes_the_puck_softer() {
+    let params = Params::default();
+    let p = playbook();
+    let aim = Vec2::new(1.0, 0.0);
+    let exit = |physique: f64| {
+        let body = params
+            .body(
+                params.max_body_speed * physique,
+                params.max_body_accel * physique,
+            )
+            .unwrap();
+        let bodies = [body, Body::default()];
+        let mut world = World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.95, 0.45)),
+            ],
+        };
+        let mut top: f64 = 0.0;
+        let mut since: Option<u32> = None;
+        for t in 0..480 {
+            let state = Match::from_observed(params.clone(), bodies, world, 0, [0, 0], 0);
+            world.mallets[0].target = p.contact_target(&state, 0, aim);
+            world.tick(&params, &bodies);
+            if world.puck.vel.length() > 0.3 && since.is_none() {
+                since = Some(t);
+            }
+            if since.is_some_and(|s| t <= s + 24) {
+                top = top.max(world.puck.vel.length());
+            }
+        }
+        top
+    };
+    let (weak, strong) = (exit(0.4), exit(1.0));
+    let cap = params.puck_speed_cap;
+    assert!(
+        (weak - 0.4 * cap).abs() < 0.25 * 0.4 * cap,
+        "level-1 body hit at {weak} m/s"
+    );
+    assert!(strong > 0.9 * cap, "a full body hit at only {strong} m/s");
+}
+
+#[test]
+fn a_fake_from_deep_nudges_the_puck_forward_and_fires_from_close_range() {
+    for me in [0u8, 1] {
+        let state = scene(
+            side(me, Vec2::new(-0.6, 0.05)),
+            if me == 0 {
+                [Vec2::new(-0.85, 0.0), Vec2::new(0.95, -0.45)]
+            } else {
+                [Vec2::new(-0.95, 0.45), Vec2::new(0.85, 0.0)]
+            },
+            [0, 0],
+        );
+        let mut out = Vec::new();
+        playbook().options(&state, me, 2, &Cue::default(), &mut out);
+        let fake = out
+            .into_iter()
+            .find(|c| c.id == HockeyPlaybook::FAKES[0])
+            .expect("offered");
+        let params = Params::default();
+        let p = playbook();
+        let game = AirHockey::new(params.clone(), 4);
+        let mut s = state.clone();
+        let mut worlds = Vec::new();
+        for t in 0..480u64 {
+            let mine = p.act(&s, me, &fake, t, [0.0; 2]);
+            s = game.simulate(&s, &[mine], 1);
+            worlds.push(s.world);
+            if s.score() != [0, 0] {
+                break;
+            }
+        }
+        let forward = |w: &World| side(me, w.puck.pos).x;
+        let strike = worlds
+            .iter()
+            .position(|w| w.puck.vel.length() > 0.6 * params.puck_speed_cap)
+            .unwrap_or_else(|| panic!("side {me}: never struck hard"));
+        let before = &worlds[..strike];
+        assert!(
+            before.iter().any(|w| w.puck.vel.length() > 0.2),
+            "side {me}: the puck was not nudged before the strike"
+        );
+        let at = worlds[strike];
+        assert!(
+            forward(&at) >= -0.35,
+            "side {me}: struck from deep, x {}",
+            forward(&at)
+        );
+        let shown = before
+            .iter()
+            .filter(|w| {
+                let rel = side(me, w.mallets[usize::from(me)].pos - w.puck.pos);
+                rel.x < 0.0 && rel.y > 0.06
+            })
+            .count();
+        assert!(shown >= 30, "side {me}: shown for only {shown} ticks");
+        let (pos, vel) = (side(me, at.puck.pos), side(me, at.puck.vel));
+        assert!(
+            lands_in_corner(pos, vel, 1.0),
+            "side {me}: shown right, so the left corner: {vel:?} at {pos:?}"
+        );
+    }
+}
+
+#[test]
+fn a_fake_winds_up_pumps_short_of_the_puck_then_fires_the_other_corner() {
+    let params = Params::default();
+    let reach = params.puck_radius + params.mallet_radius;
+    let state = scene(
+        Vec2::new(-0.25, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
+        [0, 0],
+    );
+    let fake = option(&state, &Cue::default(), HockeyPlaybook::FAKES[0]);
+    let (worlds, _) = run_choice(&state, &fake, 480);
+    let strike = worlds
+        .iter()
+        .position(|w| w.puck.vel.length() > 0.6 * params.puck_speed_cap)
+        .expect("struck hard");
+    let before = &worlds[..strike];
+    let gap = |w: &World| (w.mallets[0].pos - w.puck.pos).length();
+    let pump = before
+        .iter()
+        .position(|w| gap(w) < reach + 0.04 && w.puck.vel.length() < 0.3)
+        .expect("no pump that comes up to the puck");
+    assert!(
+        before[pump..].iter().any(|w| gap(w) > reach + 0.08),
+        "the pump went on into the puck instead of stopping short"
+    );
+    assert!(
+        before[..pump].iter().any(|w| {
+            let rel = w.mallets[0].pos - w.puck.pos;
+            gap(w) > reach + 0.15 && rel.x < 0.0 && rel.y > 0.06
+        }),
+        "no wind-up far back on the shown side before the pump"
+    );
+    let at = worlds[strike];
+    assert!(
+        lands_in_corner(at.puck.pos, at.puck.vel, 1.0),
+        "shown right, fired left: {:?} at {:?}",
+        at.puck.vel,
+        at.puck.pos
+    );
+}
+
+#[test]
+fn a_fake_under_way_stays_offered_where_a_new_one_would_not_start() {
+    let p = playbook();
+    let mut fast = scene(
+        Vec2::new(-0.3, 0.35),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)],
+        [0, 0],
+    );
+    fast.world.puck.vel = Vec2::new(3.0, 0.0);
+    let mut out = Vec::new();
+    p.options(&fast, 0, 2, &Cue::default(), &mut out);
+    assert!(
+        !out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id)),
+        "no new fake on a fast puck by the rail"
+    );
+    let held = Cue {
+        held: Some(HockeyPlaybook::FAKES[1]),
+        ..Cue::default()
+    };
+    p.options(&fast, 0, 2, &held, &mut out);
+    let ids: Vec<u16> = out.iter().map(|c| c.id).collect();
+    assert!(
+        ids.contains(&HockeyPlaybook::FAKES[1]),
+        "the fake under way: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&HockeyPlaybook::FAKES[0]),
+        "only the one under way: {ids:?}"
+    );
+    let mut gone = fast.clone();
+    gone.world.puck.pos = Vec2::new(0.3, 0.0);
+    p.options(&gone, 0, 2, &held, &mut out);
+    assert!(
+        !out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id)),
+        "a puck that left the half ends the fake"
+    );
 }

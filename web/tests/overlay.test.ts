@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, intentName } from "../src/overlay.ts";
+import { cornerName, describe, describeBot, intentColor, intentName } from "../src/overlay.ts";
 
 test("intents read as fake, strike, defend", () => {
   assert.equal(intentName(-1), "waiting");
@@ -33,4 +33,38 @@ test("the bot's classes are named from the human's side of the table", () => {
 test("a strike that shows nothing says so", () => {
   const lines = describe({ intent: 2, memory: false, likelyShot: -1, likelyCover: [], shown: -1, real: 1 });
   assert.equal(lines[1], "showing nothing, playing centre");
+});
+
+test("the bot's colour in the debug view follows its intent", () => {
+  assert.equal(intentColor(3), "#facc15", "a fake is yellow");
+  assert.equal(intentColor(2), "#ef4444", "an honest strike is red");
+  assert.equal(intentColor(4), "#a78bfa", "defending is violet");
+  assert.equal(intentColor(0), "#94a3b8", "moving is grey");
+  assert.equal(intentColor(-1), "#94a3b8", "waiting is grey");
+  assert.equal(new Set([3, 2, 4, 0].map(intentColor)).size, 4, "four distinct colours");
+});
+
+test("a watched bot's mind is told with screen-side corner names", () => {
+  const names = ["bottom", "middle", "top"];
+  const theirs = ["top", "middle", "bottom"];
+  assert.deepEqual(
+    describeBot("left", { intent: 3, memory: true, likelyShot: 0, likelyCover: [2, -1, 0], shown: 0, real: 2 }, names, theirs),
+    [
+      "left: fake",
+      "showing bottom, playing top",
+      "expects the other's shot: top",
+      "shows bottom → other covers top",
+      "shows middle → other covers unsure",
+      "shows top → other covers bottom",
+    ],
+  );
+  assert.deepEqual(
+    describeBot("right", { intent: 4, memory: false, likelyShot: -1, likelyCover: [], shown: -1, real: -1 }, names, theirs),
+    ["right: defend", "model: none at this level"],
+  );
+  assert.equal(cornerName(0.08, true), "top");
+  assert.equal(cornerName(-0.08, true), "bottom");
+  assert.equal(cornerName(0.08, false), "left");
+  assert.equal(cornerName(-0.08, false), "right");
+  assert.equal(cornerName(0.001, true), "middle");
 });

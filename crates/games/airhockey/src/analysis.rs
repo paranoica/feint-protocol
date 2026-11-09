@@ -11,6 +11,8 @@ const SHOW_MIN: f64 = 0.06;
 const SHIFT_MIN: f64 = 0.03;
 const CONTACT_SLACK: f64 = 0.01;
 const SCORE_WINDOW_TICKS: u64 = 240;
+const RETURN_SLACK: f64 = 0.02;
+const STRIKE_TAIL_TICKS: u64 = 12;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
@@ -133,9 +135,16 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
         let found = runs(&actions, player);
         for run in &found {
             let window = span(frames, run.start.saturating_add(1), run.until);
+            let answered = window
+                .clone()
+                .find(|&k| starts[k][them])
+                .map_or(u64::MAX, |k| frames[k].tick);
+            let tail = run.end.saturating_add(STRIKE_TAIL_TICKS);
             let contact = window
                 .clone()
-                .find(|&k| starts[k][me])
+                .rev()
+                .find(|&k| starts[k][me] && frames[k].tick <= tail && frames[k].tick < answered)
+                .or_else(|| window.clone().find(|&k| starts[k][me]))
                 .map(|k| frames[k].tick);
             let mut shown = None;
             let mut widest = 0.0;
@@ -171,10 +180,19 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
             }
             let goal = frames[k].tick;
             let recent = span(frames, goal.saturating_sub(SCORE_WINDOW_TICKS), goal);
-            let Some(last) = recent.rev().find(|&j| starts[j][0] || starts[j][1]) else {
+            let Some(last) = recent.rev().find(|&j| starts[j][me]) else {
                 continue;
             };
             if starts[last][them] {
+                continue;
+            }
+            let mut furthest = f64::NEG_INFINITY;
+            let turned = frames[last..k].iter().any(|f| {
+                let x = seen(player, f.puck).x;
+                furthest = furthest.max(x);
+                x < furthest - RETURN_SLACK
+            });
+            if turned {
                 continue;
             }
             let touched = frames[last].tick;

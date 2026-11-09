@@ -19,3 +19,4 @@ node_modules/
 .review/findings.json
 .claude/cache/
 /web/src/wasm/
+/data-trial/

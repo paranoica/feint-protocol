@@ -56,26 +56,38 @@ fn level_one_drives_at_the_puck_and_touches_it() {
     }
 }
 
+fn game_with_puck(puck: Vec2) -> AirHockey {
+    let mut g = game(0, [2, 2]);
+    g.game_mut().world.puck = Puck::at_rest(puck);
+    g
+}
+
 #[test]
 fn level_two_defends_when_the_puck_is_away() {
     for me in [0u8, 1] {
-        let mut game = game(0, [2, 2]);
         let puck = side(me, Vec2::new(0.5, 0.2));
-        game.game_mut().world.puck = Puck::at_rest(puck);
-        let mut level_two = bot(2, &game, me, 3);
-        play(&mut game, &mut level_two, me, 480);
         let goal = side(me, Vec2::new(-1.0, 0.0));
         let dir = (puck - goal) * (1.0 / (puck - goal).length());
         let spot = goal + dir * 0.15;
-        let mallet = game.live().world.mallets[usize::from(me)].pos;
-        assert!(
-            (mallet - spot).length() < 0.05,
-            "side {me}: {mallet:?} vs {spot:?}"
-        );
-        assert_eq!(
-            level_two.current().map(|c| c.id),
-            Some(HockeyPlaybook::DEFEND)
-        );
+        let preset = Difficulty::preset(2).unwrap();
+        let error = 2.0 * 2.0f64.sqrt() * preset.spread;
+        for (spread, slack) in [(0.0, 0.05), (preset.spread, 0.05 + error)] {
+            let mut g = game_with_puck(puck);
+            let d = Difficulty { spread, ..preset };
+            let mut level_two =
+                Bot::new(d, HockeyPlaybook::new(Params::default()), &g.spec()).unwrap();
+            level_two.new_match(&g.spec(), me, 3);
+            play(&mut g, &mut level_two, me, 480);
+            let mallet = g.live().world.mallets[usize::from(me)].pos;
+            assert!(
+                (mallet - spot).length() < slack,
+                "side {me}, spread {spread}: {mallet:?} vs {spot:?}"
+            );
+            assert_eq!(
+                level_two.current().map(|c| c.id),
+                Some(HockeyPlaybook::DEFEND)
+            );
+        }
     }
 }
 
@@ -152,8 +164,9 @@ fn bots_keep_their_level_body() {
     let mut events = Vec::new();
     let mut top = [0.0f64; 2];
     let limits = [bodies[0].max_accel(), bodies[1].max_accel()];
-    let reach = 0.04 + 0.05;
+    let reach = Params::default().puck_radius + Params::default().mallet_radius;
     let dt = 1.0 / 240.0;
+    let mut near_until = [0u64; 2];
     for _ in 0..240 * 180 {
         if game.live().is_over() {
             break;
@@ -171,7 +184,11 @@ fn bots_keep_their_level_body() {
             top[i] = top[i].max(after.mallets[i].vel.length());
             let clear =
                 |w: &airhockey::World| (w.puck.pos - w.mallets[i].pos).length() > reach + 0.1;
-            if clear(&before) && clear(&after) {
+            let tick = game.live().tick();
+            if !clear(&before) || !clear(&after) {
+                near_until[i] = tick + 24;
+            }
+            if tick > near_until[i] {
                 let dv = (after.mallets[i].vel - before.mallets[i].vel).length();
                 assert!(
                     dv <= limits[i] * dt * (1.0 + 1e-9),

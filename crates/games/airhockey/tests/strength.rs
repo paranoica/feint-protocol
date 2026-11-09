@@ -4,11 +4,12 @@ use airhockey::analysis::{Frame, Tally, attempts, tally};
 use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, RunHeader, RunReport, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use opponents::{Reader, Recorder};
+use opponents::{Human, Reader, Recorder};
 
 const GOALS: u32 = 3;
 const CAP_TICKS: u64 = 240 * 600;
 const PANEL_BODY_LEVEL: u8 = 3;
+const HUMAN_NOISE: f64 = 0.04;
 
 fn params() -> Params {
     Params {
@@ -17,9 +18,9 @@ fn params() -> Params {
     }
 }
 
-fn bot(level: u8, game: &AirHockey) -> Bot<AirHockey, HockeyPlaybook> {
+fn bot(level: u8, game: &AirHockey, p: &Params) -> Bot<AirHockey, HockeyPlaybook> {
     let d = Difficulty::preset(level).unwrap();
-    Bot::new(d, HockeyPlaybook::new(params()), &game.spec()).unwrap()
+    Bot::new(d, HockeyPlaybook::new(p.clone()), &game.spec()).unwrap()
 }
 
 struct Idle;
@@ -56,14 +57,16 @@ enum Side {
     Level(u8),
     Reader,
     Anticipator,
+    Human,
 }
 
-fn controller(side: Side, game: &AirHockey) -> Box<dyn Controller<AirHockey>> {
+fn controller(side: Side, game: &AirHockey, p: &Params) -> Box<dyn Controller<AirHockey>> {
     match side {
         Side::Idle => Box::new(Idle),
-        Side::Level(l) => Box::new(bot(l, game)),
-        Side::Reader => Box::new(Reader::new(params(), false)),
-        Side::Anticipator => Box::new(Reader::new(params(), true)),
+        Side::Level(l) => Box::new(bot(l, game, p)),
+        Side::Reader => Box::new(Reader::new(p.clone(), false)),
+        Side::Anticipator => Box::new(Reader::new(p.clone(), true)),
+        Side::Human => Box::new(Human::new(p.clone(), HUMAN_NOISE)),
     }
 }
 
@@ -71,18 +74,22 @@ fn body(side: Side, game: &AirHockey) -> feint_protocol::BodyParamsT {
     let level = match side {
         Side::Level(l) => l,
         Side::Reader | Side::Anticipator => PANEL_BODY_LEVEL,
-        Side::Idle => 5,
+        Side::Idle | Side::Human => 5,
     };
     Difficulty::preset(level).unwrap().body(&game.spec())
 }
 
 fn record(seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
+    record_with(&params(), seed, sides)
+}
+
+fn record_with(p: &Params, seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
     let level = |s: Side| match s {
         Side::Level(l) => l,
         _ => 0,
     };
     let levels = sides.map(level);
-    let mut game = AirHockey::new(params(), levels[0].max(1));
+    let mut game = AirHockey::new(p.clone(), levels[0].max(1));
     let header = RunHeader {
         game_id: "airhockey".into(),
         game_version: airhockey::GAME_VERSION,
@@ -90,8 +97,8 @@ fn record(seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
         bodies: sides.iter().map(|&s| body(s, &game)).collect(),
         levels,
     };
-    let mut first = controller(sides[0], &game);
-    let mut second = controller(sides[1], &game);
+    let mut first = controller(sides[0], &game, p);
+    let mut second = controller(sides[1], &game, p);
     let mut recorder = Recorder {
         inner: first.as_mut(),
         frames: Vec::new(),
@@ -174,25 +181,22 @@ fn bot_tally(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> Tally {
 
 #[test]
 #[ignore = "release only: bedrock cmd strength"]
-fn a_reader_bites_on_fakes_in_the_log() {
-    let t = bot_tally(4, Side::Reader, 0..40);
-    eprintln!("level 4 against a reader: {t:?}");
-    assert!(t.fakes >= 10, "only {} fakes in 40 matches", t.fakes);
-    assert!(
-        2 * t.shifted >= t.fakes,
-        "the reader shifted towards the shown side in {} of {} fakes",
-        t.shifted,
-        t.fakes
-    );
-    let rate = |goals: u32, tries: u32| f64::from(goals) / f64::from(tries.max(1));
-    assert!(
-        rate(t.fake_goals, t.fakes) > rate(t.honest_goals, t.honest),
-        "fakes scored {}/{}, honest strikes {}/{}",
-        t.fake_goals,
-        t.fakes,
-        t.honest_goals,
-        t.honest
-    );
+fn fakes_are_frequent_and_a_human_bites_on_them() {
+    for level in [4u8, 5] {
+        let t = bot_tally(level, Side::Human, 0..40);
+        eprintln!("level {level} against the human model: {t:?}");
+        assert!(
+            t.fakes >= 80,
+            "level {level} played only {} fakes in 40 matches",
+            t.fakes
+        );
+        assert!(
+            5 * t.shifted >= 2 * t.fakes,
+            "the human model bit on {} of {} fakes",
+            t.shifted,
+            t.fakes
+        );
+    }
 }
 
 fn wins(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> usize {
@@ -209,17 +213,59 @@ fn wins(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> usize {
         .sum()
 }
 
+fn against_the_human(level: u8) -> (usize, u32, u32) {
+    let seven = Params {
+        goals_to_win: 7,
+        ..params()
+    };
+    let (mut won_matches, mut goals, mut against) = (0, 0, 0);
+    for seed in 0..40u64 {
+        let me = (seed % 2) as usize;
+        let sides = if me == 0 {
+            [Side::Level(level), Side::Human]
+        } else {
+            [Side::Human, Side::Level(level)]
+        };
+        let report = record_with(&seven, seed, sides).0;
+        won_matches += usize::from(won(&report, me));
+        goals += report.score[me] as u32;
+        against += report.score[1 - me] as u32;
+    }
+    (won_matches, goals, against)
+}
+
 #[test]
 #[ignore = "release only: bedrock cmd strength"]
-fn each_level_beats_the_level_below() {
-    for (below, level) in [(2u8, 3u8), (3, 4), (4, 5)] {
-        let won = wins(level, Side::Level(below), 0..40);
-        eprintln!("level {level} won {won} of 40 against level {below}");
-        assert!(
-            won >= 24,
-            "level {level} won only {won} of 40 against level {below}"
+fn the_levels_climb_against_a_human_model() {
+    let share = |(_, goals, against): (usize, u32, u32)| {
+        f64::from(goals) / f64::from((goals + against).max(1))
+    };
+    let ladder: Vec<(usize, u32, u32)> = (1..=5).map(against_the_human).collect();
+    for (level, row) in (1..=5).zip(&ladder) {
+        eprintln!(
+            "level {level}: won {} of 40, goals {}:{}, share {:.2}",
+            row.0,
+            row.1,
+            row.2,
+            share(*row)
         );
     }
+    assert!(ladder[0].0 <= 10, "the human model must beat level 1");
+    assert!(ladder[1].0 >= 24, "level 2 must win most matches");
+    assert!(
+        share(ladder[1]) <= 0.85,
+        "the human model must still score on level 2"
+    );
+    for pair in ladder.windows(2) {
+        assert!(
+            share(pair[1]) > share(pair[0]),
+            "a level is not stronger than the one below: {pair:?}"
+        );
+    }
+    assert!(
+        share(ladder[4]) >= share(ladder[1]) + 0.1,
+        "level 5 is not clearly above level 2"
+    );
 }
 
 #[test]
@@ -253,6 +299,7 @@ fn fakes_that_score_are_recorded_as_won() {
     let mut d = Difficulty::preset(5).unwrap();
     d.deception = 1.0;
     d.adaptation = 0.0;
+    d.depth = 1;
     let long = Params {
         goals_to_win: 7,
         ..params()

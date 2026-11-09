@@ -10,9 +10,9 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS,
-    MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack,
-    frame,
+    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, DEFENCE_SCALE, FAKE_LANE, FAKE_SPEED,
+    HOLD_RESERVE_SECONDS, HOLD_TICKS, MIN_BANK_RESTITUTION, PUMP_GAP, PUMP_TICKS, SHOW_TICKS,
+    SHOW_WIDE, SLOW_TICKS, STRIKE_TICKS, WINDUP, attack, frame,
 };
 
 pub struct HockeyPlaybook {
@@ -42,13 +42,25 @@ impl HockeyPlaybook {
 
     #[must_use]
     pub fn show_point(&self, state: &Match, player: PlayerId, shown: u8) -> Vec2 {
+        self.on_show_line(state, player, shown, WINDUP)
+    }
+
+    fn on_show_line(&self, state: &Match, player: PlayerId, shown: u8, back: f64) -> Vec2 {
         let reach = self.params.puck_radius + self.params.mallet_radius;
-        let side = match shown {
-            0 => SHOW_SIDE,
-            2 => -SHOW_SIDE,
+        let wide = match shown {
+            0 => -SHOW_WIDE,
+            2 => SHOW_WIDE,
             _ => 0.0,
         };
-        state.world.puck.pos + frame(player, Vec2::new(-(reach + SHOW_BACK), side))
+        let puck = state.world.puck.pos;
+        let aim = frame(player, Vec2::new(self.params.half_length, wide));
+        let line = aim - puck;
+        puck - line * ((reach + back) / line.length())
+    }
+
+    #[must_use]
+    pub fn pump_point(&self, state: &Match, player: PlayerId, shown: u8) -> Vec2 {
+        self.on_show_line(state, player, shown, PUMP_GAP)
     }
 
     #[must_use]
@@ -96,7 +108,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         out.clear();
         let pace = cue.pace;
         let shot_ticks = STRIKE_TICKS + if pace < 0.5 { SLOW_TICKS } else { 0 };
-        let fake_ticks = STRIKE_TICKS + SHOW_TICKS as u32;
+        let fake_ticks = STRIKE_TICKS + (SHOW_TICKS + PUMP_TICKS) as u32;
         let choice = |id: u16, intent: u8, horizon_ticks: u32, k: f32, corner: Option<u8>| Choice {
             id,
             intent,
@@ -123,7 +135,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         for (k, &id) in Self::STRIKES.iter().enumerate() {
             out.push(choice(id, 1, shot_ticks, k as f32, Some(k as u8)));
         }
-        if repertoire < 2 {
+        if repertoire < 2 || state.pause_ticks() > 0 {
             return;
         }
         let banks = self.params.rail_restitution >= MIN_BANK_RESTITUTION;
@@ -133,15 +145,20 @@ impl Playbook<AirHockey> for HockeyPlaybook {
                 ..choice(Self::BANK, 1, shot_ticks, 1.0, Some(1))
             });
         }
-        if state.world.puck.vel.length() < CONTROL_SPEED {
-            for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
-                let real = 2 - shown;
-                out.push(Choice {
-                    deceptive: true,
-                    shown: Some(shown),
-                    ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
-                });
+        let central = state.world.puck.pos.y.abs() < FAKE_LANE;
+        let speed = state.world.puck.vel.length();
+        for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
+            if !(central && speed < FAKE_SPEED) && cue.held != Some(id) {
+                continue;
             }
+            let real = 2 - shown;
+            out.push(Choice {
+                deceptive: true,
+                shown: Some(shown),
+                ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
+            });
+        }
+        if speed < CONTROL_SPEED {
             if banks {
                 let shown = if self.bank_side(state, me) < 0.0 {
                     2
@@ -188,16 +205,15 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         let real = self.corner_aim(me, k as u8) + lateral;
         let target = match c.id {
             Self::CHASE => s.world.puck.pos + noise * CHASE_SCALE,
-            Self::DEFEND => self.defence_spot(s, me),
+            Self::DEFEND => self.defence_spot(s, me) + noise * DEFENCE_SCALE,
             id if Self::DEFENDS.contains(&id) => {
-                Self::guard(self.own_corner(me, k as u8), s.world.puck.pos)
+                Self::guard(self.own_corner(me, k as u8), s.world.puck.pos) + noise * DEFENCE_SCALE
             }
-            id if (Self::FAKES.contains(&id) || id == Self::FAKE_BANK) && elapsed < SHOW_TICKS => {
-                self.show_point(s, me, c.shown.unwrap_or(1))
+            id if Self::FAKES.contains(&id) => {
+                self.fake_target(s, me, c.shown.unwrap_or(1), real, elapsed)
             }
-            id if Self::FAKES.contains(&id) || Self::DASHES.contains(&id) => {
-                self.contact(s, me, real)
-            }
+            Self::FAKE_BANK if elapsed < SHOW_TICKS => self.show_point(s, me, c.shown.unwrap_or(1)),
+            id if Self::DASHES.contains(&id) => self.contact(s, me, real),
             Self::FAKE_BANK => self.contact(s, me, self.bank_aim(s, me) + lateral),
             Self::BANK if waiting => self.set_up(s, me, self.bank_aim(s, me)),
             Self::BANK => self.contact(s, me, self.bank_aim(s, me) + lateral),

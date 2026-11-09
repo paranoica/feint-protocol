@@ -211,7 +211,8 @@ button:disabled {
 .drag-hint[hidden] {
   display: none;
 }
-#debug {
+#debug,
+#debug-left {
   position: absolute;
   left: 16px;
   bottom: 16px;
@@ -220,6 +221,32 @@ button:disabled {
   font: 12px/1.4 ui-monospace, monospace;
   background: rgba(0, 0, 0, 0.55);
   border-radius: 8px;
+}
+#debug.right {
+  left: auto;
+  right: 16px;
+}
+.watch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding-top: 16px;
+  width: 100%;
+  border-top: 1px solid var(--edge);
+  color: var(--muted);
+}
+select {
+  font: inherit;
+  padding: 6px 10px;
+  color: var(--ink);
+  background: #0a1120;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+}
+.watch button {
+  padding: 8px 18px;
 }
 @media (max-width: 560px) {
   h1 {

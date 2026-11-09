@@ -6,7 +6,7 @@ use airhockey::analysis::Frame;
 use airhockey::{AirHockey, HockeyPlaybook, Params, Vec2};
 use feint_ai::{Controller, Playbook, Stance};
 use feint_protocol::{ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 pub const READ_DELAY_TICKS: usize = 60;
 const SIDE: f64 = 0.03;
@@ -105,5 +105,153 @@ impl Controller<AirHockey> for Recorder<'_> {
 
     fn end_match(&mut self, game: &AirHockey, obs: &ObservationT) {
         self.inner.end_match(game, obs);
+    }
+}
+
+pub const HUMAN_DELAY_TICKS: usize = 72;
+pub const HUMAN_POINTER_TICKS: u64 = 4;
+pub const HUMAN_NOISE_TICKS: u64 = 60;
+const INTERCEPT_DEPTH: f64 = 0.15;
+const WHACK_THROUGH: f64 = 0.15;
+const WHACK_BACK: f64 = 0.08;
+
+pub struct Human {
+    noise: f64,
+    params: Params,
+    bounds: [f32; 2],
+    reader: Reader,
+    seen: VecDeque<ObservationT>,
+    rng: ChaCha8Rng,
+    me: PlayerId,
+    aim: u8,
+    attacking: bool,
+    error: Vec2,
+}
+
+impl Human {
+    pub fn new(params: Params, noise: f64) -> Self {
+        Self {
+            noise,
+            bounds: [params.half_length as f32, params.half_width as f32],
+            reader: Reader::new(params.clone(), false),
+            params,
+            seen: VecDeque::new(),
+            rng: ChaCha8Rng::seed_from_u64(0),
+            me: 0,
+            aim: 1,
+            attacking: false,
+            error: Vec2::ZERO,
+        }
+    }
+
+    fn intercept(&self, puck: Vec2, vel: Vec2) -> Option<Vec2> {
+        let goal_x = if self.me == 0 {
+            -self.params.half_length
+        } else {
+            self.params.half_length
+        };
+        if (goal_x - puck.x) * vel.x <= 0.0 || vel.x.abs() < 0.5 {
+            return None;
+        }
+        let line_x = goal_x - goal_x.signum() * INTERCEPT_DEPTH;
+        let t = (line_x - puck.x) / vel.x;
+        let limit = self.params.half_width - self.params.puck_radius;
+        let mut y = puck.y + vel.y * t;
+        for _ in 0..8 {
+            if y > limit {
+                y = 2.0 * limit - y;
+            } else if y < -limit {
+                y = -2.0 * limit - y;
+            } else {
+                break;
+            }
+        }
+        Some(Vec2::new(line_x, y.clamp(-limit, limit)))
+    }
+
+    fn whack(&self, puck: Vec2, mallet: Vec2) -> Vec2 {
+        let goal_x = if self.me == 0 {
+            self.params.half_length
+        } else {
+            -self.params.half_length
+        };
+        let corner = [-0.6, 0.0, 0.6][usize::from(self.aim.min(2))] * self.params.mouth_half_width;
+        let aim = Vec2::new(goal_x, if self.me == 0 { corner } else { -corner });
+        let line = aim - puck;
+        let line = line * (1.0 / line.length());
+        let reach = self.params.puck_radius + self.params.mallet_radius;
+        if (mallet - puck).dot(line) < -0.5 * reach {
+            puck + line * WHACK_THROUGH
+        } else {
+            puck - line * (reach + WHACK_BACK)
+        }
+    }
+
+    fn unit(&mut self) -> f64 {
+        f64::from(self.rng.next_u32()) / f64::from(u32::MAX)
+    }
+}
+
+impl Controller<AirHockey> for Human {
+    fn new_match(&mut self, spec: &GameSpecT, me: PlayerId, seed: u64) {
+        self.me = me;
+        self.seen.clear();
+        self.rng = ChaCha8Rng::seed_from_u64(seed ^ 0x48_554d_414e);
+        self.reader.new_match(spec, me, seed);
+        self.attacking = false;
+        self.error = Vec2::ZERO;
+    }
+
+    fn on_tick(&mut self, game: &AirHockey, obs: &ObservationT) -> Option<ActionT> {
+        self.seen.push_back(obs.clone());
+        while self.seen.len() > HUMAN_DELAY_TICKS + 1 {
+            self.seen.pop_front();
+        }
+        if !obs.tick.is_multiple_of(HUMAN_POINTER_TICKS) {
+            return None;
+        }
+        if obs.tick.is_multiple_of(HUMAN_NOISE_TICKS) {
+            let (a, b) = (self.unit(), self.unit());
+            self.error = Vec2::new(a - 0.5, b - 0.5) * (2.0 * self.noise);
+        }
+        let state = game.state_from_observation(self.seen.front()?, &mut self.rng);
+        let puck = state.world.puck.pos;
+        let mine = if self.me == 0 {
+            puck.x < 0.0
+        } else {
+            puck.x > 0.0
+        };
+        if mine && !self.attacking {
+            self.aim = (self.unit() * 3.0).min(2.0) as u8;
+        }
+        self.attacking = mine;
+        let attacker = usize::from(1 - self.me);
+        let stance = if mine {
+            Stance::Shoot(self.aim)
+        } else {
+            self.reader.stance(puck, state.world.mallets[attacker].pos)
+        };
+        let mut action = self.reader.playbook.opponent_move(&state, self.me, stance);
+        if mine {
+            let hit = self.whack(puck, state.world.mallets[usize::from(self.me)].pos);
+            let seen = if self.me == 0 { hit } else { -hit };
+            action.values = Some(vec![seen.x as f32, seen.y as f32]);
+        }
+        if let Some(block) = self.intercept(puck, state.world.puck.vel) {
+            let seen = if self.me == 0 { block } else { -block };
+            action.values = Some(vec![seen.x as f32, seen.y as f32]);
+        }
+        if let Some(v) = action.values.as_mut() {
+            let seen = if self.me == 0 {
+                self.error
+            } else {
+                -self.error
+            };
+            v[0] = (v[0] + seen.x as f32).clamp(-self.bounds[0], self.bounds[0]);
+            v[1] = (v[1] + seen.y as f32).clamp(-self.bounds[1], self.bounds[1]);
+        }
+        action.tick = obs.tick;
+        action.player = self.me;
+        Some(action)
     }
 }

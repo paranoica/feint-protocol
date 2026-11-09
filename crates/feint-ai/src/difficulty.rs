@@ -33,10 +33,19 @@ impl Difficulty {
     pub fn preset(level: u8) -> Option<Self> {
         let (reaction_ms, physique, spread, depth, deception, memory, adaptation, long_game) =
             match level {
-                1 => (400, 0.4, 0.08, 0, 0.0, Memory::None, 0.0, LongGame::None),
-                2 => (300, 0.6, 0.05, 0, 0.0, Memory::None, 0.0, LongGame::None),
-                3 => (220, 0.75, 0.03, 1, 0.1, Memory::Match, 0.3, LongGame::None),
-                4 => (170, 0.9, 0.02, 2, 0.4, Memory::Match, 0.6, LongGame::Simple),
+                1 => (400, 0.4, 0.12, 0, 0.0, Memory::None, 0.0, LongGame::None),
+                2 => (300, 0.6, 0.07, 0, 0.0, Memory::None, 0.0, LongGame::None),
+                3 => (220, 0.75, 0.045, 1, 0.1, Memory::Match, 0.3, LongGame::None),
+                4 => (
+                    170,
+                    0.9,
+                    0.025,
+                    2,
+                    0.4,
+                    Memory::Match,
+                    0.6,
+                    LongGame::Simple,
+                ),
                 5 => (
                     150,
                     1.0,

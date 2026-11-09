@@ -355,3 +355,41 @@ fn a_goal_starts_the_serve_pause_the_front_can_show() {
         session.serve_pause()
     );
 }
+
+#[test]
+fn two_bots_play_a_match_for_a_watcher() {
+    assert!(Session::spectate(0, 5, 1).is_err());
+    assert!(Session::spectate(5, 6, 1).is_err());
+    let mut watched = Session::spectate(1, 5, 0).unwrap();
+    let mut nudged = Session::spectate(1, 5, 0).unwrap();
+    assert!(watched.spectating());
+    assert!(!Session::new(1, 9).unwrap().spectating());
+    let mut fakes = [false, false];
+    for _ in 0..240 * 60 * 10 {
+        if watched.finished() {
+            break;
+        }
+        nudged.set_pointer(0.9, 0.4);
+        watched.advance(4);
+        nudged.advance(4);
+        for (seat, seen) in fakes.iter_mut().enumerate() {
+            let insight = watched.insight_of(seat as u8);
+            *seen |= insight.intent.is_some_and(|(_, deceptive)| deceptive);
+        }
+    }
+    assert!(watched.finished(), "the bots never finished");
+    assert!(watched.score().contains(&7), "{:?}", watched.score());
+    assert_eq!(
+        watched.digest(),
+        nudged.digest(),
+        "the watcher's pointer must not steer a bot"
+    );
+    assert!(!fakes[0], "level 1 never feints");
+    assert!(fakes[1], "level 5 should feint at least once in a match");
+    assert!(!watched.insight_of(0).memory && watched.insight_of(1).memory);
+    assert!(
+        watched.record().is_empty(),
+        "a watched match leaves no record the arena could take for a human's"
+    );
+    assert!(!Session::new(1, 0).unwrap().record().is_empty());
+}

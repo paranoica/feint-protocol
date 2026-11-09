@@ -1,6 +1,8 @@
 use feint_protocol::{ActionT, GameAdapter};
 
 use super::{Bot, SIMULATION_BUDGET};
+
+const STYLE_MARGINS: f64 = 6.0;
 use crate::playbook::{Choice, Cue, Playbook, Stance};
 
 impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
@@ -88,6 +90,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         let cue = Cue {
             pace: self.plan.pace(),
             twitch: self.insight.twitch,
+            held: self.current.map(|c| c.choice.id),
         };
         self.playbook.options(
             state,
@@ -135,7 +138,17 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
             let score = self.rollout(adapter, state, choice, cap, elapsed);
-            scored.push((*choice, score + self.plan.bonus(choice, importance)));
+            let read = choice.shown.zip(choice.real).is_some_and(|(shown, real)| {
+                self.insight.model().is_some_and(|m| {
+                    m.likely_cover(shown) == Some(real) || m.likely_real(shown) == Some(real)
+                })
+            });
+            let style = if choice.deceptive && choice.real.is_some() && gate_open && !read {
+                STYLE_MARGINS * self.playbook.margin() * self.difficulty.deception
+            } else {
+                0.0
+            };
+            scored.push((*choice, score + style + self.plan.bonus(choice, importance)));
         }
         self.options = options;
         let best = scored

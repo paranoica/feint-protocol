@@ -341,3 +341,76 @@ fn a_frozen_tick_does_not_grow_the_memory() {
         bot.memory_len()
     );
 }
+
+#[test]
+fn a_thinking_bot_whose_gate_opens_prefers_a_fake_to_a_slightly_better_honest_option() {
+    for depth in [2u8, 3] {
+        let mut playbook = LinePlaybook::new(&[0.5], 240);
+        playbook.fakes = vec![0.45, 0.4];
+        playbook.margin = 0.1;
+        let mut game = Line::new(0.5, 0.0);
+        let mut bot = line_bot(realtime(depth, 1.0), playbook, 5);
+        drive(&mut game, &mut bot, 1);
+        let current = bot.current().expect("acts at once");
+        assert!(current.deceptive, "depth {depth}: {current:?}");
+        let mut shut = LinePlaybook::new(&[0.5], 240);
+        shut.fakes = vec![0.45, 0.4];
+        shut.margin = 0.1;
+        let mut game = Line::new(0.5, 0.0);
+        let mut bot = line_bot(realtime(depth, 0.0), shut, 5);
+        drive(&mut game, &mut bot, 1);
+        assert!(
+            !bot.current().expect("acts at once").deceptive,
+            "depth {depth}: a shut gate must not force a fake"
+        );
+    }
+}
+
+#[test]
+fn the_style_bonus_does_not_push_a_fake_the_opponent_is_known_to_read() {
+    let lean = |profile: Option<&feint_ai::Profile>| {
+        let mut playbook = LinePlaybook::new(&[0.5], 240);
+        playbook.fakes = vec![0.45];
+        playbook.margin = 0.1;
+        let mut d = realtime(3, 1.0);
+        d.memory = Memory::MatchAndProfile;
+        let mut bot = line_bot(d, playbook, 5);
+        if let Some(p) = profile {
+            bot.load_profile(p, "line").unwrap();
+        }
+        let mut game = Line::new(0.5, 0.0);
+        drive(&mut game, &mut bot, 1);
+        bot.current().expect("acts at once").deceptive
+    };
+    assert!(
+        lean(None),
+        "with no read of the opponent the style picks the fake"
+    );
+    let mut probe = line_bot(
+        {
+            let mut d = realtime(3, 1.0);
+            d.memory = Memory::MatchAndProfile;
+            d
+        },
+        LinePlaybook::new(&[0.5], 240),
+        5,
+    );
+    let mut game = Line::new(0.5, 0.0);
+    drive(&mut game, &mut probe, 1);
+    let mut read = probe.profile("line").expect("a model");
+    let k = usize::from(read.classes);
+    read.bite[1] = 50.0;
+    read.bite_events[0] = 50;
+    assert_eq!(read.bite.len(), k * k);
+    assert!(
+        !lean(Some(&read)),
+        "the opponent covers the real target when shown 0: no style bonus for that fake"
+    );
+    let mut known = probe.profile("line").expect("a model");
+    known.mine[1] = 50.0;
+    known.mine_events[0] = 50;
+    assert!(
+        !lean(Some(&known)),
+        "the opponent knows the real target behind a show of 0: no style bonus either"
+    );
+}

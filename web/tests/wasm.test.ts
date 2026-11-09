@@ -72,3 +72,29 @@ test("the serve pause is readable and starts at a goal", () => {
   assert.ok(Math.abs(game.serve_pause() - 1) < 1e-6, `${game.serve_pause()}`);
   game.free();
 });
+
+test("two bots play for a watcher and each shows its own mind", () => {
+  const game = WebMatch.spectate(1, 5, 0);
+  assert.equal(game.spectating(), true);
+  assert.equal(new WebMatch(1, 0).spectating(), false);
+  assert.throws(() => WebMatch.spectate(0, 5, 0));
+  let fakes = [0, 0];
+  for (let i = 0; i < 240 * 600 && !game.finished(); i += 4) {
+    game.advance(4);
+    for (const seat of [0, 1]) {
+      const intent = game.intent_of(seat);
+      if (intent >= 0 && (intent & 1) === 1) {
+        fakes[seat] += 1;
+      }
+    }
+  }
+  assert.ok(game.finished());
+  assert.equal(fakes[0], 0, "level 1 never feints");
+  assert.ok(fakes[1] > 0, "level 5 feints");
+  assert.equal(game.memory_of(0), false);
+  assert.equal(game.memory_of(1), true);
+  assert.equal(game.likely_cover_of(1).length, 3);
+  assert.ok(game.shown_of(0) >= -1 && game.real_of(1) <= 2);
+  assert.equal(game.likely_shot_of(0), -1);
+  game.free();
+});

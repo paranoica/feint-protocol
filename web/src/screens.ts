@@ -1,7 +1,11 @@
+export type Watch = [number, number];
+
 export type Screen =
   | { name: "level"; nick: string }
-  | { name: "game"; nick: string; level: number }
-  | { name: "result"; nick: string; level: number; score: [number, number] };
+  | { name: "game"; nick: string; level: number; watch?: Watch }
+  | { name: "result"; nick: string; level: number; score: [number, number]; watch?: Watch };
+
+const isLevel = (level: number) => Number.isInteger(level) && level >= 1 && level <= 5;
 
 export const MAX_NICK = 24;
 
@@ -16,17 +20,25 @@ export function first(nick: string): Screen {
 }
 
 export function start(screen: Screen, level: number, nick: string): Screen {
-  if (screen.name !== "level" || !Number.isInteger(level) || level < 1 || level > 5) {
+  if (screen.name !== "level" || !isLevel(level)) {
     return screen;
   }
   return { name: "game", nick: cleanNick(nick), level };
+}
+
+export function watch(screen: Screen, left: number, right: number, nick: string): Screen {
+  if (screen.name !== "level" || !isLevel(left) || !isLevel(right)) {
+    return screen;
+  }
+  return { name: "game", nick: cleanNick(nick), level: right, watch: [left, right] };
 }
 
 export function finish(screen: Screen, score: [number, number]): Screen {
   if (screen.name !== "game") {
     return screen;
   }
-  return { name: "result", nick: screen.nick, level: screen.level, score };
+  const result: Screen = { name: "result", nick: screen.nick, level: screen.level, score };
+  return screen.watch ? { ...result, watch: screen.watch } : result;
 }
 
 export function again(screen: Screen): Screen {
