@@ -320,6 +320,9 @@ impl Session {
 
     #[must_use]
     pub fn record(&self) -> Vec<u8> {
+        if self.spectating() {
+            return Vec::new();
+        }
         let report = match (&self.report, &self.runner) {
             (Some(report), _) => report.clone(),
             (None, Some(runner)) => runner.report(&self.game),

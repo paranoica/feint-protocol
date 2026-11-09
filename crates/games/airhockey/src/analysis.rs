@@ -12,6 +12,7 @@ const SHIFT_MIN: f64 = 0.03;
 const CONTACT_SLACK: f64 = 0.01;
 const SCORE_WINDOW_TICKS: u64 = 240;
 const RETURN_SLACK: f64 = 0.02;
+const STRIKE_TAIL_TICKS: u64 = 12;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
@@ -134,9 +135,12 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
         let found = runs(&actions, player);
         for run in &found {
             let window = span(frames, run.start.saturating_add(1), run.until);
+            let tail = run.end.saturating_add(STRIKE_TAIL_TICKS);
             let contact = window
                 .clone()
-                .find(|&k| starts[k][me])
+                .rev()
+                .find(|&k| starts[k][me] && frames[k].tick <= tail)
+                .or_else(|| window.clone().find(|&k| starts[k][me]))
                 .map(|k| frames[k].tick);
             let mut shown = None;
             let mut widest = 0.0;

@@ -387,4 +387,9 @@ fn two_bots_play_a_match_for_a_watcher() {
     assert!(!fakes[0], "level 1 never feints");
     assert!(fakes[1], "level 5 should feint at least once in a match");
     assert!(!watched.insight_of(0).memory && watched.insight_of(1).memory);
+    assert!(
+        watched.record().is_empty(),
+        "a watched match leaves no record the arena could take for a human's"
+    );
+    assert!(!Session::new(1, 0).unwrap().record().is_empty());
 }

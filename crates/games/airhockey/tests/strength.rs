@@ -250,8 +250,8 @@ fn the_levels_climb_against_a_human_model() {
     );
     for pair in ladder.windows(2) {
         assert!(
-            share(pair[1]) >= share(pair[0]) - 0.05,
-            "a level plays clearly worse than the one below: {pair:?}"
+            share(pair[1]) > share(pair[0]),
+            "a level is not stronger than the one below: {pair:?}"
         );
     }
     assert!(
