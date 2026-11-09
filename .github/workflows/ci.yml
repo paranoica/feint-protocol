@@ -7,9 +7,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -28,7 +32,7 @@ jobs:
       - run: python plugins/bedrock/scripts/skillcheck.py --strict
 
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install the toolchain pinned in rust-toolchain.toml
@@ -36,17 +40,27 @@ jobs:
           channel="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$channel" --profile minimal \
             --component rustfmt,clippy --target wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install flatc 25.12.19 (must match the flatbuffers crate)
         run: |
           curl -sSfL -o flatc.zip "https://github.com/google/flatbuffers/releases/download/v25.12.19/Linux.flatc.binary.g%2B%2B-13.zip"
           echo "9f87066dc5dfa7fe02090b55bab5f3e55df03e32c9b0cdf229004ade7d091039  flatc.zip" | sha256sum -c -
           unzip -q flatc.zip flatc && sudo mv flatc /usr/local/bin/
+      - name: Install wasm-bindgen CLI 0.2.128 (must match the wasm-bindgen crate)
+        run: |
+          name=wasm-bindgen-0.2.128-x86_64-unknown-linux-musl
+          curl -sSfL -o wb.tgz "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.128/$name.tar.gz"
+          echo "b51f0208fdff83515a787bd8ab9ac5865ed84dabb66d0c709957bb59793c645f  wb.tgz" | sha256sum -c -
+          tar -xzf wb.tgz "$name/wasm-bindgen" && sudo mv "$name/wasm-bindgen" /usr/local/bin/
+      - name: Install cbindgen 0.29.4 (the header is checked against it)
+        run: |
+          curl -sSfL -o cbindgen "https://github.com/mozilla/cbindgen/releases/download/0.29.4/cbindgen-ubuntu22.04"
+          echo "27ac237e2ad3ffaffc8ecce0c03e3caa1d1b09e691906c3cb0967367ff6d783d  cbindgen" | sha256sum -c -
+          chmod +x cbindgen && sudo mv cbindgen /usr/local/bin/
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: scripts/gen-protocol.sh --check
-      - name: Install wasm-bindgen CLI 0.2.128 (must match the wasm-bindgen crate)
-        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
       - run: scripts/wasm-check.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -59,6 +73,4 @@ jobs:
           (cd web && npm test --silent && npm run typecheck --silent)
       - run: scripts/arena-check.sh
       - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored
-      - name: Install cbindgen 0.29.4 (the header is checked against it)
-        run: cargo install cbindgen --version 0.29.4 --locked
       - run: scripts/ffi-check.sh
