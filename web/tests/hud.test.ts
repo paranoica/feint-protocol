@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countdown, goalBanner, shade } from "../src/hud.ts";
+import { countdown, follow, goalBanner, shade } from "../src/hud.ts";
 
 test("the goal banner names the scorer and fills as the pause runs out", () => {
   assert.equal(goalBanner(0, 1, 0), null, "no pause, no banner");
@@ -24,4 +24,14 @@ test("shading darkens a hex colour and leaves anything else alone", () => {
   assert.equal(shade("#FFFFFF", 0), "rgb(0, 0, 0)");
   assert.equal(shade("#ffffff", 2), "rgb(255, 255, 255)", "clamped");
   assert.equal(shade("red", 0.5), "red");
+});
+
+test("the puck tail keeps the last points and drops them after a jump", () => {
+  let tail: Array<[number, number]> = [];
+  for (let i = 0; i < 5; i++) {
+    tail = follow(tail, [i * 0.25, 0], 3, 0.3);
+  }
+  assert.deepEqual(tail, [[0.5, 0], [0.75, 0], [1, 0]]);
+  assert.deepEqual(follow(tail, [0.2, 0], 3, 0.3), [[0.2, 0]], "a serve reset starts a new tail");
+  assert.deepEqual(follow([], [0.5, 0.5], 3, 0.3), [[0.5, 0.5]]);
 });

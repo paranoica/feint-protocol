@@ -109,6 +109,11 @@ fn match_ends_at_seven_goals_and_freezes() {
     let events = score_against(&mut m, Side::High);
     assert_eq!(m.score(), [7, 0]);
     assert!(m.is_over());
+    assert_eq!(
+        m.pause_ticks(),
+        0,
+        "a finished match has no serve to wait for"
+    );
     assert!(events.contains(&MatchEvent::Over { tick: m.tick() - 1 }));
 
     let (tick, digest) = (m.tick(), m.digest());

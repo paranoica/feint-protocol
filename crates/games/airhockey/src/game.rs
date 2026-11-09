@@ -175,7 +175,9 @@ impl Match {
                 events.push(MatchEvent::Over { tick });
             }
             self.serve(scorer.other());
-            self.pause_ticks = self.params.serve_pause_ticks();
+            if !self.over {
+                self.pause_ticks = self.params.serve_pause_ticks();
+            }
             return;
         }
         let x = self.world.puck.pos.x;

@@ -2,7 +2,7 @@ import init, { WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { idle, press, release, steers, type Drag } from "./drag.ts";
 import { fit, pixels, toCanvas, toTable, TABLE, type Fit, type Table } from "./geometry.ts";
-import { countdown, goalBanner, shade } from "./hud.ts";
+import { countdown, follow, goalBanner, shade } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { describe } from "./overlay.ts";
 import { again, finish, first, start, type Screen } from "./screens.ts";
@@ -240,10 +240,7 @@ function mallet(x: number, y: number, color: string) {
 }
 
 function puck(x: number, y: number) {
-  trail.push([x, y]);
-  if (trail.length > TRAIL) {
-    trail.shift();
-  }
+  trail = follow(trail, [x, y], TRAIL, 0.3);
   const radius = sizes.puck * view.scale;
   ctx.save();
   ctx.lineCap = "round";

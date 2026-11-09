@@ -25,3 +25,16 @@ export function shade(hex: string, keep: number): string {
   const part = (shift: number) => Math.round(((n >> shift) & 0xff) * Math.max(0, Math.min(1, keep)));
   return `rgb(${part(16)}, ${part(8)}, ${part(0)})`;
 }
+
+export function follow(
+  tail: Array<[number, number]>,
+  point: [number, number],
+  keep: number,
+  jump: number,
+): Array<[number, number]> {
+  const last = tail[tail.length - 1];
+  if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) > jump) {
+    return [point];
+  }
+  return [...tail, point].slice(-keep);
+}
