@@ -65,9 +65,13 @@ pub trait Playbook<A: GameAdapter> {
         0.0
     }
 
-    fn possession(&self, state: &A::State, me: PlayerId) -> bool {
+    fn possession(&self, state: &A::State, me: PlayerId) -> Option<u64> {
         let _ = (state, me);
-        false
+        None
+    }
+
+    fn signal_classes(&self) -> u8 {
+        3
     }
 }
 
@@ -78,5 +82,9 @@ pub trait Controller<A: GameAdapter> {
 
     fn on_event(&mut self, event: &EventT) {
         let _ = event;
+    }
+
+    fn end_match(&mut self, adapter: &A, obs: &ObservationT) {
+        let _ = (adapter, obs);
     }
 }

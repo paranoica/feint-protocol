@@ -1,5 +1,7 @@
 use feint_ai::{OpponentModel, Profile, ProfileError};
 
+type Breaker = fn(&mut Profile);
+
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-12
 }
@@ -100,7 +102,7 @@ fn profile_round_trips() {
 fn profile_import_rejects_bad_data() {
     let good = trained().export("airhockey");
     let mut target = OpponentModel::new(3, 0.6);
-    let broken: [(fn(&mut Profile), ProfileError); 6] = [
+    let broken: [(Breaker, ProfileError); 6] = [
         (|p| p.game_id = "poker".into(), ProfileError::OtherGame),
         (|p| p.classes = 4, ProfileError::WrongSize),
         (
@@ -121,4 +123,22 @@ fn profile_import_rejects_bad_data() {
         OpponentModel::new(3, 0.6),
         "a refused profile changed the model"
     );
+}
+
+#[test]
+fn ties_assume_the_opponent_bites() {
+    let mut m = OpponentModel::new(3, 0.0);
+    for covered in [0, 2, 0, 2] {
+        m.record_attempt(Some(2), Some(0), Some(covered), true, covered != 0);
+    }
+    assert_eq!(
+        m.likely_cover(2),
+        Some(2),
+        "a tie between covering 0 and the shown 2"
+    );
+    let mut mix = OpponentModel::new(3, 0.0);
+    for real in [0, 2, 0, 2] {
+        mix.record_attempt(Some(2), Some(real), None, real != 2, false);
+    }
+    assert_eq!(mix.likely_real(2), Some(2));
 }

@@ -204,6 +204,7 @@ impl GameAdapter for Line {
 
 pub struct LinePlaybook {
     pub targets: Vec<f32>,
+    pub fakes: Vec<f32>,
     pub horizon: u32,
     pub margin: f64,
     pub replies: std::cell::Cell<u32>,
@@ -213,6 +214,7 @@ impl LinePlaybook {
     pub fn new(targets: &[f32], horizon: u32) -> Self {
         Self {
             targets: targets.to_vec(),
+            fakes: Vec::new(),
             horizon,
             margin: 0.0,
             replies: std::cell::Cell::new(0),
@@ -231,6 +233,16 @@ impl Playbook<Line> for LinePlaybook {
             param: [x, 0.0],
             shown: None,
             real: None,
+        }));
+        let first = self.targets.len();
+        out.extend(self.fakes.iter().enumerate().map(|(i, &x)| Choice {
+            id: (first + i) as u16,
+            intent: 2,
+            deceptive: true,
+            horizon_ticks: self.horizon,
+            param: [x, 0.0],
+            shown: Some(0),
+            real: Some(1),
         }));
     }
 
@@ -262,5 +274,9 @@ impl Playbook<Line> for LinePlaybook {
 
     fn margin(&self) -> f64 {
         self.margin
+    }
+
+    fn possession(&self, s: &LineState, _me: PlayerId) -> Option<u64> {
+        (s.ball >= 0.0).then_some(0)
     }
 }

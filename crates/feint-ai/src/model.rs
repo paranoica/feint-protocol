@@ -17,6 +17,7 @@ pub struct Profile {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfileError {
+    NoMemory,
     OtherGame,
     WrongSize,
     BadCount,
@@ -110,10 +111,11 @@ impl OpponentModel {
         &table[row * classes..(row + 1) * classes]
     }
 
-    fn argmax(values: &[f64]) -> Option<u8> {
+    fn argmax(values: &[f64], prefer: usize) -> Option<u8> {
         let mut best: Option<(usize, f64)> = None;
         for (i, &v) in values.iter().enumerate() {
-            if best.is_none_or(|(_, b)| v > b) {
+            let wins = best.is_none_or(|(b, bv)| v > bv || (v == bv && i == prefer && b != prefer));
+            if wins {
                 best = Some((i, v));
             }
         }
@@ -133,7 +135,7 @@ impl OpponentModel {
     pub fn likely_cover(&self, shown: u8) -> Option<u8> {
         let s = self.class(Some(shown))?;
         (self.bite_events[s] >= MIN_EVIDENCE)
-            .then(|| Self::argmax(Self::row(&self.bite, self.classes, s)))
+            .then(|| Self::argmax(Self::row(&self.bite, self.classes, s), s))
             .flatten()
     }
 
@@ -141,14 +143,14 @@ impl OpponentModel {
     pub fn likely_real(&self, shown: u8) -> Option<u8> {
         let s = self.class(Some(shown))?;
         (self.mine_events[s] >= MIN_EVIDENCE)
-            .then(|| Self::argmax(Self::row(&self.mine, self.classes, s)))
+            .then(|| Self::argmax(Self::row(&self.mine, self.classes, s), s))
             .flatten()
     }
 
     #[must_use]
     pub fn likely_shot(&self) -> Option<u8> {
         (self.shot_events >= MIN_EVIDENCE)
-            .then(|| Self::argmax(&self.shots))
+            .then(|| Self::argmax(&self.shots, 0))
             .flatten()
     }
 

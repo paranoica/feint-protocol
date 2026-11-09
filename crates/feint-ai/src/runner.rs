@@ -55,6 +55,10 @@ pub fn run_match<A: GameAdapter>(
         }
         ticks += 1;
     }
+    for (me, controller) in controllers.iter_mut().enumerate() {
+        adapter.observe(adapter.live(), me as PlayerId, &mut seen[me]);
+        controller.end_match(adapter, &seen[me]);
+    }
     let result = adapter.result();
     let score = match &result {
         Some(result) => result.score.clone().unwrap_or_default(),

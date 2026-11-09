@@ -1,5 +1,6 @@
 pub mod bot;
 pub mod difficulty;
+mod insight;
 pub mod model;
 pub mod playbook;
 pub mod reaction;
