@@ -124,7 +124,7 @@ fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
     // Inside the mouth the puck may stand past the rail line, but stays short of the goal
     // line: the goal check has already run for this substep and runs again on the next.
     let x_limit = if pos.y.abs() < params.mouth_half_width {
-        params.half_length - SLACK
+        params.half_length.next_down()
     } else {
         x_max
     };

@@ -541,3 +541,40 @@ fn the_published_body_maximum_is_accepted_by_reset() {
         .expect("the declared maximum is legal");
     assert_eq!(game.live().bodies[0].max_speed(), 8.1);
 }
+
+#[test]
+fn rebuilt_puck_about_to_score_scores_in_the_planner() {
+    // f32 rounds any x within ~3e-8 of the line to exactly 1.0; the rebuilt puck must stay
+    // short of the line so the planner still sees it cross.
+    for x in [1.0 - 1e-12, 0.999_999_99] {
+        let mut game = fresh();
+        game.game_mut().world.puck = Puck {
+            pos: Vec2::new(x, 0.0),
+            vel: Vec2::new(2.0, 0.0),
+        };
+        let mut rng = ChaCha8Rng::seed_from_u64(6);
+        let guess = game.state_from_observation(&observe(&game, 0), &mut rng);
+        assert!(
+            guess.world.puck.pos.x < 1.0,
+            "on the line: {:?}",
+            guess.world.puck
+        );
+        let planned = game.simulate(&guess, &[], 10);
+        assert_eq!(planned.score(), [1, 0], "x = {x}");
+    }
+}
+
+#[test]
+fn infinite_body_values_are_refused_even_with_huge_limits() {
+    let params = Params {
+        max_body_accel: 1e39,
+        ..Params::default()
+    };
+    let mut game = AirHockey::new(params, 1);
+    assert_eq!(
+        game.reset(1, &[body(8.0, f32::INFINITY), body(8.0, 60.0)]),
+        Err(AdapterError::BadBody(
+            "two positive finite values per player"
+        ))
+    );
+}

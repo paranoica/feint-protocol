@@ -112,7 +112,7 @@ impl GameAdapter for AirHockey {
         // The spec publishes the limits as f32, which may round up: a value equal to the
         // published maximum is taken as the maximum itself.
         let within = |value: f32, max: f64| {
-            if value <= max as f32 {
+            if value.is_finite() && value <= max as f32 {
                 f64::from(value).min(max)
             } else {
                 f64::INFINITY
@@ -237,9 +237,10 @@ impl GameAdapter for AirHockey {
         let seen = read(0);
         let y_max = params.half_width - params.puck_radius;
         let y = seen.y.clamp(-y_max, y_max);
-        // Inside the mouth the puck may legally stand up to the goal line.
+        // Inside the mouth the puck may stand up to, never on, the goal line: f32 rounds a
+        // puck a hair short of it to exactly the line, where it could no longer cross.
         let x_max = if y.abs() < params.mouth_half_width {
-            params.half_length
+            params.half_length.next_down()
         } else {
             params.half_length - params.puck_radius
         };
