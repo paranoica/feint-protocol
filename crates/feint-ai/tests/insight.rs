@@ -248,3 +248,49 @@ fn a_fired_attempt_is_not_replaced_by_the_next_commit() {
         "the fake had shot; later commits closed it as a loss"
     );
 }
+
+#[test]
+fn a_bait_takes_the_real_class_of_the_strike_that_follows() {
+    let mut p = LinePlaybook::new(&[0.5], 240);
+    p.reads = true;
+    p.shown = true;
+    p.fakes = vec![-0.9];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(
+        b.current().is_some_and(|c| c.deceptive),
+        "the bait comes first"
+    );
+    drive_score(&mut game, &mut b, 200, [0, 0]);
+    assert!(b.current().is_some_and(|c| !c.deceptive), "then the strike");
+    drive_score(&mut game, &mut b, 8, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        (profile.fake_tries, profile.fake_wins),
+        (1.0, 1.0),
+        "bait and strike are one fake"
+    );
+    assert_eq!(profile.mine_events.iter().sum::<u32>(), 1);
+}
+
+#[test]
+fn an_attempt_opened_before_the_possession_is_seen_is_not_recorded() {
+    let mut p = LinePlaybook::new(&[-0.9], 24);
+    p.reads = true;
+    p.fakes = vec![-0.5];
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(2, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive));
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 120, [0, 0]);
+    game.state.ball = 0.5;
+    drive_score(&mut game, &mut b, 4, [0, 0]);
+    let tries = b.profile("line").unwrap().fake_tries;
+    assert_eq!(
+        tries, 1.0,
+        "fakes committed while the ball was away were recorded"
+    );
+}

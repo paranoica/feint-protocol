@@ -15,6 +15,7 @@ struct Attempt {
     covered: Option<u8>,
     won: bool,
     fired: bool,
+    premature: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -171,6 +172,14 @@ impl<S: Clone> Insight<S> {
         if self.attempt.is_some_and(|a| a.fired) {
             return;
         }
+        if let Some(bait) = &mut self.attempt
+            && bait.deceptive
+            && bait.real.is_none()
+            && choice.real.is_some()
+        {
+            bait.real = choice.real;
+            return;
+        }
         self.end_attempt();
         if choice.shown.is_some() || choice.deceptive {
             self.attempt = Some(Attempt {
@@ -180,6 +189,7 @@ impl<S: Clone> Insight<S> {
                 covered: None,
                 won: false,
                 fired: false,
+                premature: self.away > 0 || self.possession.is_none(),
             });
         }
     }
@@ -189,7 +199,9 @@ impl<S: Clone> Insight<S> {
     }
 
     fn end_attempt(&mut self) {
-        if let (Some(a), Some(model)) = (self.attempt.take(), &mut self.model) {
+        if let (Some(a), Some(model)) = (self.attempt.take(), &mut self.model)
+            && !a.premature
+        {
             let fooled = a.real.is_some() && a.covered.is_some() && a.covered != a.real;
             let won = a.won || (a.deceptive && fooled);
             model.record_attempt(a.shown, a.real, a.covered, a.deceptive, won);
