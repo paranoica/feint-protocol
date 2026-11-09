@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/feint-protocol",
+    "crates/feint-ai",
     "crates/games/airhockey",
     "crates/games/airhockey-check",
 ]
@@ -15,6 +16,7 @@ publish = false
 
 [workspace.dependencies]
 feint-protocol = { path = "crates/feint-protocol" }
+feint-ai = { path = "crates/feint-ai" }
 flatbuffers = "=25.12.19"
 rand_chacha = "0.9"
 
