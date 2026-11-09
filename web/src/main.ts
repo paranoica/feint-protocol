@@ -2,7 +2,7 @@ import init, { games, WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
-import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
+import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { again, finish, first, start, watch, type Screen } from "./screens.ts";
 import { GAMES, gameById } from "./games/index.ts";
 import type { GameView, Pair } from "./games/types.ts";
@@ -34,6 +34,8 @@ let scorer: 0 | 1 | null = null;
 let pauseFull = 1;
 let size = { width: 1, height: 1 };
 let playing: { ticket: Ticket | null; profile: number | null } = { ticket: null, profile: null };
+const saves = new Saves();
+const SAVE_WAIT_MS = 10_000;
 let watching: Pair | null = null;
 let watchSpeed = 1;
 
@@ -154,7 +156,7 @@ function frame(now: number) {
       if (watching || !arena) {
         $("saved").textContent = "";
       } else {
-        void upload(lastRecord);
+        saves.track(upload(lastRecord));
       }
     }
   }
@@ -212,6 +214,7 @@ async function begin(view: GameView, level: number) {
   starting = true;
   try {
     saveNick(next.nick);
+    await saves.settled(SAVE_WAIT_MS);
     const ticket = view.arena ? await fetchTicket() : null;
     const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick, view.id) : null;
     const seed = ticket?.seed ?? localSeed(Math.random);

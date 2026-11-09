@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath } from "../src/api.ts";
+import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath } from "../src/api.ts";
 
 test("an upload names nick, ticket and the profile it played with", () => {
   assert.equal(uploadPath("ann b", "00ff", null), "/api/matches?nick=ann%20b&ticket=00ff");
@@ -34,4 +34,31 @@ test("a ticket is asked for with a POST that a plain page cannot forge", () => {
   const init = seedRequest();
   assert.equal(init.method, "POST");
   assert.deepEqual(init.headers, { "x-feint": "1" });
+});
+
+test("a rematch waits for the previous save, but never longer than the cap", async () => {
+  const saves = new Saves();
+  assert.equal(await saves.settled(50), true, "nothing pending");
+  let finish: () => void = () => {};
+  const upload = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  saves.track(upload);
+  let done = false;
+  const waiting = saves.settled(1000).then((ok) => {
+    done = true;
+    return ok;
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(done, false, "still saving");
+  finish();
+  assert.equal(await waiting, true);
+
+  saves.track(Promise.reject(new Error("arena down")));
+  assert.equal(await saves.settled(50), true, "a failed save does not block");
+
+  saves.track(new Promise(() => {}));
+  const started = Date.now();
+  assert.equal(await saves.settled(30), false, "a hung save gives up at the cap");
+  assert.ok(Date.now() - started < 500);
 });

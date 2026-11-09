@@ -43,3 +43,21 @@ export function localSeed(random: () => number): number {
 export function seedRequest(): { method: string; headers: Record<string, string> } {
   return { method: "POST", headers: { "x-feint": "1" } };
 }
+
+export class Saves {
+  private last: Promise<unknown> = Promise.resolve();
+
+  track(work: Promise<unknown>): void {
+    const quiet = work.catch(() => undefined);
+    this.last = Promise.all([this.last, quiet]);
+  }
+
+  settled(capMs: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cap = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), capMs);
+    });
+    const done = this.last.then(() => true);
+    return Promise.race([done, cap]).finally(() => clearTimeout(timer));
+  }
+}
