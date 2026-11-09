@@ -34,4 +34,5 @@ test("the puck tail keeps the last points and drops them after a jump", () => {
   assert.deepEqual(tail, [[0.5, 0], [0.75, 0], [1, 0]]);
   assert.deepEqual(follow(tail, [0.2, 0], 3, 0.3), [[0.2, 0]], "a serve reset starts a new tail");
   assert.deepEqual(follow([], [0.5, 0.5], 3, 0.3), [[0.5, 0.5]]);
+  assert.equal(follow([[0, 0]], [0.35, 0], 3, 0.45).length, 2, "a fast puck at a slow frame keeps its tail");
 });

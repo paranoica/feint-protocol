@@ -240,7 +240,7 @@ function mallet(x: number, y: number, color: string) {
 }
 
 function puck(x: number, y: number) {
-  trail = follow(trail, [x, y], TRAIL, 0.3);
+  trail = follow(trail, [x, y], TRAIL, 0.45);
   const radius = sizes.puck * view.scale;
   ctx.save();
   ctx.lineCap = "round";
