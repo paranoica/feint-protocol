@@ -10,7 +10,7 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, DEFENCE_SCALE, FAKE_LANE,
+    AIM_SCALE, AIM_SHARE, CHASE_SCALE, CONTROL_SPEED, DEFENCE_SCALE, FAKE_LANE, FAKE_SPEED,
     HOLD_RESERVE_SECONDS, HOLD_TICKS, MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS,
     SLOW_TICKS, STRIKE_TICKS, attack, frame,
 };
@@ -134,7 +134,8 @@ impl Playbook<AirHockey> for HockeyPlaybook {
             });
         }
         let central = state.world.puck.pos.y.abs() < FAKE_LANE;
-        if state.world.puck.vel.length() < CONTROL_SPEED {
+        let speed = state.world.puck.vel.length();
+        if speed < FAKE_SPEED {
             for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]).filter(|_| central) {
                 let real = 2 - shown;
                 out.push(Choice {
@@ -143,6 +144,8 @@ impl Playbook<AirHockey> for HockeyPlaybook {
                     ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
                 });
             }
+        }
+        if speed < CONTROL_SPEED {
             if banks {
                 let shown = if self.bank_side(state, me) < 0.0 {
                     2

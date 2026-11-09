@@ -10,7 +10,7 @@ fn presets_follow_the_spec_table() {
         vec![400, 300, 220, 170, 150]
     );
     assert_eq!(pick(|d| d.physique), vec![0.4, 0.6, 0.75, 0.9, 1.0]);
-    assert_eq!(pick(|d| d.spread), vec![0.08, 0.05, 0.03, 0.02, 0.01]);
+    assert_eq!(pick(|d| d.spread), vec![0.12, 0.07, 0.045, 0.025, 0.01]);
     assert_eq!(
         levels.iter().map(|d| d.depth).collect::<Vec<_>>(),
         vec![0, 0, 1, 2, 3]

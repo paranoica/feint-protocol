@@ -341,3 +341,27 @@ fn a_frozen_tick_does_not_grow_the_memory() {
         bot.memory_len()
     );
 }
+
+#[test]
+fn a_thinking_bot_whose_gate_opens_prefers_a_fake_to_a_slightly_better_honest_option() {
+    for depth in [2u8, 3] {
+        let mut playbook = LinePlaybook::new(&[0.5], 240);
+        playbook.fakes = vec![0.45, 0.4];
+        playbook.margin = 0.1;
+        let mut game = Line::new(0.5, 0.0);
+        let mut bot = line_bot(realtime(depth, 1.0), playbook, 5);
+        drive(&mut game, &mut bot, 1);
+        let current = bot.current().expect("acts at once");
+        assert!(current.deceptive, "depth {depth}: {current:?}");
+        let mut shut = LinePlaybook::new(&[0.5], 240);
+        shut.fakes = vec![0.45, 0.4];
+        shut.margin = 0.1;
+        let mut game = Line::new(0.5, 0.0);
+        let mut bot = line_bot(realtime(depth, 0.0), shut, 5);
+        drive(&mut game, &mut bot, 1);
+        assert!(
+            !bot.current().expect("acts at once").deceptive,
+            "depth {depth}: a shut gate must not force a fake"
+        );
+    }
+}

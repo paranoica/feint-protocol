@@ -196,7 +196,7 @@ impl Controller<AirHockey> for Human {
     fn new_match(&mut self, spec: &GameSpecT, me: PlayerId, seed: u64) {
         self.me = me;
         self.seen.clear();
-        self.rng = ChaCha8Rng::seed_from_u64(seed ^ 0x4855_4d41_4e);
+        self.rng = ChaCha8Rng::seed_from_u64(seed ^ 0x48_554d_414e);
         self.reader.new_match(spec, me, seed);
         self.attacking = false;
         self.error = Vec2::ZERO;

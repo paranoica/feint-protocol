@@ -1,6 +1,8 @@
 use feint_protocol::{ActionT, GameAdapter};
 
 use super::{Bot, SIMULATION_BUDGET};
+
+const STYLE_MARGINS: f64 = 3.0;
 use crate::playbook::{Choice, Cue, Playbook, Stance};
 
 impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
@@ -135,7 +137,12 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
             let score = self.rollout(adapter, state, choice, cap, elapsed);
-            scored.push((*choice, score + self.plan.bonus(choice, importance)));
+            let style = if choice.deceptive && gate_open {
+                STYLE_MARGINS * self.playbook.margin() * self.difficulty.deception
+            } else {
+                0.0
+            };
+            scored.push((*choice, score + style + self.plan.bonus(choice, importance)));
         }
         self.options = options;
         let best = scored

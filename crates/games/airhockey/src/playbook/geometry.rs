@@ -18,6 +18,7 @@ pub(super) const NUDGE_SPEED: f64 = 0.9;
 pub(super) const NUDGE_STILL: f64 = 0.3;
 pub(super) const FIRE_X: f64 = -0.3;
 pub(super) const FAKE_LANE: f64 = 0.25;
+pub(super) const FAKE_SPEED: f64 = 2.5;
 pub(super) const APPROACH_COS: f64 = 0.5;
 pub(super) const SIDE_SPEED: f64 = 0.3;
 pub(super) const SHOW_SIDE: f64 = 0.10;

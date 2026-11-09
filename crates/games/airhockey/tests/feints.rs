@@ -342,15 +342,23 @@ fn feints_are_offered_with_their_signals_and_dashes_follow_a_twitch() {
         "repertoire 1 has no feints"
     );
 
-    for speed in [1.5, 0.5] {
+    for speed in [3.0, 1.5, 0.5] {
         let mut moving = state.clone();
         moving.world.puck.vel = Vec2::new(0.0, speed);
         p.options(&moving, 0, 2, &Cue::default(), &mut out);
-        let controlled = speed < 1.0;
+        let corner_fake = out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id));
+        let held = out
+            .iter()
+            .any(|c| c.id == HockeyPlaybook::HOLD || c.id == HockeyPlaybook::FAKE_BANK);
         assert_eq!(
-            out.iter().any(|c| c.deceptive),
-            controlled,
-            "puck speed {speed}"
+            corner_fake,
+            speed < 2.5,
+            "corner fakes at puck speed {speed}"
+        );
+        assert_eq!(
+            held,
+            speed < 1.0,
+            "holds and bank fakes at puck speed {speed}"
         );
         assert!(
             found(&out, HockeyPlaybook::STRIKES[1]).is_some(),
