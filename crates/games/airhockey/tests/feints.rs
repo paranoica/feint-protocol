@@ -743,3 +743,12 @@ fn a_tiny_rail_restitution_offers_no_bank_and_a_restrike_is_read() {
         "a second strike on a moving puck"
     );
 }
+
+#[test]
+fn class_points_are_the_corner_aims_in_the_attackers_frame() {
+    let p = playbook();
+    assert_eq!(p.class_point(0, 0), Vec2::new(1.0, -0.07));
+    assert_eq!(p.class_point(0, 2), Vec2::new(1.0, 0.07));
+    assert_eq!(p.class_point(1, 0), Vec2::new(-1.0, 0.07));
+    assert_eq!(p.class_point(1, 9), Vec2::new(-1.0, -0.07));
+}

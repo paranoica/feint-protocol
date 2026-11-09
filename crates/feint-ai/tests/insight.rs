@@ -338,3 +338,69 @@ fn a_bait_does_not_take_a_strike_at_the_class_it_showed() {
         "a strike where the bait pointed is no fake"
     );
 }
+
+#[test]
+fn the_insight_view_shows_choice_intent_and_predictions() {
+    let mut p = reading();
+    p.shown = true;
+    let mut game = Line::new(0.5, 0.0);
+    let fresh = bot(difficulty(1, 0.0), p);
+    let view = fresh.insight();
+    assert!(view.current.is_none() && view.intent.is_none());
+    assert!(view.memory && view.likely_shot.is_none());
+    assert_eq!(view.likely_cover, vec![None, None, None]);
+    let mut b = fresh;
+    drive(&mut game, &mut b, 8);
+    let view = b.insight();
+    assert_eq!(view.current, b.current());
+    assert_eq!(view.intent, Some((1, false)));
+
+    let mut forgetful = difficulty(1, 0.0);
+    forgetful.memory = Memory::None;
+    let view = bot(forgetful, reading()).insight();
+    assert!(!view.memory && view.likely_cover.is_empty());
+}
+
+#[test]
+fn watching_the_insight_view_does_not_change_the_match() {
+    let play = |watch: bool| {
+        let mut p = reading();
+        p.shown = true;
+        p.fakes = vec![0.2];
+        let mut game = Line::new(0.5, 0.01);
+        let mut b = bot(difficulty(2, 0.5), p);
+        let mut actions = Vec::new();
+        let mut events = Vec::new();
+        for _ in 0..400 {
+            let mut obs = ObservationT::default();
+            game.observe(&game.state, 0, &mut obs);
+            if watch {
+                let _ = b.insight();
+            }
+            if let Some(a) = b.on_tick(&game, &obs) {
+                game.apply(&a).unwrap();
+                actions.push(a);
+            }
+            game.advance(&mut events);
+        }
+        (actions, game.digest(&game.state))
+    };
+    assert_eq!(play(true), play(false));
+}
+
+#[test]
+fn the_insight_view_predicts_a_habitual_shot() {
+    let mut d = difficulty(1, 0.0);
+    d.reaction_ms = 0;
+    let mut game = Line::new(0.5, 0.0);
+    let mut p = reading();
+    p.shots_at = Some(2);
+    let mut b = bot(d, p);
+    for _ in 0..4 {
+        drive(&mut game, &mut b, 8);
+        game.state.ball_v = 1e-9;
+        drive(&mut game, &mut b, 8);
+        game.state.ball_v = 0.0;
+    }
+    assert_eq!(b.insight().likely_shot, Some(2));
+}

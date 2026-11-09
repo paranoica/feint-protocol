@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Feint — air hockey</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <main>
+      <section id="level" class="screen">
+        <h1>Feint</h1>
+        <label>Nick <input id="nick" maxlength="64" autocomplete="nickname" /></label>
+        <div class="levels">
+          <button data-level="1">1</button>
+          <button data-level="2">2</button>
+          <button data-level="3">3</button>
+          <button data-level="4">4</button>
+          <button data-level="5">5</button>
+        </div>
+        <p class="hint">Move the mouse to play. First to 7. Press D for the debug view.</p>
+      </section>
+      <section id="game" class="screen" hidden>
+        <div class="bar"><span id="score">0 : 0</span><span id="who"></span></div>
+        <canvas id="table"></canvas>
+        <pre id="debug" hidden></pre>
+      </section>
+      <section id="result" class="screen" hidden>
+        <h2 id="verdict"></h2>
+        <p id="final"></p>
+        <button id="again">Again</button>
+      </section>
+    </main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

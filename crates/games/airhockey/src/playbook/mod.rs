@@ -73,6 +73,11 @@ impl HockeyPlaybook {
     }
 
     #[must_use]
+    pub fn class_point(&self, attacker: PlayerId, class: u8) -> Vec2 {
+        self.corner_aim(attacker, class)
+    }
+
+    #[must_use]
     pub fn cover_spot(&self, state: &Match, defender: PlayerId, class: u8) -> Vec2 {
         let attacker = 1 - defender.min(1);
         Self::guard(self.corner_aim(attacker, class), state.world.puck.pos)

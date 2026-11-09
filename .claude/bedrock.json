@@ -51,6 +51,14 @@
       "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored",
       "heavy": true
     },
+    "web-build": {
+      "run": "scripts/web-build.sh",
+      "heavy": true
+    },
+    "web-test": {
+      "run": "scripts/web-build.sh --wasm-only && cd web && npm test --silent && npm run typecheck --silent",
+      "heavy": true
+    },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
       "heavy": true

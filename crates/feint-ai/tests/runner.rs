@@ -1,6 +1,6 @@
 mod line_game;
 
-use feint_ai::{Bot, Controller, Difficulty, RunHeader, replay, run_match};
+use feint_ai::{Bot, Controller, Difficulty, RunHeader, Runner, replay, replay_record, run_match};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 use line_game::{Line, LinePlaybook};
 
@@ -93,4 +93,56 @@ fn runner_reports_bad_bodies() {
     let mut bad = header(2);
     bad.bodies.pop();
     assert!(run_match(&mut game, [&mut a, &mut b], bad, 10).is_err());
+}
+
+#[test]
+fn a_stepped_runner_plays_the_same_match_as_run_match() {
+    let mut game = Line::new(0.0, 0.3);
+    let (mut a, mut b) = (bot(2, &game), bot(3, &game));
+    let whole = run_match(&mut game, [&mut a, &mut b], header(9), 900).unwrap();
+
+    let mut game = Line::new(0.0, 0.3);
+    let (mut a, mut b) = (bot(2, &game), bot(3, &game));
+    let mut runner = Runner::start(&mut game, [&mut a, &mut b], header(9)).unwrap();
+    let mut steps = 0;
+    while runner.ticks() < 900 && runner.step(&mut game, [&mut a, &mut b]) {
+        steps += 1;
+    }
+    assert_eq!(steps, 900);
+    let stepped = runner.finish(&mut game, [&mut a, &mut b]);
+    assert_eq!(stepped, whole);
+}
+
+#[test]
+fn a_runner_snapshot_replays_mid_match() {
+    let mut game = Line::new(0.0, 0.3);
+    let (mut a, mut b) = (bot(2, &game), bot(3, &game));
+    let mut runner = Runner::start(&mut game, [&mut a, &mut b], header(5)).unwrap();
+    for _ in 0..300 {
+        runner.step(&mut game, [&mut a, &mut b]);
+    }
+    let snapshot = runner.report(&game);
+    assert_eq!(snapshot.ticks, 300);
+    assert!(!snapshot.finished);
+    let mut fresh = Line::new(0.0, 0.3);
+    assert_eq!(
+        replay_record(&mut fresh, &snapshot.record()).unwrap(),
+        snapshot.digest
+    );
+}
+
+#[test]
+fn a_finished_runner_steps_no_more_and_reports_no_stale_events() {
+    let mut game = Line::new(0.0, 0.3);
+    game.end_at = Some(50);
+    let (mut a, mut b) = (bot(2, &game), bot(3, &game));
+    let mut runner = Runner::start(&mut game, [&mut a, &mut b], header(3)).unwrap();
+    let mut saw_events = false;
+    while runner.step(&mut game, [&mut a, &mut b]) {
+        saw_events |= !runner.events().is_empty();
+    }
+    assert!(saw_events, "the line game reports its end as an event");
+    assert_eq!(runner.ticks(), 50);
+    assert!(!runner.step(&mut game, [&mut a, &mut b]));
+    assert!(runner.events().is_empty());
 }
