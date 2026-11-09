@@ -32,7 +32,7 @@ impl Default for Params {
             post_restitution: 0.9,
             mallet_restitution: 0.8,
             damping: 0.1,
-            puck_speed_cap: 7.0,
+            puck_speed_cap: 4.5,
             tick_hz: 240,
             substeps: 4,
             decision_hz: 60,

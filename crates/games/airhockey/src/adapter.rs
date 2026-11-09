@@ -10,7 +10,7 @@ use crate::puck::Puck;
 use crate::vec2::Vec2;
 use crate::world::{World, regions};
 
-pub const GAME_VERSION: u32 = 2;
+pub const GAME_VERSION: u32 = 3;
 
 pub const OBSERVATION_LEN: usize = 16;
 
