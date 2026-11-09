@@ -1,4 +1,4 @@
-import init, { WebMatch } from "./wasm/feint_web.js";
+import init, { games, WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
@@ -210,19 +210,29 @@ async function begin(view: GameView, level: number) {
     return;
   }
   starting = true;
-  saveNick(next.nick);
-  const arena = view.arena;
-  const ticket = arena ? await fetchTicket() : null;
-  const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick) : null;
-  const seed = ticket?.seed ?? localSeed(Math.random);
-  playing = { ticket, profile: profile?.version ?? null };
   try {
-    game = profile ? WebMatch.new_with_profile(level, seed, profile.bytes) : WebMatch.create(view.id, level, seed);
+    saveNick(next.nick);
+    const ticket = view.arena ? await fetchTicket() : null;
+    const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick) : null;
+    const seed = ticket?.seed ?? localSeed(Math.random);
+    playing = { ticket, profile: profile?.version ?? null };
+    try {
+      game = profile
+        ? WebMatch.create_with_profile(view.id, level, seed, profile.bytes)
+        : WebMatch.create(view.id, level, seed);
+    } catch {
+      playing = { ticket, profile: null };
+      game = WebMatch.create(view.id, level, seed);
+    }
   } catch {
-    playing = { ticket, profile: null };
-    game = WebMatch.create(view.id, level, seed);
+    game = null;
+    return;
+  } finally {
+    starting = false;
   }
-  starting = false;
+  if (!game) {
+    return;
+  }
   watching = null;
   enter(view, game, next);
   dragHint.textContent = view.hint;
@@ -252,7 +262,12 @@ function beginWatch(view: GameView, left: number, right: number) {
   if (next.name !== "game" || starting) {
     return;
   }
-  game = WebMatch.watch(view.id, left, right, localSeed(Math.random));
+  try {
+    game = WebMatch.watch(view.id, left, right, localSeed(Math.random));
+  } catch {
+    game = null;
+    return;
+  }
   playing = { ticket: null, profile: null };
   watching = [left, right];
   watchSpeed = 1;
@@ -284,7 +299,8 @@ function buildHub() {
   const holder = $("games");
   holder.replaceChildren();
   const names = ["Rookie", "Novice", "Amateur", "Pro", "Feint"];
-  for (const view of GAMES) {
+  const built = new Set(Array.from(games()));
+  for (const view of GAMES.filter((g) => built.has(g.id))) {
     const card = document.createElement("article");
     card.className = "card game-card";
     const title = document.createElement("h2");

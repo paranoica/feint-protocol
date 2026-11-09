@@ -158,6 +158,24 @@ impl WebMatch {
             .map_err(|_| JsValue::from_str("this level takes no profile"))
     }
 
+    pub fn create_with_profile(
+        game: &str,
+        level: u8,
+        seed: u32,
+        profile: &[u8],
+    ) -> Result<WebMatch, JsValue> {
+        let profile = decode_profile(profile).map_err(|_| JsValue::from_str("bad profile"))?;
+        let seed = u64::from(seed);
+        let session: Box<dyn Live> = match game {
+            <AirHockey as HubGame>::ID => Box::new(
+                Session::with_profile(level, seed, Some(&profile))
+                    .map_err(|_| JsValue::from_str("this level takes no profile"))?,
+            ),
+            _ => return Err(unknown(game)),
+        };
+        Ok(WebMatch { session })
+    }
+
     pub fn spectate(left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
         spectate(<AirHockey as HubGame>::ID, left, right, seed).map(|session| WebMatch { session })
     }

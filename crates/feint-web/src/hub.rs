@@ -68,6 +68,7 @@ impl<A: GameAdapter> Controller<A> for Pad {
 
     fn on_tick(&mut self, _game: &A, obs: &ObservationT) -> Option<ActionT> {
         let values = if let Some(once) = self.queue.pop_front() {
+            self.sent = None;
             once
         } else {
             let target = self.target.clone()?;

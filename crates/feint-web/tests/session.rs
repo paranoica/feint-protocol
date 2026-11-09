@@ -418,6 +418,11 @@ fn a_pad_sends_every_one_shot_and_a_held_target_only_when_it_changes() {
         Some(vec![1.0]),
         "a repeated press is not dropped"
     );
+    assert_eq!(
+        tick(&mut pad),
+        Some(vec![0.5, 0.0]),
+        "after a press the held target is sent again"
+    );
     assert_eq!(tick(&mut pad), None);
     pad.set(&[f32::NAN, 0.0]);
     pad.push(&[f32::INFINITY]);

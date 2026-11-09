@@ -259,7 +259,7 @@ function aimAt(event: PointerEvent, rect: DOMRect) {
 export const hockey: GameView = {
   id: "airhockey",
   name: "Air hockey",
-  pitch: "Drag your mallet, beat the goalie. Fakes, reads and a long game.",
+  pitch: "Drag your mallet, first to 7. The bot fakes, reads your habits and plays a long game.",
   hint: "Hold and drag your mallet",
   arena: true,
   inputTicks: 4,
@@ -287,12 +287,12 @@ export const hockey: GameView = {
       ctx.drawImage(surface, 0, 0, scene.width, scene.height);
     }
     const p = match.view();
+    if (match.serve_pause() > 0 && scene.scorer !== null) {
+      trail = [];
+    }
     mallet(ctx, p[4], p[5], debug && watching ? intentColor(match.intent_of(0)) : colors.you);
     mallet(ctx, p[8], p[9], debug ? intentColor(match.intent_of(1)) : colors.bot);
     puck(ctx, p[0], p[1]);
-    if (scene.pauseFull > 0 && match.serve_pause() > 0 && scene.scorer !== null) {
-      trail = [];
-    }
     const big = Math.max(24, view.scale * 0.08);
     const [cx, cy] = at(0, 0);
     const banner = goalBanner(match.serve_pause(), scene.pauseFull, scene.scorer);
