@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -32,15 +33,13 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos() as u64);
-    let arena = Arena::new(
-        store,
-        dist,
-        Arc::new(now),
-        nanos ^ u64::from(std::process::id()),
-    );
+    let mut seed = [0u8; 32];
+    let entropy = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed));
+    if let Err(error) = entropy {
+        eprintln!("cannot read /dev/urandom: {error}");
+        return ExitCode::FAILURE;
+    }
+    let arena = Arena::new(store, dist, Arc::new(now), seed);
     let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await {
         Ok(listener) => listener,
         Err(error) => {

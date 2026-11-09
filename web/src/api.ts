@@ -39,3 +39,7 @@ export function uploadPath(nick: string, ticket: string, profile: number | null)
 export function localSeed(random: () => number): number {
   return Math.floor(random() * 0x100000000) >>> 0;
 }
+
+export function seedRequest(): { method: string; headers: Record<string, string> } {
+  return { method: "POST", headers: { "x-feint": "1" } };
+}

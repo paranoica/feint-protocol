@@ -85,7 +85,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
     }
     let mut runner = Runner::start(&mut game, [&mut human, &mut bot], header)
         .map_err(|_| VerifyError::Bodies)?;
-    let mut frames = Vec::with_capacity(usize::try_from(record.ticks).unwrap_or(0));
+    let mut frames = Vec::with_capacity(usize::try_from(record.ticks.min(1 << 14)).unwrap_or(0));
     let mut intent = None;
     let mut seen = 0;
     while runner.ticks() < record.ticks
@@ -94,7 +94,11 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
             [&mut human as &mut dyn Controller<AirHockey>, &mut bot],
         )
     {
-        for action in &runner.actions()[seen..] {
+        let fresh = &runner.actions()[seen..];
+        if record.actions.get(seen..seen + fresh.len()) != Some(fresh) {
+            return Err(VerifyError::Mismatch);
+        }
+        for action in fresh {
             if action.player == 1 {
                 intent = Some((action.intent, action.deceptive));
             }

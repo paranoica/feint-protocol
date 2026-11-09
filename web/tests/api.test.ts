@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localSeed, profilePath, profileVersion, ticketFrom, uploadPath } from "../src/api.ts";
+import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath } from "../src/api.ts";
 
 test("an upload names nick, ticket and the profile it played with", () => {
   assert.equal(uploadPath("ann b", "00ff", null), "/api/matches?nick=ann%20b&ticket=00ff");
@@ -27,4 +27,10 @@ test("profile versions and local seeds stay in range", () => {
   assert.equal(profileVersion("1e3"), null);
   assert.equal(localSeed(() => 0), 0);
   assert.equal(localSeed(() => 0.999999999999), 0xffffffff);
+});
+
+test("a ticket is asked for with a POST that a plain page cannot forge", () => {
+  const init = seedRequest();
+  assert.equal(init.method, "POST");
+  assert.deepEqual(init.headers, { "x-feint": "1" });
 });

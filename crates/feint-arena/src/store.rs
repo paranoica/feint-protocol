@@ -7,7 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::parquet_out;
 use crate::verify::Verified;
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
+pub const MAX_ATTEMPTS: i64 = 3;
 pub const TICKET_SECONDS: u64 = 45 * 60;
 pub const MAX_OPEN_TICKETS: i64 = 512;
 pub const MAX_NICK: usize = 24;
@@ -52,9 +53,24 @@ pub struct Upload<'a> {
     pub profile: Option<Vec<u8>>,
 }
 
-struct Temp {
+pub struct Staged {
     rec: PathBuf,
     parquet: PathBuf,
+}
+
+pub fn stage(dir: &Path, upload: &Upload<'_>) -> Result<Staged, StoreError> {
+    let attempt = ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    let stem = format!("upload-{}-{attempt}", upload.token);
+    let staged = Staged {
+        rec: dir.join(format!("{stem}.rec.tmp")),
+        parquet: dir.join(format!("{stem}.parquet.tmp")),
+    };
+    if let Err(error) = write_files(&staged, upload.bytes, upload.verified) {
+        let _ = fs::remove_file(&staged.rec);
+        let _ = fs::remove_file(&staged.parquet);
+        return Err(error);
+    }
+    Ok(staged)
 }
 
 pub struct Store {
@@ -97,6 +113,14 @@ impl Store {
                      version INTEGER NOT NULL, parent INTEGER, blob BLOB NOT NULL,
                      PRIMARY KEY (player_id, version));
                  PRAGMA user_version = 1;
+                 COMMIT;",
+            )?;
+        }
+        if version < 2 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE tickets ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+                 PRAGMA user_version = 2;
                  COMMIT;",
             )?;
         }
@@ -182,19 +206,43 @@ impl Store {
             .ok_or(StoreError::Profile)
     }
 
+    #[must_use]
+    pub fn matches_dir(&self) -> PathBuf {
+        self.root.join("matches")
+    }
+
+    pub fn try_ticket(&mut self, now: u64, token: &str) -> Result<u64, StoreError> {
+        let claimed = self.conn.execute(
+            "UPDATE tickets SET attempts = attempts + 1
+             WHERE token = ?1 AND used = 0 AND expires > ?2 AND attempts < ?3",
+            params![token, to_i64(now), MAX_ATTEMPTS],
+        )?;
+        if claimed != 1 {
+            return Err(StoreError::Ticket);
+        }
+        let seed: i64 =
+            self.conn
+                .query_row("SELECT seed FROM tickets WHERE token = ?1", [token], |r| {
+                    r.get(0)
+                })?;
+        u64::try_from(seed).map_err(|_| StoreError::Ticket)
+    }
+
     pub fn save(&mut self, upload: &Upload<'_>) -> Result<Saved, StoreError> {
-        let dir = self.root.join("matches");
-        let attempt = ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-        let stem = format!("upload-{}-{attempt}", upload.token);
-        let temp = Temp {
-            rec: dir.join(format!("{stem}.rec.tmp")),
-            parquet: dir.join(format!("{stem}.parquet.tmp")),
-        };
-        let written = write_files(&temp, upload.bytes, upload.verified);
-        let result = written.and_then(|()| self.commit(upload, &dir, &temp));
+        let staged = stage(&self.matches_dir(), upload)?;
+        self.commit_staged(upload, staged)
+    }
+
+    pub fn commit_staged(
+        &mut self,
+        upload: &Upload<'_>,
+        staged: Staged,
+    ) -> Result<Saved, StoreError> {
+        let dir = self.matches_dir();
+        let result = self.commit(upload, &dir, &staged);
         if result.is_err() {
-            let _ = fs::remove_file(&temp.rec);
-            let _ = fs::remove_file(&temp.parquet);
+            let _ = fs::remove_file(&staged.rec);
+            let _ = fs::remove_file(&staged.parquet);
         }
         result
     }
@@ -203,7 +251,7 @@ impl Store {
         &mut self,
         upload: &Upload<'_>,
         dir: &Path,
-        temp: &Temp,
+        temp: &Staged,
     ) -> Result<Saved, StoreError> {
         let Upload {
             now,
@@ -271,11 +319,13 @@ impl Store {
             let _ = fs::remove_file(&rec);
             return Err(error.into());
         }
-        tx.execute(
-            "UPDATE matches SET record_path = ?1, parquet_path = ?2 WHERE id = ?3",
-            params![rec.to_string_lossy(), pq.to_string_lossy(), id],
-        )?;
-        if let Err(error) = tx.commit() {
+        let finished = tx
+            .execute(
+                "UPDATE matches SET record_path = ?1, parquet_path = ?2 WHERE id = ?3",
+                params![rec.to_string_lossy(), pq.to_string_lossy(), id],
+            )
+            .and_then(|_| tx.commit());
+        if let Err(error) = finished {
             let _ = fs::remove_file(&rec);
             let _ = fs::remove_file(&pq);
             return Err(error.into());
@@ -291,7 +341,7 @@ impl Store {
     }
 }
 
-fn write_files(temp: &Temp, bytes: &[u8], verified: &Verified) -> Result<(), StoreError> {
+fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), StoreError> {
     fs::write(&temp.rec, bytes)?;
     let file = fs::File::create(&temp.parquet)?;
     let header = &verified.record.header;

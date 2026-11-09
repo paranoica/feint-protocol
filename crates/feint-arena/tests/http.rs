@@ -36,7 +36,7 @@ fn start_with(name: &str, workers: usize) -> Server {
         store,
         dist,
         Arc::new(move || ticking.load(Ordering::SeqCst)),
-        7,
+        [7; 32],
     );
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(workers)
@@ -63,9 +63,19 @@ struct Reply {
 }
 
 fn call(addr: SocketAddr, method: &str, path: &str, body: &[u8]) -> Reply {
+    call_with(
+        addr,
+        method,
+        path,
+        body,
+        &format!("Host: {addr}\r\nX-Feint: 1\r\n"),
+    )
+}
+
+fn call_with(addr: SocketAddr, method: &str, path: &str, body: &[u8], headers: &str) -> Reply {
     let mut s = TcpStream::connect(addr).unwrap();
     let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+        "{method} {path} HTTP/1.1\r\n{headers}Connection: close\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
     s.write_all(head.as_bytes()).unwrap();
@@ -94,7 +104,7 @@ fn json_field(body: &[u8], key: &str) -> String {
 }
 
 fn ticket(s: &Server) -> (String, u64) {
-    let r = call(s.addr, "GET", "/api/seed", &[]);
+    let r = call(s.addr, "POST", "/api/seed", &[]);
     assert_eq!(r.status, 200);
     (
         json_field(&r.body, "ticket"),
@@ -244,10 +254,10 @@ fn body_and_ticket_limits_hold() {
     for _ in 0..511 {
         ticket(&s);
     }
-    assert_eq!(call(s.addr, "GET", "/api/seed", &[]).status, 429);
+    assert_eq!(call(s.addr, "POST", "/api/seed", &[]).status, 429);
     s.clock.fetch_add(46 * 60, Ordering::SeqCst);
     assert_eq!(
-        call(s.addr, "GET", "/api/seed", &[]).status,
+        call(s.addr, "POST", "/api/seed", &[]).status,
         200,
         "expired tickets free their slots"
     );
@@ -428,4 +438,156 @@ fn two_uploads_racing_on_one_ticket_store_one_match() {
         .collect();
     assert_eq!(left.len(), 2, "only the winner's files: {left:?}");
     assert!(left.iter().all(|f| !f.ends_with(".tmp")), "{left:?}");
+}
+
+#[test]
+fn only_local_hosts_and_scripted_requests_get_tickets() {
+    let s = start("origin");
+    let host = format!("Host: {}\r\n", s.addr);
+    assert_eq!(
+        call_with(s.addr, "POST", "/api/seed", &[], &host).status,
+        403,
+        "no X-Feint header"
+    );
+    assert_eq!(
+        call_with(
+            s.addr,
+            "GET",
+            "/api/seed",
+            &[],
+            &format!("{host}X-Feint: 1\r\n")
+        )
+        .status,
+        405
+    );
+    assert_eq!(
+        call_with(s.addr, "GET", "/", &[], "Host: evil.example:80\r\n").status,
+        403,
+        "a rebound host"
+    );
+    assert_eq!(
+        call_with(s.addr, "GET", "/", &[], "Host: localhost:1\r\n").status,
+        200
+    );
+}
+
+#[test]
+fn unfinished_matches_and_repeated_forgeries_are_refused() {
+    let s = start("unfinished");
+    let (t, seed) = ticket(&s);
+    let mut part = Session::new(1, seed).unwrap();
+    part.set_pointer(-0.5, 0.2);
+    part.advance(600);
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=ann&ticket={t}"),
+            &part.record()
+        )
+        .status,
+        400
+    );
+
+    let (t, seed) = ticket(&s);
+    let genuine = finished(1, seed, None).record();
+    let mut forged = feint_ai::decode_record(&genuine).unwrap();
+    forged.score = vec![7, 0];
+    let forged = feint_ai::encode_record(&forged);
+    for _ in 0..3 {
+        assert_eq!(
+            call(
+                s.addr,
+                "POST",
+                &format!("/api/matches?nick=ann&ticket={t}"),
+                &forged
+            )
+            .status,
+            400
+        );
+    }
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=ann&ticket={t}"),
+            &genuine
+        )
+        .status,
+        409,
+        "a ticket allows three tries"
+    );
+}
+
+#[test]
+fn an_upload_with_an_unknown_ticket_is_refused_before_its_body_is_read() {
+    let s = start("early");
+    let mut c = TcpStream::connect(s.addr).unwrap();
+    let head = format!(
+        "POST /api/matches?nick=a&ticket=nope HTTP/1.1\r\nHost: {}\r\nX-Feint: 1\r\nConnection: close\r\nContent-Length: 30000000\r\n\r\n",
+        s.addr
+    );
+    c.write_all(head.as_bytes()).unwrap();
+    c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut raw = Vec::new();
+    let _ = c.read_to_end(&mut raw);
+    let text = String::from_utf8_lossy(&raw);
+    assert!(
+        text.starts_with("HTTP/1.1 409"),
+        "answered without the 30 MB body: {text:?}"
+    );
+}
+
+#[test]
+fn a_thirty_minute_record_fits_the_body_cap() {
+    let mut record = feint_ai::decode_record(&Session::new(1, 1).unwrap().record()).unwrap();
+    let ticks = feint_arena::MAX_TICKS;
+    let mut action = feint_protocol::ActionT::default();
+    action.values = Some(vec![0.123_456_7, -0.456_789_1]);
+    action.intent = 1;
+    record.actions.clear();
+    for tick in (0..ticks).step_by(4) {
+        for player in 0..2 {
+            let mut a = action.clone();
+            a.tick = tick;
+            a.player = player;
+            record.actions.push(a);
+        }
+    }
+    record.ticks = ticks;
+    let size = feint_ai::encode_record(&record).len();
+    assert!(
+        size < feint_arena::MAX_BODY,
+        "{size} bytes for 30 min at 60 Hz per seat"
+    );
+}
+
+#[test]
+fn an_oversized_upload_does_not_use_up_its_ticket() {
+    let s = start("oversized");
+    let (t, seed) = ticket(&s);
+    let over = vec![0u8; feint_arena::MAX_BODY + 1];
+    for _ in 0..4 {
+        assert_eq!(
+            call(
+                s.addr,
+                "POST",
+                &format!("/api/matches?nick=a&ticket={t}"),
+                &over
+            )
+            .status,
+            413
+        );
+    }
+    let genuine = finished(1, seed, None).record();
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=a&ticket={t}"),
+            &genuine
+        )
+        .status,
+        201
+    );
 }

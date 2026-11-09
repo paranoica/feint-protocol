@@ -17,7 +17,7 @@ function play(game) {
 }
 
 async function ticket() {
-  const response = await fetch(`${base}/api/seed`);
+  const response = await fetch(`${base}/api/seed`, { method: "POST", headers: { "x-feint": "1" } });
   if (response.status !== 200) {
     throw new Error(`seed: ${response.status}`);
   }
@@ -26,7 +26,11 @@ async function ticket() {
 
 async function upload(record, t, profile) {
   const query = `nick=arena-check&ticket=${t.ticket}${profile ? `&profile=${profile}` : ""}`;
-  const response = await fetch(`${base}/api/matches?${query}`, { method: "POST", body: record });
+  const response = await fetch(`${base}/api/matches?${query}`, {
+    method: "POST",
+    headers: { "x-feint": "1" },
+    body: record,
+  });
   const body = await response.json();
   if (response.status !== 201) {
     throw new Error(`upload: ${response.status} ${JSON.stringify(body)}`);

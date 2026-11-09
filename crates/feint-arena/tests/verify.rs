@@ -182,3 +182,23 @@ fn forged_records_are_refused() {
         "a profile below level 5"
     );
 }
+
+#[test]
+fn a_forgery_early_in_the_match_is_refused_without_replaying_the_rest() {
+    let s = scripted(5, 21, 20_000);
+    let bytes = s.record();
+    let began = std::time::Instant::now();
+    verify(&bytes, None).unwrap();
+    let whole = began.elapsed();
+    let early = forge(&bytes, |r| {
+        let i = r.actions.iter().position(|a| a.player == 1).unwrap();
+        r.actions[i].intent = 9;
+    });
+    let began = std::time::Instant::now();
+    assert_eq!(verify(&early, None).err(), Some(VerifyError::Mismatch));
+    let refused = began.elapsed();
+    assert!(
+        refused * 4 < whole,
+        "refused in {refused:?}, a full verification took {whole:?}"
+    );
+}
