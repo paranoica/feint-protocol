@@ -2,50 +2,13 @@ use std::collections::VecDeque;
 use std::marker::PhantomData;
 
 use feint_protocol::{
-    ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId, TimeMode,
+    ActionT, ChaCha8Rng, GameAdapter, GameSpecT, ObservationT, PlayerId, TimeMode,
 };
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
+use crate::playbook::{Choice, Controller, Cue, Playbook, Stance};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Choice {
-    pub id: u16,
-    pub intent: u8,
-    pub deceptive: bool,
-    pub horizon_ticks: u32,
-    pub param: [f32; 2],
-}
-
-pub trait Playbook<A: GameAdapter> {
-    fn options(&self, state: &A::State, me: PlayerId, repertoire: u8, out: &mut Vec<Choice>);
-
-    fn act(
-        &self,
-        state: &A::State,
-        me: PlayerId,
-        choice: &Choice,
-        elapsed: u64,
-        aim: [f64; 2],
-    ) -> ActionT;
-
-    fn reply(&self, state: &A::State, them: PlayerId) -> ActionT;
-
-    fn evaluate(&self, state: &A::State, me: PlayerId) -> f64;
-
-    fn margin(&self) -> f64;
-}
-
-pub trait Controller<A: GameAdapter> {
-    fn new_match(&mut self, spec: &GameSpecT, me: PlayerId, seed: u64);
-
-    fn on_tick(&mut self, adapter: &A, obs: &ObservationT) -> Option<ActionT>;
-
-    fn on_event(&mut self, event: &EventT) {
-        let _ = event;
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotError {
@@ -162,7 +125,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     }
 
     fn step(&self, adapter: &A, state: &A::State, own: Option<&ActionT>, ticks: u64) -> A::State {
-        let reply = self.playbook.reply(state, self.opponent());
+        let reply = self
+            .playbook
+            .opponent_move(state, self.opponent(), Stance::Naive);
         let ticks = u32::try_from(ticks).unwrap_or(u32::MAX);
         match own {
             Some(own) => adapter.simulate(state, &[own.clone(), reply], ticks),
@@ -202,12 +167,16 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     ) -> f64 {
         let horizon = choice.horizon_ticks.clamp(1, cap);
         let mut state = state.clone();
-        let mut theirs = self.playbook.reply(&state, self.opponent());
+        let mut theirs = self
+            .playbook
+            .opponent_move(&state, self.opponent(), Stance::Naive);
         let mut next_reply = self.reply_every;
         let mut done = 0;
         while done < horizon {
             if done >= next_reply {
-                theirs = self.playbook.reply(&state, self.opponent());
+                theirs = self
+                    .playbook
+                    .opponent_move(&state, self.opponent(), Stance::Naive);
                 next_reply = next_reply.saturating_add(self.reply_every);
             }
             let ticks = self.stride.min(horizon - done).min(next_reply - done);
@@ -227,8 +196,13 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     fn replan(&mut self, adapter: &A, state: &A::State, now: u64) {
         let mut options = std::mem::take(&mut self.options);
         options.clear();
-        self.playbook
-            .options(state, self.me, self.difficulty.repertoire, &mut options);
+        self.playbook.options(
+            state,
+            self.me,
+            self.difficulty.repertoire,
+            &Cue::default(),
+            &mut options,
+        );
         let current = self.current;
         let offered = |id: u16| options.iter().any(|c| c.id == id);
         if let Some(cur) = current

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use feint_ai::{Choice, Playbook};
+use feint_ai::{Choice, Cue, Playbook, Stance};
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
     GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
@@ -221,7 +221,7 @@ impl LinePlaybook {
 }
 
 impl Playbook<Line> for LinePlaybook {
-    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, out: &mut Vec<Choice>) {
+    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, _cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
         out.extend(self.targets.iter().enumerate().map(|(i, &x)| Choice {
             id: i as u16,
@@ -229,6 +229,8 @@ impl Playbook<Line> for LinePlaybook {
             deceptive: false,
             horizon_ticks: self.horizon,
             param: [x, 0.0],
+            shown: None,
+            real: None,
         }));
     }
 
@@ -246,7 +248,7 @@ impl Playbook<Line> for LinePlaybook {
         a
     }
 
-    fn reply(&self, s: &LineState, them: PlayerId) -> ActionT {
+    fn opponent_move(&self, s: &LineState, them: PlayerId, _stance: Stance) -> ActionT {
         self.replies.set(self.replies.get() + 1);
         let mut a = ActionT::default();
         a.player = them;

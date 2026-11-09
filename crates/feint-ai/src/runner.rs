@@ -1,6 +1,6 @@
 use feint_protocol::{ActionT, AdapterError, BodyParamsT, GameAdapter, ObservationT, PlayerId};
 
-use crate::bot::Controller;
+use crate::playbook::Controller;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunHeader {

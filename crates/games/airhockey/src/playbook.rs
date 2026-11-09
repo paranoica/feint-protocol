@@ -1,4 +1,4 @@
-use feint_ai::{Choice, Playbook};
+use feint_ai::{Choice, Cue, Playbook, Stance};
 use feint_protocol::{ActionT, PlayerId};
 
 use crate::adapter::AirHockey;
@@ -86,7 +86,14 @@ impl HockeyPlaybook {
 }
 
 impl Playbook<AirHockey> for HockeyPlaybook {
-    fn options(&self, state: &Match, me: PlayerId, repertoire: u8, out: &mut Vec<Choice>) {
+    fn options(
+        &self,
+        state: &Match,
+        me: PlayerId,
+        repertoire: u8,
+        _cue: &Cue,
+        out: &mut Vec<Choice>,
+    ) {
         out.clear();
         let choice = |id: u16, intent: u8, horizon_ticks: u32, k: f32| Choice {
             id,
@@ -94,6 +101,8 @@ impl Playbook<AirHockey> for HockeyPlaybook {
             deceptive: false,
             horizon_ticks,
             param: [k, 0.0],
+            shown: None,
+            real: None,
         };
         if repertoire == 0 {
             out.push(choice(Self::CHASE, 1, 60, 0.0));
@@ -121,7 +130,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         self.go_to(me, target)
     }
 
-    fn reply(&self, s: &Match, them: PlayerId) -> ActionT {
+    fn opponent_move(&self, s: &Match, them: PlayerId, _stance: Stance) -> ActionT {
         let target = if Self::puck_in_half_of(s, them) {
             self.defence_spot(s, them)
         } else {

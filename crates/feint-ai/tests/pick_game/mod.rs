@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use feint_ai::{Choice, Playbook};
+use feint_ai::{Choice, Cue, Playbook, Stance};
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, EventT, GameAdapter, GameSpecT,
     MatchResultT, ObservationT, PlayerId, TimeMode,
@@ -117,7 +117,7 @@ impl GameAdapter for Pick {
 pub struct PickPlaybook;
 
 impl Playbook<Pick> for PickPlaybook {
-    fn options(&self, _s: &PickState, _me: PlayerId, _rep: u8, out: &mut Vec<Choice>) {
+    fn options(&self, _s: &PickState, _me: PlayerId, _rep: u8, _cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
         for (i, &ok) in LEGAL.iter().enumerate() {
             if ok == 1 {
@@ -127,6 +127,8 @@ impl Playbook<Pick> for PickPlaybook {
                     deceptive: false,
                     horizon_ticks: 1,
                     param: [i as f32, 0.0],
+                    shown: None,
+                    real: None,
                 });
             }
         }
@@ -139,7 +141,7 @@ impl Playbook<Pick> for PickPlaybook {
         a
     }
 
-    fn reply(&self, _s: &PickState, them: PlayerId) -> ActionT {
+    fn opponent_move(&self, _s: &PickState, them: PlayerId, _stance: Stance) -> ActionT {
         let mut a = ActionT::default();
         a.player = them;
         a.discrete = 0;

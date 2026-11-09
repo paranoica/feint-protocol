@@ -1,7 +1,7 @@
 mod line_game;
 mod pick_game;
 
-use feint_ai::{Bot, BotError, Choice, Controller, Difficulty, Playbook};
+use feint_ai::{Bot, BotError, Choice, Controller, Cue, Difficulty, Playbook, Stance};
 use feint_protocol::{ActionT, GameAdapter, ObservationT};
 use line_game::{Line, LinePlaybook, LineState, line_spec};
 use pick_game::{LEGAL, Pick, PickPlaybook, PickState, pick_spec};
@@ -457,10 +457,10 @@ struct OfferOnce {
 }
 
 impl Playbook<Line> for OfferOnce {
-    fn options(&self, s: &LineState, me: u8, rep: u8, out: &mut Vec<Choice>) {
+    fn options(&self, s: &LineState, me: u8, rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         if !self.offered.replace(true) {
             let mut fresh = Vec::new();
-            self.inner.options(s, me, rep, &mut fresh);
+            self.inner.options(s, me, rep, cue, &mut fresh);
             out.extend(fresh);
         }
     }
@@ -469,8 +469,8 @@ impl Playbook<Line> for OfferOnce {
         self.inner.act(s, me, c, elapsed, aim)
     }
 
-    fn reply(&self, s: &LineState, them: u8) -> ActionT {
-        self.inner.reply(s, them)
+    fn opponent_move(&self, s: &LineState, them: u8, stance: Stance) -> ActionT {
+        self.inner.opponent_move(s, them, stance)
     }
 
     fn evaluate(&self, s: &LineState, me: u8) -> f64 {
