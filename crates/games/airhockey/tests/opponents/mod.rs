@@ -8,7 +8,7 @@ use feint_ai::{Controller, Playbook, Stance};
 use feint_protocol::{ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 use rand_chacha::rand_core::SeedableRng;
 
-pub const READ_DELAY_TICKS: usize = 48;
+pub const READ_DELAY_TICKS: usize = 60;
 const SIDE: f64 = 0.03;
 
 pub struct Reader {

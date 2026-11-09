@@ -297,7 +297,7 @@ fn pruning_keeps_the_simulation_budget() {
     bot.on_tick(&game, &observe(&game)).expect("acts at once");
     let simulated = game.simulated.get();
     assert!(
-        simulated <= 2_400,
+        simulated <= u64::from(feint_ai::SIMULATION_BUDGET),
         "{simulated} simulated ticks in one replan"
     );
     assert_eq!(

@@ -21,7 +21,7 @@ pub enum BotError {
     BadReaction,
 }
 
-pub const SIMULATION_BUDGET: u32 = 2_400;
+pub const SIMULATION_BUDGET: u32 = 4_800;
 
 pub const MAX_DELAY_TICKS: usize = 1 << 16;
 
