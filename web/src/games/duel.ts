@@ -132,7 +132,7 @@ function figure(ctx: CanvasRenderingContext2D, g: Gunner, seat: number, color: s
     ctx.fillStyle = "rgba(255,255,255,0.45)";
     ctx.font = `600 ${Math.max(11, size * 0.45)}px system-ui, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText("reloading", x, barY + (seat === 0 ? 18 : -10));
+    ctx.fillText("reloading", x, barY + (seat === 0 ? 24 : -14));
   }
 }
 
@@ -246,10 +246,10 @@ export const duelView: GameView = {
     } else if (phase === 0) {
       banner(ctx, "Ready…", colors.ink);
     } else if (!watching && phase === 1) {
-      ctx.fillStyle = colors.ink;
-      ctx.font = `600 ${Math.max(13, scale * 0.22)}px system-ui, sans-serif`;
+      ctx.fillStyle = "rgba(231,238,248,0.55)";
+      ctx.font = "600 15px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Hold the mouse to draw, aim with it · Q / E or ← / → to step aside", centreX(), height - 18);
+      ctx.fillText("Hold the mouse to draw, aim with it · Q / E or ← / → to step aside", centreX(), height * 0.5);
     }
   },
 

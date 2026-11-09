@@ -242,7 +242,12 @@ impl Duel {
         g.last_roll = dir.signum();
         let shooter = usize::from(1 - seat.min(1));
         let late = self.gunners[shooter].committed || self.bullets[shooter].is_some();
-        self.gunners[shooter].response = if late { 2 * dir.signum() } else { dir.signum() };
+        let drawing = self.gunners[shooter].loaded && self.gunners[shooter].hand > 0.0;
+        if late {
+            self.gunners[shooter].response = 2 * dir.signum();
+        } else if drawing {
+            self.gunners[shooter].response = dir.signum();
+        }
         true
     }
 
@@ -290,10 +295,17 @@ impl Duel {
                 });
                 g.committed = false;
                 g.loaded = false;
+                g.aim = None;
                 g.reload = self.params.reload_ticks;
             }
         } else if g.holding {
-            g.hand = (g.hand + step).min(1.0);
+            g.hand = if g.loaded {
+                (g.hand + step).min(1.0)
+            } else if g.hand > commit_at {
+                (g.hand - step).max(commit_at)
+            } else {
+                (g.hand + step).min(commit_at)
+            };
             if g.loaded && g.hand >= commit_at {
                 let aim = g.aim_target.clamp(-w, w);
                 g.committed = true;

@@ -58,11 +58,11 @@ impl Controller<QuickDraw> for Human {
             self.seen.pop_front();
         }
         let v = self.seen.front()?.state.clone()?;
-        let (my_x, my_hand, my_loaded, my_recovery) = (v[0], v[1], v[3] >= 0.5, v[6]);
-        let (their_x, their_hand, their_loaded) = (v[11], v[12], v[14] >= 0.5);
-        let their_shots = v[20];
-        let live = v[30] == 1.0;
-        let cycle = v[32] * 1000.0 + their_shots;
+        let (my_x, my_hand, my_loaded, my_recovery) = (v[0], v[1], v[3] >= 0.5, v[4]);
+        let (their_x, their_hand, their_loaded) = (v[9], v[10], v[12] >= 0.5);
+        let their_shots = v[16];
+        let live = v[26] == 1.0;
+        let cycle = v[28] * 1000.0 + their_shots;
         if cycle != self.cycle {
             self.cycle = cycle;
             self.bites = self.unit() < 0.7;

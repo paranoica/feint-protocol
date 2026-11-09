@@ -3,10 +3,10 @@ use feint_protocol::{
     GameAdapter, GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
 };
 
-use crate::rules::{Body, Bullet, Duel, Gunner, Params, Phase, Roll, RoundEvent};
+use crate::rules::{Body, Bullet, Duel, Gunner, Params, Phase, RoundEvent};
 
 pub const GAME_VERSION: u32 = 1;
-pub const OBSERVATION_LEN: usize = 33;
+pub const OBSERVATION_LEN: usize = 29;
 
 pub struct QuickDraw {
     game: Duel,
@@ -78,17 +78,12 @@ pub fn apply_to(game: &mut Duel, action: &ActionT) -> Result<(), AdapterError> {
     Ok(())
 }
 
-fn gunner_values(g: &Gunner, own: bool, hz: f64) -> [f64; 11] {
-    let (dir, left) = g
-        .roll
-        .map_or((0.0, 0.0), |r| (f64::from(r.dir), f64::from(r.left) / hz));
+fn gunner_values(g: &Gunner, own: bool, hz: f64) -> [f64; 9] {
     [
         g.x,
         g.hand,
         f64::from(u8::from(g.committed)),
         f64::from(u8::from(g.loaded)),
-        dir,
-        left,
         f64::from(g.recovery) / hz,
         if own {
             g.aim.unwrap_or(g.aim_target)
@@ -134,8 +129,6 @@ impl GameAdapter for QuickDraw {
                 dim(&format!("{who}_hand"), 0.0, 1.0, "share"),
                 dim(&format!("{who}_committed"), 0.0, 1.0, "flag"),
                 dim(&format!("{who}_loaded"), 0.0, 1.0, "flag"),
-                dim(&format!("{who}_roll_dir"), -1.0, 1.0, "dir"),
-                dim(&format!("{who}_roll_left"), 0.0, 1.0, "s"),
                 dim(&format!("{who}_recovery"), 0.0, 1.0, "s"),
                 dim(&format!("{who}_aim"), -w, w, "m"),
                 dim(&format!("{who}_reload"), 0.0, 2.0, "s"),
@@ -164,7 +157,7 @@ impl GameAdapter for QuickDraw {
         spec.signals = Some(vec![
             dim("hand", 0.0, 1.0, "share"),
             dim("x", -w, w, "m"),
-            dim("roll_dir", -1.0, 1.0, "dir"),
+            dim("recovery", 0.0, 1.0, "s"),
         ]);
         spec.intent_labels = Some(
             ["none", "shoot", "dodge", "fake"]
@@ -250,9 +243,7 @@ impl GameAdapter for QuickDraw {
         let opp = &s.gunners[them];
         let signals = out.opponent_signals.get_or_insert_with(Vec::new);
         signals.clear();
-        signals.extend(
-            [opp.hand, opp.x, opp.roll.map_or(0.0, |r| f64::from(r.dir))].map(|v| v as f32),
-        );
+        signals.extend([opp.hand, opp.x, f64::from(opp.recovery) / hz].map(|v| v as f32));
         out.legal.get_or_insert_with(Vec::new).clear();
         let score = out.score.get_or_insert_with(Vec::new);
         score.clear();
@@ -276,7 +267,6 @@ impl GameAdapter for QuickDraw {
         let caps = [s.recovery_ticks(0), s.recovery_ticks(1)];
         let gunner = |base: usize, seat: usize, own: bool| {
             let recovery_cap = caps[seat];
-            let dir = value(base + 4);
             let committed = value(base + 2) >= 0.5;
             let mut g = Gunner {
                 x: value(base).clamp(-w, w),
@@ -287,26 +277,23 @@ impl GameAdapter for QuickDraw {
                 aim: None,
                 lead: 0.0,
                 loaded: value(base + 3) >= 0.5,
-                roll: (dir.abs() >= 0.5).then_some(Roll {
-                    dir: if dir < 0.0 { -1 } else { 1 },
-                    left: 1,
-                }),
-                recovery: ticks(value(base + 6), recovery_cap),
+                roll: None,
+                recovery: ticks(value(base + 4), recovery_cap),
                 rolls: 0,
                 last_roll: 0,
-                reload: ticks(value(base + 8), p.reload_ticks),
-                shots: value(base + 9).round().clamp(0.0, 1e6) as u32,
+                reload: ticks(value(base + 6), p.reload_ticks),
+                shots: value(base + 7).round().clamp(0.0, 1e6) as u32,
                 response: 0,
-                last_response: value(base + 10).round().clamp(-2.0, 2.0) as i8,
+                last_response: value(base + 8).round().clamp(-2.0, 2.0) as i8,
             };
             if own {
-                g.aim_target = value(base + 7).clamp(-w, w);
+                g.aim_target = value(base + 5).clamp(-w, w);
                 g.aim = committed.then_some(g.aim_target);
             }
             g
         };
         let mine = gunner(0, me, true);
-        let theirs = gunner(11, them, false);
+        let theirs = gunner(9, them, false);
         s.gunners[me] = mine;
         s.gunners[them] = theirs;
         if s.gunners[them].committed {
@@ -319,14 +306,14 @@ impl GameAdapter for QuickDraw {
                 lead: value(base + 3).clamp(-2.0 * w, 2.0 * w),
             })
         };
-        s.bullets[me] = bullet(22);
-        s.bullets[them] = bullet(26);
-        s.phase = Phase::from_code(value(30));
+        s.bullets[me] = bullet(18);
+        s.bullets[them] = bullet(22);
+        s.phase = Phase::from_code(value(26));
         s.t = ticks(
-            value(31),
+            value(27),
             p.round_ticks.max(p.ready_ticks).max(p.settle_ticks),
         );
-        s.round = (value(32).round().max(0.0) as u32).min(p.max_rounds);
+        s.round = (value(28).round().max(0.0) as u32).min(p.max_rounds);
         let score = obs.score.as_deref().unwrap_or_default();
         let wins = |i: usize| {
             score
@@ -357,7 +344,8 @@ impl GameAdapter for QuickDraw {
         out.clear();
         let after = self.simulate(state, std::slice::from_ref(action), 1);
         let g = &after.gunners[usize::from(action.player.min(1))];
-        out.extend([g.hand, g.x, g.roll.map_or(0.0, |r| f64::from(r.dir))].map(|v| v as f32));
+        let hz = f64::from(after.params.tick_hz);
+        out.extend([g.hand, g.x, f64::from(g.recovery) / hz].map(|v| v as f32));
     }
 
     fn digest(&self, state: &Duel) -> u64 {

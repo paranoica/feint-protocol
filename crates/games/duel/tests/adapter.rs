@@ -87,7 +87,6 @@ fn observations_rebuild_a_state_that_simulates_like_the_live_game() {
                 let (a, b) = (&r.gunners[seat], &live.gunners[seat]);
                 assert!(close(a.x, b.x) && close(a.hand, b.hand), "seat {seat}");
                 assert_eq!((a.loaded, a.committed), (b.loaded, b.committed));
-                assert_eq!(a.roll.map(|r| r.dir), b.roll.map(|r| r.dir));
                 assert!(a.recovery.abs_diff(b.recovery) <= 1);
                 assert_eq!(r.bullets[seat].is_some(), live.bullets[seat].is_some());
                 if let (Some(x), Some(y)) = (r.bullets[seat], live.bullets[seat]) {
@@ -117,7 +116,11 @@ fn observations_rebuild_a_state_that_simulates_like_the_live_game() {
                 let truth = game.simulate(&live, &held, 12);
                 for seat in 0..2 {
                     assert!(close(ahead.gunners[seat].x, truth.gunners[seat].x));
-                    assert!(close(ahead.gunners[seat].hand, truth.gunners[seat].hand));
+                    let step = live.bodies[seat].draw_rate / f64::from(live.params.tick_hz);
+                    assert!(
+                        (ahead.gunners[seat].hand - truth.gunners[seat].hand).abs() <= 2.0 * step,
+                        "an f32 observation may move the shot by one tick, not more"
+                    );
                 }
                 seen.insert("simulated");
             }
@@ -152,7 +155,7 @@ fn simulate_matches_live_stepping_and_hostile_observations_stay_inside_the_rules
     game.observe(game.live(), 1, &mut obs);
     obs.state = Some(vec![f32::NAN; OBSERVATION_LEN]);
     obs.state.as_mut().unwrap()[0] = 1e30;
-    obs.state.as_mut().unwrap()[5] = 1e30;
+    obs.state.as_mut().unwrap()[4] = 1e30;
     obs.score = Some(vec![-4, i64::MAX]);
     let s = game.state_from_observation(&obs, &mut ChaCha8Rng::seed_from_u64(1));
     let w = s.params.half_width;

@@ -127,8 +127,20 @@ fn a_miss_reloads_the_gun_the_round_goes_on_and_a_roll_needs_recovery() {
     assert_eq!(d.gunners[0].shots, 1);
     assert_eq!(d.gunners[0].last_response, 0, "the target stood still");
 
+    let mut idle = duel();
+    assert!(idle.roll(1, -1));
+    idle.step(&mut events);
+    assert_eq!(
+        idle.gunners[0].response, 0,
+        "a step with no draw in sight answers nothing"
+    );
+
     let mut d = duel();
     d.steer(0, 0.0, true);
+    for _ in 0..5 {
+        d.step(&mut events);
+    }
+    assert!(d.gunners[0].hand > 0.0 && !d.gunners[0].committed);
     assert!(d.roll(1, -1));
     assert!(!d.roll(1, 1), "no second roll while rolling");
     d.step(&mut events);
@@ -219,4 +231,37 @@ fn the_first_to_the_wins_ends_the_match_and_the_cap_ends_a_stalemate() {
         ..Params::default()
     };
     assert!(narrow.validate().is_err(), "a roll must fit the lane");
+}
+
+#[test]
+fn holding_through_a_reload_keeps_the_last_part_of_the_draw_visible() {
+    let p = Params::default();
+    let per_tick = p.max_draw_rate / f64::from(p.tick_hz);
+    let tail = ((1.0 - p.commit_at) / per_tick).ceil() as u32;
+    let mut d = duel();
+    let mut events = Vec::new();
+    d.steer(0, 2.0, true);
+    while d.bullets[0].is_none() {
+        d.step(&mut events);
+    }
+    assert_eq!(d.gunners[0].aim, None, "a fired shot leaves no aim behind");
+    while !d.gunners[0].loaded {
+        d.step(&mut events);
+    }
+    assert!(
+        d.gunners[0].hand <= p.commit_at + per_tick,
+        "an empty gun is not held past the mark"
+    );
+    while !d.gunners[0].committed {
+        d.step(&mut events);
+    }
+    let mut ticks: u32 = 0;
+    while d.bullets[0].is_none() {
+        d.step(&mut events);
+        ticks += 1;
+    }
+    assert!(
+        ticks.abs_diff(tail) <= 1,
+        "{ticks} ticks from the commit to the shot, not {tail}"
+    );
 }

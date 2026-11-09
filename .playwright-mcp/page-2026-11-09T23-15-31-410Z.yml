@@ -1,0 +1,7 @@
+- generic [ref=e3]:
+  - heading "Feint" [level=1] [ref=e4]
+  - paragraph [ref=e5]: Small games against bots that read you and lie with their bodies.
+  - generic [ref=e6]:
+    - text: Nick
+    - textbox "Nick" [ref=e7]
+  - paragraph [ref=e8]: Press D in a match to see what a bot is thinking, F to speed up a watched match.
