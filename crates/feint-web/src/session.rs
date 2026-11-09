@@ -74,6 +74,7 @@ impl Controller<AirHockey> for Pointer {
 pub struct Session {
     game: AirHockey,
     bot: Bot<AirHockey, HockeyPlaybook>,
+    left: Option<Bot<AirHockey, HockeyPlaybook>>,
     human: Pointer,
     runner: Option<Runner>,
     report: Option<RunReport>,
@@ -154,11 +155,57 @@ impl Session {
         Ok(Self {
             game,
             bot,
+            left: None,
             human,
             runner: Some(runner),
             report: None,
             events: Vec::new(),
         })
+    }
+
+    pub fn spectate(left: u8, right: u8, seed: u64) -> Result<Self, SessionError> {
+        let params = Params::default();
+        let mut game = AirHockey::new(params.clone(), right);
+        let spec = game.spec();
+        let make = |level: u8| {
+            let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
+            let bot = Bot::new(difficulty, HockeyPlaybook::new(params.clone()), &spec)
+                .map_err(|_| SessionError::Level)?;
+            Ok::<_, SessionError>((bot, difficulty.body(&spec)))
+        };
+        let (mut left_bot, left_body) = make(left)?;
+        let (mut bot, right_body) = make(right)?;
+        let header = RunHeader {
+            game_id: GAME_ID.into(),
+            game_version: GAME_VERSION,
+            seed,
+            bodies: vec![left_body, right_body],
+            levels: [left, right],
+        };
+        let runner = Runner::start(&mut game, [&mut left_bot, &mut bot], header)
+            .map_err(|_| SessionError::Level)?;
+        Ok(Self {
+            game,
+            bot,
+            left: Some(left_bot),
+            human: Pointer::new(),
+            runner: Some(runner),
+            report: None,
+            events: Vec::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn spectating(&self) -> bool {
+        self.left.is_some()
+    }
+
+    #[must_use]
+    pub fn insight_of(&self, seat: PlayerId) -> InsightView {
+        match (seat, &self.left) {
+            (0, Some(left)) => left.insight(),
+            _ => self.bot.insight(),
+        }
     }
 
     #[must_use]
@@ -193,7 +240,11 @@ impl Session {
             let Some(runner) = self.runner.as_mut() else {
                 break;
             };
-            if !runner.step(&mut self.game, [&mut self.human, &mut self.bot]) {
+            let first: &mut dyn Controller<AirHockey> = match self.left.as_mut() {
+                Some(left) => left,
+                None => &mut self.human,
+            };
+            if !runner.step(&mut self.game, [first, &mut self.bot]) {
                 break;
             }
             self.events.extend_from_slice(runner.events());
@@ -201,7 +252,11 @@ impl Session {
         if self.game.result().is_some()
             && let Some(runner) = self.runner.take()
         {
-            self.report = Some(runner.finish(&mut self.game, [&mut self.human, &mut self.bot]));
+            let first: &mut dyn Controller<AirHockey> = match self.left.as_mut() {
+                Some(left) => left,
+                None => &mut self.human,
+            };
+            self.report = Some(runner.finish(&mut self.game, [first, &mut self.bot]));
         }
         &self.events
     }

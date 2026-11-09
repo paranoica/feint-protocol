@@ -21,6 +21,13 @@
           <button data-level="5" disabled><b>5</b><span>Feint</span></button>
         </div>
         <p class="hint">Hold the mouse button or a finger on the table and drag your mallet. First to 7. Press D to see what the bot is thinking.</p>
+        <div class="watch">
+          <span>Watch two bots</span>
+          <select id="watch-left" aria-label="left bot level"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+          <span>vs</span>
+          <select id="watch-right" aria-label="right bot level"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5" selected>5</option></select>
+          <button id="watch" disabled>Watch</button>
+        </div>
       </div>
     </section>
     <section id="game" class="screen game" hidden>
@@ -31,6 +38,7 @@
         <span id="lvl" class="side-label right"></span>
       </header>
       <p id="drag-hint" class="drag-hint">Hold and drag your mallet</p>
+      <pre id="debug-left" hidden></pre>
       <pre id="debug" hidden></pre>
     </section>
     <section id="result" class="screen" hidden>

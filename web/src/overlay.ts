@@ -53,3 +53,30 @@ export const LEGEND = "colour: yellow fake · red strike · violet defend · gre
 export function intentColor(intent: number): string {
   return INTENT_COLORS[intentName(intent)] ?? "#94a3b8";
 }
+
+export function cornerName(y: number, horizontal: boolean): string {
+  if (Math.abs(y) < 0.01) {
+    return "middle";
+  }
+  if (horizontal) {
+    return y > 0 ? "top" : "bottom";
+  }
+  return y > 0 ? "left" : "right";
+}
+
+export function describeBot(label: string, insight: Insight, own: string[], other: string[]): string[] {
+  const lines = [`${label}: ${intentName(insight.intent)}`];
+  if (insight.shown >= 0 || insight.real >= 0) {
+    const shown = insight.shown < 0 ? "nothing" : named(own, insight.shown);
+    lines.push(`showing ${shown}, playing ${named(own, insight.real)}`);
+  }
+  if (!insight.memory) {
+    lines.push("model: none at this level");
+    return lines;
+  }
+  lines.push(`expects the other's shot: ${named(other, insight.likelyShot)}`);
+  insight.likelyCover.forEach((cover, shown) => {
+    lines.push(`shows ${named(own, shown)} → other covers ${named(own, cover)}`);
+  });
+  return lines;
+}

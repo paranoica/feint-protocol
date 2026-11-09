@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, intentColor, intentName } from "../src/overlay.ts";
+import { cornerName, describe, describeBot, intentColor, intentName } from "../src/overlay.ts";
 
 test("intents read as fake, strike, defend", () => {
   assert.equal(intentName(-1), "waiting");
@@ -42,4 +42,29 @@ test("the bot's colour in the debug view follows its intent", () => {
   assert.equal(intentColor(0), "#94a3b8", "moving is grey");
   assert.equal(intentColor(-1), "#94a3b8", "waiting is grey");
   assert.equal(new Set([3, 2, 4, 0].map(intentColor)).size, 4, "four distinct colours");
+});
+
+test("a watched bot's mind is told with screen-side corner names", () => {
+  const names = ["bottom", "middle", "top"];
+  const theirs = ["top", "middle", "bottom"];
+  assert.deepEqual(
+    describeBot("left", { intent: 3, memory: true, likelyShot: 0, likelyCover: [2, -1, 0], shown: 0, real: 2 }, names, theirs),
+    [
+      "left: fake",
+      "showing bottom, playing top",
+      "expects the other's shot: top",
+      "shows bottom → other covers top",
+      "shows middle → other covers unsure",
+      "shows top → other covers bottom",
+    ],
+  );
+  assert.deepEqual(
+    describeBot("right", { intent: 4, memory: false, likelyShot: -1, likelyCover: [], shown: -1, real: -1 }, names, theirs),
+    ["right: defend", "model: none at this level"],
+  );
+  assert.equal(cornerName(0.08, true), "top");
+  assert.equal(cornerName(-0.08, true), "bottom");
+  assert.equal(cornerName(0.08, false), "left");
+  assert.equal(cornerName(-0.08, false), "right");
+  assert.equal(cornerName(0.001, true), "middle");
 });
