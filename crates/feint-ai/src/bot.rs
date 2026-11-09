@@ -75,6 +75,10 @@ pub const SIMULATION_BUDGET: u32 = 1_200;
 /// How often a realtime bot reconsiders its option.
 pub const REPLAN_HZ: u32 = 10;
 
+/// The reaction time the bot assumes for its opponent in rollouts, until the opponent model
+/// (B3) measures it: a typical human's.
+pub const OPPONENT_REACTION_MS: u32 = 250;
+
 #[derive(Clone, Copy, Debug)]
 struct Committed {
     choice: Choice,
@@ -90,6 +94,7 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     cadence: Option<Cadence>,
     delay: usize,
     stride: u32,
+    reply_every: u32,
     replan_every: u64,
     buffer: ReactionBuffer,
     seen: ObservationT,
@@ -107,17 +112,20 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     /// [`BotError::BadCadence`] for a realtime spec whose decision rate cannot be kept.
     pub fn new(difficulty: Difficulty, playbook: P, spec: &GameSpecT) -> Result<Self, BotError> {
         let realtime = spec.time_mode == TimeMode::Realtime;
-        let (cadence, delay, stride, replan_every) = if realtime {
+        let (cadence, delay, stride, reply_every, replan_every) = if realtime {
             let cadence =
                 Cadence::new(spec.tick_hz, spec.decision_hz).map_err(|_| BotError::BadCadence)?;
             (
                 Some(cadence),
                 delay_ticks(difficulty.reaction_ms, spec.tick_hz),
                 (spec.tick_hz / spec.decision_hz).max(1),
+                u32::try_from(delay_ticks(OPPONENT_REACTION_MS, spec.tick_hz))
+                    .unwrap_or(u32::MAX)
+                    .max(1),
                 u64::from((spec.tick_hz / REPLAN_HZ).max(1)),
             )
         } else {
-            (None, 0, 1, 1)
+            (None, 0, 1, 1, 1)
         };
         Ok(Self {
             difficulty,
@@ -126,6 +134,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             cadence,
             delay,
             stride,
+            reply_every,
             replan_every,
             buffer: ReactionBuffer::new(delay),
             seen: ObservationT::default(),
@@ -142,6 +151,11 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     #[must_use]
     pub fn difficulty(&self) -> &Difficulty {
         &self.difficulty
+    }
+
+    #[must_use]
+    pub fn playbook(&self) -> &P {
+        &self.playbook
     }
 
     /// The option the bot is committed to, if any.
@@ -192,7 +206,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         state
     }
 
-    /// Score `choice` by playing it against the playbook's reply for up to `cap` ticks.
+    /// Score `choice` by playing it against the playbook's reply for up to `cap` ticks. The
+    /// opponent's reply is renewed once per its reaction time: an opponent answering every
+    /// stride would stop shots no human could.
     fn rollout(
         &self,
         adapter: &A,
@@ -203,14 +219,19 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     ) -> f64 {
         let horizon = choice.horizon_ticks.clamp(1, cap);
         let mut state = state.clone();
+        let mut theirs = self.playbook.reply(&state, self.opponent());
+        let mut next_reply = self.reply_every;
         let mut done = 0;
         while done < horizon {
-            let ticks = self.stride.min(horizon - done);
+            if done >= next_reply {
+                theirs = self.playbook.reply(&state, self.opponent());
+                next_reply = next_reply.saturating_add(self.reply_every);
+            }
+            let ticks = self.stride.min(horizon - done).min(next_reply - done);
             let mine =
                 self.playbook
                     .act(&state, self.me, choice, elapsed + u64::from(done), [0.0; 2]);
-            let theirs = self.playbook.reply(&state, self.opponent());
-            state = adapter.simulate(&state, &[mine, theirs], ticks);
+            state = adapter.simulate(&state, &[mine, theirs.clone()], ticks);
             done += ticks;
         }
         self.playbook.evaluate(&state, self.me)

@@ -208,6 +208,8 @@ pub struct LinePlaybook {
     pub targets: Vec<f32>,
     pub horizon: u32,
     pub margin: f64,
+    /// How many times the core asked for the opponent's reply.
+    pub replies: std::cell::Cell<u32>,
 }
 
 impl LinePlaybook {
@@ -216,6 +218,7 @@ impl LinePlaybook {
             targets: targets.to_vec(),
             horizon,
             margin: 0.0,
+            replies: std::cell::Cell::new(0),
         }
     }
 }
@@ -247,6 +250,7 @@ impl Playbook<Line> for LinePlaybook {
     }
 
     fn reply(&self, s: &LineState, them: PlayerId) -> ActionT {
+        self.replies.set(self.replies.get() + 1);
         let mut a = ActionT::default();
         a.player = them;
         a.values = Some(vec![s.pos[usize::from(them.min(1))] as f32]);

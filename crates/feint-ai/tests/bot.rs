@@ -319,3 +319,15 @@ fn turn_based_bot_acts_only_on_its_turn_and_picks_legal_actions() {
     );
     assert_eq!(LEGAL[1], 0);
 }
+
+#[test]
+fn rollouts_ask_the_opponent_once_per_its_reaction_time() {
+    // One option, a 240-tick horizon at 240 Hz: an opponent reacting in 250 ms (60 ticks)
+    // is asked at ticks 0, 60, 120 and 180 — four replies, not one per 4-tick stride.
+    let game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(difficulty(0, false, 0.0), LinePlaybook::new(&[0.5], 240), 1);
+    bot.on_tick(&game, &observe(&game, 0))
+        .expect("acts at once");
+    assert_eq!(feint_ai::OPPONENT_REACTION_MS, 250);
+    assert_eq!(bot.playbook().replies.get(), 4);
+}
