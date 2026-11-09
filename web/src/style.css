@@ -61,6 +61,59 @@ body {
   gap: 20px;
   width: 100%;
 }
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1060px;
+  margin: 0 auto;
+}
+.compare h2 {
+  font-size: 28px;
+  text-align: center;
+}
+.compare .hint {
+  margin: 0;
+  text-align: center;
+}
+.compare-game {
+  padding: 18px 22px;
+  background: linear-gradient(180deg, #101b30, #0a1220);
+  border: 1px solid var(--edge);
+  border-radius: 18px;
+}
+.compare-game h3 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+.compare-bars {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.compare-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.compare-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--bot) calc(var(--share) * 100%), rgba(255, 255, 255, 0.08) 0);
+}
+.compare-cell small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.compare-game .hint {
+  text-align: left;
+}
+.compare-verdict {
+  margin: 12px 0 4px;
+  font-weight: 600;
+}
 .game-card {
   max-width: none;
   padding: 24px;

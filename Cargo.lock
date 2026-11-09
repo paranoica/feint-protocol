@@ -444,6 +444,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "feint-compare"
+version = "0.1.0"
+dependencies = [
+ "airhockey",
+ "duel",
+ "feint-ai",
+ "penalty",
+]
+
+[[package]]
 name = "feint-ffi"
 version = "0.1.0"
 dependencies = [

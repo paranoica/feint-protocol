@@ -899,3 +899,63 @@ fn penalty_matches_are_stored_and_profiles_stay_with_their_game() {
         2
     );
 }
+
+#[test]
+fn results_add_up_each_players_matches_by_game_and_level() {
+    let s = start("results");
+    let post = |q: String, b: &[u8]| call(s.addr, "POST", &format!("/api/matches?{q}"), b);
+    let empty = call(s.addr, "GET", "/api/results?nick=ann", &[]);
+    assert_eq!(
+        (empty.status, empty.body.as_slice()),
+        (200, b"[]".as_slice())
+    );
+    let mut expected = (0, 0, 0, 0);
+    for _ in 0..2 {
+        let (t, seed) = ticket(&s);
+        let game = finished(1, seed, None);
+        let [you, bot] = game.score();
+        expected.0 += u32::from(you > bot);
+        expected.1 += u32::from(you < bot);
+        expected.2 += you;
+        expected.3 += bot;
+        assert_eq!(
+            post(format!("nick=ann&ticket={t}"), &game.record()).status,
+            201
+        );
+    }
+    let (t, seed) = ticket(&s);
+    let (shot, _) = common::shootout(2, seed, None);
+    assert_eq!(
+        post(format!("nick=ann&ticket={t}"), &shot.record()).status,
+        201
+    );
+    let (t, seed) = ticket(&s);
+    assert_eq!(
+        post(
+            format!("nick=bob&ticket={t}"),
+            &finished(1, seed, None).record()
+        )
+        .status,
+        201
+    );
+    let r = call(s.addr, "GET", "/api/results?nick=ann", &[]);
+    assert_eq!(r.status, 200);
+    assert!(r.head.contains("content-type: application/json"));
+    let [you, bot] = shot.score();
+    let want = format!(
+        "[{{\"game\":\"airhockey\",\"level\":1,\"matches\":2,\"won\":{},\"lost\":{},\"mine\":{},\"theirs\":{}}},{{\"game\":\"penalty\",\"level\":2,\"matches\":1,\"won\":{},\"lost\":{},\"mine\":{you},\"theirs\":{bot}}}]",
+        expected.0,
+        expected.1,
+        expected.2,
+        expected.3,
+        u32::from(you > bot),
+        u32::from(you < bot),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&r.body),
+        want,
+        "bob's match is not ann's"
+    );
+    assert_eq!(call(s.addr, "GET", "/api/results?nick=", &[]).status, 400);
+    assert_eq!(call(s.addr, "GET", "/api/results", &[]).status, 400);
+}

@@ -1,4 +1,5 @@
 mod adapter;
+pub mod human;
 mod playbook;
 mod rules;
 

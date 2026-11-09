@@ -9,9 +9,8 @@ publish.workspace = true
 [dependencies]
 feint-ai.workspace = true
 feint-protocol.workspace = true
-
-[dev-dependencies]
 rand_chacha.workspace = true
+
 
 [lints]
 workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "feint-compare"
+description = "Measures every hub game the same way: the level ladder against its human model and what deception adds at level 5"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+airhockey = { path = "../games/airhockey" }
+penalty.workspace = true
+duel.workspace = true
+feint-ai.workspace = true
+
+[lints]
+workspace = true

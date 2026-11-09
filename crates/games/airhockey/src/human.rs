@@ -2,9 +2,9 @@
 
 use std::collections::VecDeque;
 
-use airhockey::analysis::Frame;
-use airhockey::{AirHockey, HockeyPlaybook, Params, Vec2};
-use feint_ai::{Controller, Playbook, Stance};
+use crate::analysis::Frame;
+use crate::{AirHockey, HockeyPlaybook, Params, Vec2};
+use feint_ai::{Bot, Controller, Difficulty, Playbook, RunHeader, Stance, Standing, run_match};
 use feint_protocol::{ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
@@ -254,4 +254,48 @@ impl Controller<AirHockey> for Human {
         action.player = self.me;
         Some(action)
     }
+}
+
+pub const HUMAN_NOISE: f64 = 0.04;
+pub const HUMAN_GOALS: u32 = 7;
+const CAP_TICKS: u64 = 240 * 600;
+
+#[must_use]
+pub fn against_human(d: Difficulty, matches: u64) -> Standing {
+    let params = Params {
+        goals_to_win: HUMAN_GOALS,
+        ..Params::default()
+    };
+    let mut standing = Standing::default();
+    for seed in 0..matches {
+        let me = (seed % 2) as usize;
+        let mut game = AirHockey::new(params.clone(), 1);
+        let spec = game.spec();
+        let mut bot = Bot::new(d, HockeyPlaybook::new(params.clone()), &spec)
+            .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+        let mut human = Human::new(params.clone(), HUMAN_NOISE);
+        let human_body = Difficulty::preset(5)
+            .unwrap_or_else(|| panic!("level 5 exists"))
+            .body(&spec);
+        let bodies = if me == 0 {
+            vec![d.body(&spec), human_body]
+        } else {
+            vec![human_body, d.body(&spec)]
+        };
+        let header = RunHeader {
+            game_id: "airhockey".into(),
+            game_version: crate::GAME_VERSION,
+            seed,
+            bodies,
+            levels: [0, 0],
+        };
+        let report = if me == 0 {
+            run_match(&mut game, [&mut bot, &mut human], header, CAP_TICKS)
+        } else {
+            run_match(&mut game, [&mut human, &mut bot], header, CAP_TICKS)
+        }
+        .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
+        standing.add(&report, me);
+    }
+    standing
 }

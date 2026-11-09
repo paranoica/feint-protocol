@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod analysis;
 pub mod game;
+pub mod human;
 pub mod mallet;
 pub mod params;
 pub mod playbook;
