@@ -674,3 +674,25 @@ fn a_dash_strikes_into_the_corner_away_from_the_twitch() {
         hit.puck.vel
     );
 }
+
+#[test]
+fn a_shot_is_read_once_even_when_the_mallet_follows_the_puck() {
+    let p = playbook();
+    let mallets = [Vec2::new(-0.8, 0.0), Vec2::new(0.49, 0.0)];
+    let before = scene(Vec2::new(0.4, 0.0), mallets, [0, 0]);
+    let mut struck = before.clone();
+    struck.world.puck.vel = Vec2::new(-2.5, 0.0);
+    assert_eq!(
+        p.read(&before, &struck, 1).shot,
+        Some(1),
+        "the strike itself is a shot"
+    );
+    let mut still_close = struck.clone();
+    still_close.world.puck.pos = Vec2::new(0.39, 0.0);
+    still_close.world.mallets[1].pos = Vec2::new(0.47, 0.0);
+    assert_eq!(
+        p.read(&struck, &still_close, 1).shot,
+        None,
+        "the same shot a second time"
+    );
+}

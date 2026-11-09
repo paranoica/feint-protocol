@@ -31,11 +31,14 @@ impl HockeyPlaybook {
 
     fn shot_class(&self, before: &Match, after: &Match, shooter: PlayerId) -> Option<u8> {
         let reach = self.params.puck_radius + self.params.mallet_radius;
-        let mallet = before.world.mallets[usize::from(shooter.min(1))].pos;
-        let near = (before.world.puck.pos - mallet).length() < reach + 0.03;
+        let shooter_i = usize::from(shooter.min(1));
+        let close =
+            |m: &Match| (m.world.puck.pos - m.world.mallets[shooter_i].pos).length() < reach + 0.03;
+        let near = close(before) || close(after);
         let puck = after.world.puck;
         let towards = attack(shooter) * puck.vel.x;
-        if !near || towards < SHOT_SPEED {
+        let already = attack(shooter) * before.world.puck.vel.x >= SHOT_SPEED;
+        if !near || already || towards < SHOT_SPEED {
             return None;
         }
         let goal_x = attack(shooter) * self.params.half_length;
