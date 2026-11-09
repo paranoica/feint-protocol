@@ -24,6 +24,13 @@ impl ReactionBuffer {
     }
 
     pub fn push(&mut self, obs: &ObservationT) {
+        if self.pushed > 0 {
+            let newest = (self.pushed - 1) % self.slots.len() as u64;
+            if self.slots[newest as usize].tick == obs.tick {
+                self.slots[newest as usize].clone_from(obs);
+                return;
+            }
+        }
         let capacity = self.delay.saturating_add(1);
         let slot = (self.pushed % capacity as u64) as usize;
         if slot < self.slots.len() {
@@ -37,9 +44,16 @@ impl ReactionBuffer {
     #[must_use]
     pub fn delayed(&self, now: u64) -> Option<&ObservationT> {
         let cutoff = now.checked_sub(self.delay as u64)?;
-        self.recent()
-            .filter(|obs| obs.tick <= cutoff)
-            .max_by_key(|obs| obs.tick)
+        self.recent().filter(|obs| obs.tick <= cutoff).fold(
+            None,
+            |best: Option<&ObservationT>, obs| {
+                if best.is_none_or(|b| obs.tick > b.tick) {
+                    Some(obs)
+                } else {
+                    best
+                }
+            },
+        )
     }
 
     fn recent(&self) -> impl Iterator<Item = &ObservationT> {

@@ -424,3 +424,29 @@ fn bot_new_refuses_a_reaction_longer_than_it_can_buffer() {
     let made = Bot::<Line, _>::new(d, LinePlaybook::new(&[0.0], 1), &line_spec(60));
     assert!(matches!(made, Err(BotError::BadReaction)));
 }
+
+#[test]
+fn after_time_goes_back_the_old_timeline_is_never_seen() {
+    let game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(
+        difficulty(17, false, 0.0),
+        LinePlaybook::new(&[-0.5, 0.5], 1),
+        1,
+    );
+    let seen = |tick: u64, ball: f64| {
+        let mut g = Line::new(ball, 0.0);
+        g.state.tick = tick;
+        observe(&g, 0)
+    };
+    for t in 101..=105 {
+        bot.on_tick(&game, &seen(t, 0.9));
+    }
+    for t in [100, 108] {
+        bot.on_tick(&game, &seen(t, -0.9));
+    }
+    assert_eq!(
+        bot.current().map(|c| c.id),
+        Some(0),
+        "planned from the abandoned timeline"
+    );
+}

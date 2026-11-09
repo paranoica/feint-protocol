@@ -345,6 +345,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         let now = obs.tick;
         if self.newest.is_some_and(|newest| now < newest) {
             self.history.clear();
+            self.buffer.clear();
             self.last_replan = None;
             self.current = None;
         }

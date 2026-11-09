@@ -96,3 +96,32 @@ fn delay_is_measured_in_ticks_not_in_calls() {
     }
     assert_eq!(gap.delayed(1_000_000).map(|o| o.tick), Some(2));
 }
+
+#[test]
+fn a_repeated_tick_keeps_its_newest_copy_and_evicts_nothing() {
+    let tagged = |tick: u64, tag: f32| {
+        let mut o = obs(tick);
+        o.state = Some(vec![tag]);
+        o
+    };
+    let mut buf = ReactionBuffer::new(2);
+    for o in [tagged(5, 1.0), tagged(5, 2.0), tagged(7, 3.0)] {
+        buf.push(&o);
+    }
+    assert_eq!(buf.delayed(7), Some(&tagged(5, 2.0)));
+
+    let mut back = ReactionBuffer::new(2);
+    for o in [tagged(5, 1.0), tagged(7, 3.0), tagged(5, 2.0)] {
+        back.push(&o);
+    }
+    assert_eq!(back.delayed(7), Some(&tagged(5, 2.0)));
+
+    let mut repeats = ReactionBuffer::new(3);
+    for t in 0..=3 {
+        repeats.push(&obs(t));
+    }
+    for _ in 0..4 {
+        repeats.push(&obs(3));
+    }
+    assert_eq!(repeats.delayed(3).map(|o| o.tick), Some(0));
+}
