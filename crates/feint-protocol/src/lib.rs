@@ -1,3 +1,5 @@
+extern crate alloc;
+
 #[allow(
     clippy::all,
     clippy::pedantic,
