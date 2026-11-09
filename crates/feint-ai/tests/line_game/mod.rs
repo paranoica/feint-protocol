@@ -24,6 +24,8 @@ pub struct Line {
     pub state: LineState,
     /// When set, `live()` panics: the bot must never call it.
     pub forbid_live: bool,
+    /// The match ends at this tick, if set.
+    pub end_at: Option<u64>,
 }
 
 impl Line {
@@ -38,6 +40,7 @@ impl Line {
                 speed: [1.0, 1.0],
             },
             forbid_live: false,
+            end_at: None,
         }
     }
 }
@@ -86,7 +89,14 @@ impl GameAdapter for Line {
         line_spec(60)
     }
 
-    fn reset(&mut self, _seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
+    fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
+        if bodies.len() != 2 {
+            return Err(AdapterError::BadBody("one per player"));
+        }
+        self.state.tick = 0;
+        self.state.ball = -0.5 + (seed % 10) as f64 / 10.0;
+        self.state.pos = [0.0, 0.0];
+        self.state.target = [0.0, 0.0];
         for (i, body) in bodies.iter().take(2).enumerate() {
             if let Some(&[speed]) = body.values.as_deref() {
                 self.state.speed[i] = f64::from(speed);
@@ -183,7 +193,13 @@ impl GameAdapter for Line {
     }
 
     fn result(&self) -> Option<MatchResultT> {
-        None
+        let end = self.end_at?;
+        (self.state.tick >= end).then(|| {
+            let mut result = MatchResultT::default();
+            result.score = Some(vec![1, 0]);
+            result.duration_ticks = self.state.tick;
+            result
+        })
     }
 }
 

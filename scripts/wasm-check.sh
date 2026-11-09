@@ -6,6 +6,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 cargo build -q --locked --release -p airhockey-check --lib --target wasm32-unknown-unknown
+# The core and the hockey game (with its playbook) must also build for the browser.
+cargo build -q --locked -p feint-ai -p airhockey --target wasm32-unknown-unknown
 debug="$(cargo run -q --locked -p airhockey-check)"
 release="$(cargo run -q --locked --release -p airhockey-check)"
 wasm="$(node crates/games/airhockey-check/check.mjs \
