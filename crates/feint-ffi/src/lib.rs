@@ -89,6 +89,10 @@ fn guarded(broken: &mut bool, f: impl FnOnce() -> isize) -> isize {
     }
 }
 
+fn read_only(f: impl FnOnce() -> isize) -> isize {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(FEINT_ERR_PANIC)
+}
+
 unsafe fn live<'a>(game: *const FeintGame) -> Result<&'a FeintGame, isize> {
     match unsafe { game.as_ref() } {
         None => Err(FEINT_ERR_NULL),
@@ -190,7 +194,7 @@ pub unsafe extern "C" fn feint_game_advance(game: *mut FeintGame) -> isize {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn feint_game_finished(game: *const FeintGame) -> isize {
     match unsafe { live(game) } {
-        Ok(g) => isize::from(g.game.result().is_some()),
+        Ok(g) => read_only(|| isize::from(g.game.result().is_some())),
         Err(code) => code,
     }
 }
@@ -198,7 +202,7 @@ pub unsafe extern "C" fn feint_game_finished(game: *const FeintGame) -> isize {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn feint_game_tick(game: *const FeintGame, out: *mut u64) -> isize {
     match unsafe { live(game) } {
-        Ok(g) => unsafe { write(out, g.game.live().tick()) },
+        Ok(g) => read_only(|| unsafe { write(out, g.game.live().tick()) }),
         Err(code) => code,
     }
 }
@@ -216,17 +220,19 @@ pub unsafe extern "C" fn feint_game_score(
     if first.is_null() || second.is_null() {
         return FEINT_ERR_NULL;
     }
-    let score = g.game.live().score();
-    unsafe {
-        write(first, i64::from(score[0]));
-        write(second, i64::from(score[1]))
-    }
+    read_only(|| {
+        let score = g.game.live().score();
+        unsafe {
+            write(first, i64::from(score[0]));
+            write(second, i64::from(score[1]))
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn feint_game_digest(game: *const FeintGame, out: *mut u64) -> isize {
     match unsafe { live(game) } {
-        Ok(g) => unsafe { write(out, g.game.digest(g.game.live())) },
+        Ok(g) => read_only(|| unsafe { write(out, g.game.digest(g.game.live())) }),
         Err(code) => code,
     }
 }

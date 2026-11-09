@@ -14,14 +14,15 @@ line with the native match.
   its game while it decides, so never mutate that game in the same moment.
 - Levels. 0 is a human at the human maxima (12 m/s, 200 m/s²); 1–5 are the bot presets.
 - Buffers. Inputs are `(pointer, length)`; a length of 0 is an empty input whatever the pointer.
-  Outputs are `(pointer, capacity)`. Input and output may be the same buffer. Lengths above
-  `PTRDIFF_MAX` are refused. `FEINT_OBSERVATION_MAX` and `FEINT_ACTION_MAX` always suffice.
+  Outputs are `(pointer, capacity)`. Input and output may be the same buffer. Input lengths above
+  `PTRDIFF_MAX` are refused (a NULL input with a non-zero length is `FEINT_ERR_NULL` first). `FEINT_OBSERVATION_MAX` and `FEINT_ACTION_MAX` always suffice.
 - Returns. A non-negative value is the number of bytes written (0: no action this tick).
   Negative values are errors: `FEINT_ERR_NULL` (a required pointer is NULL), `FEINT_ERR_INPUT`
   (bad bytes, wrong message, seat or level), `FEINT_ERR_SMALL` (the output does not fit; call
   again with a larger buffer — a bot returns the same action for the same tick, it does not
   decide twice), `FEINT_ERR_BROKEN` (a previous call on this handle panicked; nothing on it
-  works any more), `FEINT_ERR_PANIC` (this call panicked and broke the handle).
+  works any more), `FEINT_ERR_PANIC` (this call panicked; a call that changes the game or the bot also
+  breaks its handle).
 - A match. Per tick: for each seat, `feint_game_observe` → `feint_bot_tick` → if it wrote an
   action, `feint_game_apply` (an apply error is ignored, as the native runner does); then
   `feint_game_advance`. Stop when `feint_game_finished` returns 1 or at a tick cap. Call
