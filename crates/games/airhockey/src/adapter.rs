@@ -29,12 +29,8 @@ impl AirHockey {
     /// When `params` fail [`Params::validate`].
     #[must_use]
     pub fn new(params: Params, level: u8) -> Self {
-        let default = Body::default();
-        let body = Body::new(
-            default.max_speed().min(params.max_body_speed),
-            default.max_accel().min(params.max_body_accel),
-        )
-        .unwrap_or_default();
+        // The human plays at the declared peak; bots get their level's share of it (FNT-D8).
+        let body = Body::new(params.max_body_speed, params.max_body_accel).unwrap_or_default();
         Self {
             game: Match::new(params, [body; 2], 0),
             level,
