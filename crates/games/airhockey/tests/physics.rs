@@ -1,3 +1,6 @@
+mod sequence;
+use sequence::Lcg;
+
 use airhockey::{
     Body, Mallet, Params, Puck, Side, Vec2, World, goal_crossing, puck_mallet, regions,
 };
@@ -386,22 +389,6 @@ fn puck_squeezed_at_centre_line_is_finite() {
     }
 }
 
-struct Lcg(u64);
-
-impl Lcg {
-    fn unit(&mut self) -> f64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    fn range(&mut self, lo: f64, hi: f64) -> f64 {
-        lo + (hi - lo) * self.unit()
-    }
-}
-
 #[test]
 fn random_play_keeps_state_finite_and_puck_in_bounds() {
     let params = Params::default();
@@ -424,4 +411,112 @@ fn random_play_keeps_state_finite_and_puck_in_bounds() {
         assert_sane(&world, &params, &format!("tick {t}"));
     }
     assert!(goals > 10, "too few goals for a meaningful run: {goals}");
+}
+
+#[test]
+fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
+    let params = Params::default();
+    let mut world = World::new(&params);
+    world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4));
+    world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, 0.42));
+    // Clamped to the centre line: the mallet holds still there.
+    world.mallets[1].target = Vec2::new(-1.0, 0.42);
+    world.puck = Puck {
+        pos: Vec2::new(0.172, 0.41),
+        vel: Vec2::new(-12.0, 16.0),
+    };
+    assert_eq!(world.tick(&params, &bodies()), None);
+    assert_sane(&world, &params, "wedge");
+    assert_no_overlap(&world, &params);
+}
+
+#[test]
+fn no_overlap_anywhere_near_the_centre_line_corners() {
+    let params = Params::default();
+    let mut ticks = 0;
+    for my in [0.30, 0.36, 0.42, 0.45] {
+        for side in [-1.0, 1.0] {
+            for k in 0..12 {
+                let angle_x = -1.0 + f64::from(k) / 6.0;
+                let mut world = World::new(&params);
+                world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4 * side));
+                world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, my * side));
+                world.mallets[1].target = Vec2::new(-1.0, my * side);
+                world.puck = Puck {
+                    pos: Vec2::new(0.2, 0.3 * side),
+                    vel: Vec2::new(angle_x, 1.0 * side) * (params.puck_speed_cap / 1.5),
+                };
+                for _ in 0..60 {
+                    let goal = world.tick(&params, &bodies());
+                    assert_sane(&world, &params, "corner sweep");
+                    let gap = (world.puck.pos - world.mallets[1].pos).length();
+                    assert!(
+                        gap >= 0.09 - 1e-6,
+                        "inside the mallet by {}: {world:?}",
+                        0.09 - gap
+                    );
+                    ticks += 1;
+                    if goal.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(ticks > 2_000, "the sweep ended too early: {ticks} ticks");
+}
+
+#[test]
+fn fastest_declared_body_never_passes_through_a_resting_puck() {
+    let params = Params::default();
+    let fastest = params
+        .body(params.max_body_speed, params.max_body_accel)
+        .unwrap();
+    let mut world = parked(&params);
+    world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, 0.0));
+    world.mallets[0].target = Vec2::new(-0.05, 0.0);
+    world.puck = Puck::at_rest(Vec2::new(-0.5, 0.0));
+    let mut hit = false;
+    for _ in 0..120 {
+        world.tick(&params, &[fastest, Body::default()]);
+        assert!(
+            world.puck.pos.x > world.mallets[0].pos.x,
+            "passed through: {world:?}"
+        );
+        hit |= world.puck.vel.x > 0.0;
+    }
+    assert!(hit, "the mallet never touched the puck");
+}
+
+#[test]
+fn puck_speed_never_exceeds_cap_under_repeated_hits() {
+    let params = Params::default();
+    let fastest = params
+        .body(params.max_body_speed, params.max_body_accel)
+        .unwrap();
+    let mut world = World::new(&params);
+    world.puck = Puck {
+        pos: Vec2::new(-0.3, 0.1),
+        vel: Vec2::new(-19.0, 3.0),
+    };
+    let mut top: f64 = 0.0;
+    for _ in 0..4_000 {
+        let puck = world.puck.pos;
+        for mallet in &mut world.mallets {
+            mallet.target = puck;
+        }
+        if world.tick(&params, &[fastest; 2]).is_some() {
+            world.puck = Puck {
+                pos: Vec2::new(0.3, -0.1),
+                vel: Vec2::new(19.0, -3.0),
+            };
+        }
+        let speed = world.puck.vel.length();
+        assert!(speed <= params.puck_speed_cap * (1.0 + EPS), "{speed} m/s");
+        top = top.max(speed);
+    }
+    assert!(
+        top >= params.puck_speed_cap * 0.99,
+        "the cap was never reached: {top}"
+    );
 }

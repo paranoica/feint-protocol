@@ -1,22 +1,9 @@
+mod sequence;
+use sequence::Lcg;
+
 use airhockey::{BadBody, Body, Mallet, Params, Region, Side, Vec2};
 
 const EPS: f64 = 1e-9;
-
-struct Lcg(u64);
-
-impl Lcg {
-    fn unit(&mut self) -> f64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    fn range(&mut self, lo: f64, hi: f64) -> f64 {
-        lo + (hi - lo) * self.unit()
-    }
-}
 
 fn inside(region: &Region, p: Vec2) -> bool {
     p.x >= region.min.x - EPS
@@ -157,4 +144,35 @@ fn mallet_cannot_leave_own_half_or_table() {
         assert_eq!(mallet.pos, expected, "{side:?} aiming at {aim:?}");
         assert_eq!(mallet.vel, Vec2::ZERO);
     }
+}
+
+#[test]
+fn snap_to_target_respects_max_speed() {
+    let params = Params::default();
+    let dt = params.substep_dt();
+    let region = Region::of(Side::Low, &params);
+    let body = Body::new(0.05, 200.0).unwrap();
+    let mut mallet = Mallet::at_rest(Vec2::new(-0.5, 0.0));
+    mallet.target = Vec2::new(-0.5 + 2.0e-4, 0.0);
+    mallet.step(&region, &body, dt);
+    let speed = (mallet.pos.x + 0.5) / dt;
+    assert!(
+        speed <= body.max_speed() * (1.0 + EPS),
+        "moved at {speed} m/s, limit {}",
+        body.max_speed()
+    );
+}
+
+#[test]
+fn tiny_but_positive_accel_neither_panics_nor_moves() {
+    let params = Params::default();
+    let region = Region::of(Side::Low, &params);
+    let body = Body::new(8.0, 1e-305).expect("positive and finite");
+    let mut mallet = Mallet::at_rest(Vec2::new(-0.5, 0.0));
+    mallet.target = Vec2::new(-0.3, 0.2);
+    for _ in 0..40 {
+        mallet.step(&region, &body, params.substep_dt());
+    }
+    assert!(mallet.pos.is_finite() && mallet.vel.is_finite());
+    assert!((mallet.pos - Vec2::new(-0.5, 0.0)).length() < 1e-12);
 }

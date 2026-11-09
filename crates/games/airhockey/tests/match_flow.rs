@@ -216,3 +216,14 @@ fn apply_order_within_a_tick_does_not_matter() {
     }
     assert_ne!(a.digest(), start, "nothing moved");
 }
+
+#[test]
+fn stall_clock_does_not_run_while_the_puck_is_on_the_centre_line() {
+    let mut m = new_match(0);
+    park(&mut m);
+    m.world.puck = Puck::at_rest(Vec2::ZERO);
+    for _ in 0..240 * 30 {
+        assert!(step(&mut m).is_empty());
+    }
+    assert_eq!(m.stall_ticks(), 0);
+}

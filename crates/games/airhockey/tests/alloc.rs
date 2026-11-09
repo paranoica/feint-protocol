@@ -1,18 +1,26 @@
 //! Its own test binary: the counting allocator replaces the global one for everything here.
+//! Counts are per thread, since the test harness runs tests and prints on other threads.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
-use airhockey::{Body, Input, Match, Params};
+use airhockey::{AirHockey, Body, Input, Match, Params};
+use feint_protocol::{ActionT, BodyParamsT, GameAdapter, ObservationT};
 
 struct Counting;
 
-static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+}
+
+fn allocations() -> usize {
+    ALLOCATIONS.with(Cell::get)
+}
 
 #[allow(unsafe_code)]
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        let _ = ALLOCATIONS.try_with(|n| n.set(n.get() + 1));
         unsafe { System.alloc(layout) }
     }
 
@@ -44,9 +52,9 @@ fn tick_does_not_allocate() {
         }
     };
     run(&mut m, &mut events, 1_000);
-    let before = ALLOCATIONS.load(Ordering::Relaxed);
+    let before = allocations();
     run(&mut m, &mut events, 10_000);
-    let after = ALLOCATIONS.load(Ordering::Relaxed);
+    let after = allocations();
     assert_eq!(
         after - before,
         0,
@@ -54,4 +62,43 @@ fn tick_does_not_allocate() {
         after - before
     );
     assert!(m.tick() > 1_000, "the match stopped early");
+}
+
+#[test]
+fn adapter_tick_does_not_allocate() {
+    let mut game = AirHockey::new(Params::default(), 1);
+    let mut body = BodyParamsT::default();
+    body.values = Some(vec![8.0, 60.0]);
+    game.reset(5, &[body.clone(), body]).unwrap();
+    let mut events = Vec::with_capacity(8);
+    let mut obs = [ObservationT::default(), ObservationT::default()];
+    let mut action = ActionT::default();
+    action.values = Some(vec![0.0, 0.0]);
+    let mut run = |game: &mut AirHockey, ticks: u64| {
+        for _ in 0..ticks {
+            for player in 0..2u8 {
+                game.observe(game.live(), player, &mut obs[usize::from(player)]);
+                let seen = obs[usize::from(player)].state.as_ref().unwrap();
+                let (x, y) = (seen[0].clamp(-1.0, 1.0), seen[1].clamp(-0.5, 0.5));
+                action.tick = game.live().tick();
+                action.player = player;
+                let values = action.values.as_mut().unwrap();
+                values[0] = x;
+                values[1] = y;
+                let _ = game.apply(&action);
+            }
+            events.clear();
+            game.advance(&mut events);
+        }
+    };
+    run(&mut game, 1_000);
+    let before = allocations();
+    run(&mut game, 10_000);
+    let after = allocations();
+    assert_eq!(
+        after - before,
+        0,
+        "{} allocations in 10k adapter ticks",
+        after - before
+    );
 }

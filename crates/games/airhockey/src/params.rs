@@ -21,6 +21,10 @@ pub struct Params {
     pub goals_to_win: u32,
     /// Seconds the puck may stay in one half before it goes to the other player.
     pub stall_seconds: f64,
+    /// The fastest mallet a body may have: the peak of a human hand.
+    pub max_body_speed: f64,
+    /// The hardest acceleration a body may have.
+    pub max_body_accel: f64,
 }
 
 impl Default for Params {
@@ -41,6 +45,8 @@ impl Default for Params {
             decision_hz: 60,
             goals_to_win: 7,
             stall_seconds: 7.0,
+            max_body_speed: 12.0,
+            max_body_accel: 200.0,
         }
     }
 }
@@ -50,6 +56,81 @@ impl Params {
     #[must_use]
     pub fn tick_dt(&self) -> f64 {
         1.0 / f64::from(self.tick_hz)
+    }
+
+    /// # Errors
+    /// What is wrong with these parameters.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let positive = |x: f64| x.is_finite() && x > 0.0;
+        let sizes = [
+            self.half_length,
+            self.half_width,
+            self.mouth_half_width,
+            self.puck_radius,
+            self.mallet_radius,
+            self.puck_speed_cap,
+            self.stall_seconds,
+            self.max_body_speed,
+            self.max_body_accel,
+        ];
+        if !sizes.into_iter().all(positive) {
+            return Err("sizes, speeds and times must be positive and finite");
+        }
+        if self.half_width <= self.mallet_radius.max(self.puck_radius) {
+            return Err("the table is narrower than a mallet or the puck");
+        }
+        if self.half_length <= 2.0 * self.mallet_radius {
+            return Err("each half is shorter than a mallet");
+        }
+        if self.mouth_half_width >= self.half_width {
+            return Err("the goal mouth is wider than the table");
+        }
+        let restitutions = [
+            self.rail_restitution,
+            self.post_restitution,
+            self.mallet_restitution,
+        ];
+        if !restitutions.iter().all(|e| (0.0..=1.0).contains(e)) {
+            return Err("restitution must be within [0, 1]");
+        }
+        if self.tick_hz == 0 || self.substeps == 0 || self.decision_hz == 0 {
+            return Err("tick, substep and decision rates must be positive");
+        }
+        if self.tick_hz.checked_mul(self.substeps).is_none() {
+            return Err("tick_hz × substeps overflows");
+        }
+        if self.decision_hz > self.tick_hz {
+            return Err("decisions cannot be more frequent than ticks");
+        }
+        if self.goals_to_win == 0 {
+            return Err("a match needs at least one goal to win");
+        }
+        if !(self.damping >= 0.0 && self.damping * self.tick_dt() < 1.0) {
+            return Err("damping must be non-negative and below one per tick");
+        }
+        // The determinism argument of FNT-D4: per substep the puck moves less than its
+        // radius, and puck and mallet together less than their combined reach.
+        let dt = self.substep_dt();
+        if self.puck_speed_cap * dt >= self.puck_radius {
+            return Err("a substep moves the puck farther than its radius");
+        }
+        if (self.puck_speed_cap + self.max_body_speed) * dt >= self.puck_radius + self.mallet_radius
+        {
+            return Err("a substep can carry the puck through a mallet");
+        }
+        Ok(())
+    }
+
+    /// A body within the declared limits.
+    ///
+    /// # Errors
+    /// [`BadBody`] unless both limits are positive and within the declared maximums.
+    pub fn body(&self, max_speed: f64, max_accel: f64) -> Result<Body, BadBody> {
+        if max_speed <= self.max_body_speed && max_accel <= self.max_body_accel {
+            Body::new(max_speed, max_accel)
+        } else {
+            Err(BadBody)
+        }
     }
 
     /// Length of one substep in seconds.

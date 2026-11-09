@@ -56,8 +56,14 @@ pub struct Match {
 
 impl Match {
     /// The first serve goes to the side picked by the seed's lowest bit.
+    ///
+    /// # Panics
+    /// When `params` fail [`Params::validate`]: they are configuration, not input.
     #[must_use]
     pub fn new(params: Params, bodies: [Body; 2], seed: u64) -> Self {
+        if let Err(why) = params.validate() {
+            panic!("invalid Params: {why}");
+        }
         let world = World::new(&params);
         let mut game = Self {
             params,
@@ -86,6 +92,7 @@ impl Match {
     ) -> Self {
         let x = world.puck.pos.x;
         let stall_half = (x != 0.0).then_some(if x < 0.0 { Side::Low } else { Side::High });
+        let over = score.iter().any(|&goals| goals >= params.goals_to_win);
         Self {
             params,
             bodies,
@@ -95,7 +102,7 @@ impl Match {
             score,
             stall_half,
             stall_ticks,
-            over: false,
+            over,
         }
     }
 
@@ -159,7 +166,7 @@ impl Match {
             return;
         }
         let tick = self.tick;
-        self.tick += 1;
+        self.tick = self.tick.saturating_add(1);
         if let Some(scorer) = self.world.tick(&self.params, &self.bodies) {
             let goals = &mut self.score[scorer.index()];
             *goals += 1;
@@ -173,7 +180,7 @@ impl Match {
         }
         let x = self.world.puck.pos.x;
         let half = (x != 0.0).then_some(if x < 0.0 { Side::Low } else { Side::High });
-        if half == self.stall_half {
+        if half.is_some() && half == self.stall_half {
             self.stall_ticks += 1;
         } else {
             self.stall_half = half;

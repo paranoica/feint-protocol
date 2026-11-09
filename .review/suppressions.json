@@ -1,0 +1,12 @@
+{
+  "suppressions": [
+    {
+      "fingerprint": "716fe9530515",
+      "category": "correctness",
+      "file_glob": "crates/games/airhockey/src/*",
+      "quote_substr": "        let me = usize::from(player.min(1));",
+      "reason": "trait contract: PlayerId < num_players, observe is called by the trusted runner, not with network input",
+      "ts": 1794182754.0153801
+    }
+  ]
+}

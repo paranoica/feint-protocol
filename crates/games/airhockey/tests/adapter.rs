@@ -1,18 +1,12 @@
+#[macro_use]
+mod builders;
+
 use airhockey::{AirHockey, GAME_VERSION, Mallet, OBSERVATION_LEN, Params, Puck, Vec2};
 use feint_protocol::{
     ActionT, AdapterError, BodyParamsT, ChaCha8Rng, EventKind, EventT, GameAdapter, MessageT,
     ObservationT, TimeMode, decode, encode,
 };
 use rand_chacha::rand_core::SeedableRng;
-
-/// Build a generated `#[non_exhaustive]` protocol type: its default with the given fields.
-macro_rules! make {
-    ($t:ident { $($field:ident : $value:expr),* $(,)? }) => {{
-        let mut built = $t::default();
-        $(built.$field = $value;)*
-        built
-    }};
-}
 
 fn body(speed: f32, accel: f32) -> BodyParamsT {
     make!(BodyParamsT {
@@ -249,6 +243,9 @@ fn reset_checks_bodies_and_applies_them() {
         vec![body(8.0, 60.0)],
         vec![body(8.0, 60.0), body(0.0, 60.0)],
         vec![body(f32::NAN, 60.0), body(8.0, 60.0)],
+        vec![body(12.01, 60.0), body(8.0, 60.0)],
+        vec![body(8.0, 60.0), body(8.0, 200.5)],
+        vec![body(1e4, 1e4), body(8.0, 60.0)],
         vec![
             body(8.0, 60.0),
             make!(BodyParamsT {
@@ -264,6 +261,10 @@ fn reset_checks_bodies_and_applies_them() {
             "{bodies:?}"
         );
     }
+    game.reset(1, &[body(12.0, 200.0), body(12.0, 200.0)])
+        .expect("the declared limits themselves are legal");
+    let declared = game.spec().body_params.unwrap();
+    assert_eq!((declared[0].max, declared[1].max), (12.0, 200.0));
     game.reset(1, &[body(3.0, 25.0), body(8.0, 60.0)])
         .expect("valid bodies");
     assert_eq!(game.live().seed(), 1);
@@ -428,4 +429,72 @@ fn simulate_from_mid_match_holds_the_actions_whatever_their_tick() {
         Vec2::new(f64::from(-0.3f32), f64::from(0.4f32))
     );
     assert_eq!(planned.tick(), game.live().tick() + 60);
+}
+
+#[test]
+fn stall_becomes_a_round_end_event_for_the_receiving_player() {
+    let mut game = fresh();
+    {
+        let world = &mut game.game_mut().world;
+        world.mallets[0] = Mallet::at_rest(Vec2::new(-0.95, 0.45));
+        world.mallets[1] = Mallet::at_rest(Vec2::new(0.95, 0.45));
+    }
+    let mut events = Vec::new();
+    for _ in 0..7 * 240 {
+        game.advance(&mut events);
+    }
+    assert_eq!(
+        events,
+        vec![make!(EventT {
+            tick: 7 * 240 - 1,
+            kind: EventKind::RoundEnd,
+            player: 1,
+        })]
+    );
+}
+
+#[test]
+fn hostile_observation_gives_a_finite_state_inside_the_rules() {
+    let game = fresh();
+    let params = Params::default();
+    let mut obs = observe(&game, 0);
+    let mut state = vec![f32::NAN; OBSERVATION_LEN];
+    state[2] = f32::INFINITY;
+    state[4] = 1e30;
+    state[10] = -f32::MAX;
+    state[14] = 1e30;
+    obs.state = Some(state);
+    obs.tick = u64::MAX;
+    obs.score = Some(vec![i64::from(u32::MAX), -5]);
+    let mut rng = ChaCha8Rng::seed_from_u64(9);
+    let guess = game.state_from_observation(&obs, &mut rng);
+    let world = guess.world;
+    assert!(
+        world.puck.pos.is_finite() && world.puck.vel.is_finite(),
+        "{world:?}"
+    );
+    assert!(world.puck.pos.x.abs() <= 1.0 && world.puck.pos.y.abs() <= 0.5);
+    assert!(world.puck.vel.length() <= params.puck_speed_cap);
+    for (mallet, region) in world.mallets.iter().zip(airhockey::regions(&params)) {
+        assert_eq!(region.clamp(mallet.pos), mallet.pos, "{mallet:?}");
+        assert!(
+            mallet.vel.is_finite() && mallet.target.is_finite(),
+            "{mallet:?}"
+        );
+    }
+    assert!(guess.score().iter().all(|&g| g <= params.goals_to_win));
+    assert!(guess.stall_ticks() <= 7 * 240);
+    let later = game.simulate(&guess, &[action(0, 0, -0.2, 0.1)], 30);
+    assert!(later.world.puck.pos.is_finite());
+}
+
+#[test]
+fn observed_winning_score_means_the_match_is_over() {
+    let game = fresh();
+    let mut obs = observe(&game, 1);
+    obs.score = Some(vec![3, 7]);
+    let mut rng = ChaCha8Rng::seed_from_u64(2);
+    assert!(game.state_from_observation(&obs, &mut rng).is_over());
+    obs.score = Some(vec![3, 6]);
+    assert!(!game.state_from_observation(&obs, &mut rng).is_over());
 }

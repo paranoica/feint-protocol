@@ -48,6 +48,9 @@ impl World {
             for ((mallet, region), side) in self.mallets.iter_mut().zip(&regions).zip(SIDES) {
                 mallet.push_off(self.puck.pos, reach, -away_from_goal(side), region);
             }
+            for mallet in &self.mallets {
+                slide_off(&mut self.puck, mallet, params);
+            }
             self.puck.vel = self.puck.vel.clamp_length(params.puck_speed_cap);
         }
         self.puck.vel = self.puck.vel * (1.0 - params.damping * params.tick_dt());
@@ -90,6 +93,40 @@ pub fn puck_mallet(puck: &mut Puck, mallet: &Mallet, owner: Side, params: &Param
     let closing = (puck.vel - mallet.vel).dot(normal);
     if closing < 0.0 {
         puck.vel -= normal * ((1.0 + params.mallet_restitution) * closing);
+    }
+}
+
+/// When a mallet could not give way (held at the edge of its half), the puck slides off it
+/// along the rail instead, so that neither ends a substep inside the other.
+fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
+    let reach = params.puck_radius + params.mallet_radius;
+    let offset = puck.pos - mallet.pos;
+    let distance = offset.length();
+    if distance >= reach {
+        return;
+    }
+    let normal = if distance > 0.0 {
+        offset * (1.0 / distance)
+    } else {
+        Vec2::new(0.0, if puck.pos.y > 0.0 { -1.0 } else { 1.0 })
+    };
+    let y_max = params.half_width - params.puck_radius;
+    let x_max = params.half_length - params.puck_radius;
+    let mut pos = mallet.pos + normal * reach;
+    if pos.y.abs() > y_max {
+        pos.y = pos.y.signum() * y_max;
+        let dy = pos.y - mallet.pos.y;
+        let dx = (reach * reach - dy * dy).max(0.0).sqrt();
+        pos.x = mallet.pos.x + if offset.x >= 0.0 { dx } else { -dx };
+    }
+    puck.pos = Vec2::new(pos.x.clamp(-x_max, x_max), pos.y);
+    let normal = (puck.pos - mallet.pos) * (1.0 / reach);
+    let closing = (puck.vel - mallet.vel).dot(normal);
+    if closing < 0.0 {
+        puck.vel -= normal * closing;
+    }
+    if puck.pos.y.abs() >= y_max && puck.vel.y * puck.pos.y > 0.0 {
+        puck.vel.y = 0.0;
     }
 }
 

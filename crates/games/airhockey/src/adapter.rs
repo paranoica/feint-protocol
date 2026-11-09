@@ -4,11 +4,12 @@ use feint_protocol::{
 };
 
 use crate::game::{Input, InputError, Match, MatchEvent};
+use crate::mallet::Region;
 use crate::mallet::{Mallet, Side};
 use crate::params::{Body, Params};
 use crate::puck::Puck;
 use crate::vec2::Vec2;
-use crate::world::World;
+use crate::world::{World, regions};
 
 /// Physics version: bump it whenever a change alters any recorded match (FNT-D6).
 pub const GAME_VERSION: u32 = 1;
@@ -52,7 +53,7 @@ impl GameAdapter for AirHockey {
                 .collect::<Vec<_>>()
         };
         let cap = p.puck_speed_cap as f32;
-        let mallet = 12.0;
+        let mallet = p.max_body_speed as f32;
         let mut spec = GameSpecT::default();
         spec.game_id = Some("airhockey".into());
         spec.game_version = GAME_VERSION;
@@ -82,7 +83,7 @@ impl GameAdapter for AirHockey {
         ]));
         spec.body_params = Some(dims(&[
             ("max_speed", 0.0, mallet, "m/s"),
-            ("max_accel", 0.0, 200.0, "m/s^2"),
+            ("max_accel", 0.0, p.max_body_accel as f32, "m/s^2"),
         ]));
         spec.signals = Some(dims(&[
             ("opponent_x", -l, l, "m"),
@@ -100,8 +101,10 @@ impl GameAdapter for AirHockey {
 
     fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
         const WHY: &str = "two positive finite values per player";
+        let params = &self.game.params;
         let parse = |b: &BodyParamsT| match b.values.as_deref() {
-            Some(&[speed, accel]) => Body::new(f64::from(speed), f64::from(accel))
+            Some(&[speed, accel]) => params
+                .body(f64::from(speed), f64::from(accel))
                 .map_err(|_| AdapterError::BadBody(WHY)),
             _ => Err(AdapterError::BadBody(WHY)),
         };
@@ -181,45 +184,61 @@ impl GameAdapter for AirHockey {
     }
 
     /// Exact up to f32 rounding, except the opponent's target, which no player can see:
-    /// it is guessed as the opponent's current position.
+    /// it is guessed as the opponent's current position. Values the rules cannot produce
+    /// (non-finite, off the table, over the limits) are pulled back inside them, so a
+    /// forged observation cannot crash or corrupt the planner.
     fn state_from_observation(&self, obs: &ObservationT, _rng: &mut ChaCha8Rng) -> Match {
+        let params = &self.game.params;
         let frame = Frame::of(obs.player);
         let v = obs.state.as_deref().unwrap_or_default();
-        let read = |i: usize| {
-            frame.to_world(Vec2::new(
-                v.get(i).copied().map_or(0.0, f64::from),
-                v.get(i + 1).copied().map_or(0.0, f64::from),
-            ))
+        let value = |i: usize| match v.get(i) {
+            Some(x) if x.is_finite() => f64::from(*x),
+            _ => 0.0,
         };
-        let me = Mallet {
-            pos: read(4),
-            vel: read(6),
-            target: read(8),
+        let read = |i: usize| frame.to_world(Vec2::new(value(i), value(i + 1)));
+        let regions = regions(params);
+        let me = usize::from(obs.player.min(1));
+        let mallet = |pos: Vec2, vel: Vec2, target: Vec2, region: &Region| {
+            let pos = region.clamp(pos);
+            Mallet {
+                pos,
+                vel: vel.clamp_length(params.max_body_speed),
+                target,
+            }
         };
-        let opponent = Mallet {
-            pos: read(10),
-            vel: read(12),
-            target: read(10),
+        let mine = mallet(read(4), read(6), read(8), &regions[me]);
+        let theirs = mallet(read(10), read(12), read(10), &regions[1 - me]);
+        let theirs = Mallet {
+            target: theirs.pos,
+            ..theirs
         };
-        let mallets = if obs.player == 0 {
-            [me, opponent]
+        let mallets = if me == 0 {
+            [mine, theirs]
         } else {
-            [opponent, me]
+            [theirs, mine]
         };
+        let edge = Vec2::new(
+            params.half_length - params.puck_radius,
+            params.half_width - params.puck_radius,
+        );
         let world = World {
             puck: Puck {
-                pos: read(0),
-                vel: read(2),
+                pos: read(0).clamp_each(-edge, edge),
+                vel: read(2).clamp_length(params.puck_speed_cap),
             },
             mallets,
         };
-        let params = self.game.params.clone();
-        let stall_seconds = v.get(14).copied().map_or(0.0, f64::from);
-        let stall_ticks = (stall_seconds * f64::from(params.tick_hz)).round() as u32;
+        let limit = (params.stall_seconds * f64::from(params.tick_hz)).round() as u32;
+        let stall_ticks = ((value(14) * f64::from(params.tick_hz)).round() as u32).min(limit);
         let score = obs.score.as_deref().unwrap_or_default();
-        let goals = |i: usize| score.get(i).map_or(0, |&g| u32::try_from(g).unwrap_or(0));
+        let goals = |i: usize| {
+            score
+                .get(i)
+                .map_or(0, |&g| u32::try_from(g).unwrap_or(0))
+                .min(params.goals_to_win)
+        };
         Match::from_observed(
-            params,
+            params.clone(),
             self.game.bodies,
             world,
             obs.tick,

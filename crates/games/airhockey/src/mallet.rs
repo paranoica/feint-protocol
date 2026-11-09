@@ -96,7 +96,7 @@ impl Mallet {
         let to_target = target - self.pos;
         let distance = to_target.length();
 
-        if distance <= dv_max * dt && self.vel.length() <= dv_max {
+        if distance <= dv_max.min(body.max_speed()) * dt && self.vel.length() <= dv_max {
             self.pos = target;
             self.vel = Vec2::ZERO;
             return;
@@ -177,6 +177,10 @@ fn braking_speed(distance: f64, accel: f64, dt: f64) -> f64 {
     }
     let unit = accel * dt;
     let w = distance / (unit * dt);
+    if !w.is_finite() {
+        // An acceleration so small that a·dt² is subnormal: the body cannot brake at all.
+        return 0.0;
+    }
     let k = (((8.0 * w + 1.0).sqrt() - 1.0) / 2.0).floor();
     let r = (w / (k + 1.0) - k / 2.0).clamp(0.0, 1.0);
     (k + r) * unit

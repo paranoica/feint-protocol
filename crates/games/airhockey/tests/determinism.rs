@@ -1,20 +1,7 @@
+mod sequence;
+use sequence::Lcg;
+
 use airhockey::{Body, Input, Match, MatchEvent, Params, World};
-
-struct Lcg(u64);
-
-impl Lcg {
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        self.0 >> 11
-    }
-
-    fn range(&mut self, lo: f32, hi: f32) -> f32 {
-        lo + (hi - lo) * (self.next() as f32 / (1u64 << 53) as f32)
-    }
-}
 
 /// Scripted play: each player sends a new target at irregular ticks, sometimes aimed at the
 /// puck so goals happen. Returns the inputs it sent and the digest after every tick.
@@ -31,7 +18,7 @@ fn play(seed: u64, ticks: u64, tweak_at: Option<u64>) -> (Match, Vec<Input>, Vec
                 let target = if rng.next().is_multiple_of(2) {
                     [puck.x as f32, puck.y as f32]
                 } else {
-                    [rng.range(-1.0, 1.0), rng.range(-0.5, 0.5)]
+                    [rng.range(-1.0, 1.0) as f32, rng.range(-0.5, 0.5) as f32]
                 };
                 let input = Input {
                     tick: t,
