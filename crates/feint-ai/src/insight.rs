@@ -14,6 +14,7 @@ struct Attempt {
     deceptive: bool,
     covered: Option<u8>,
     won: bool,
+    fired: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -31,6 +32,7 @@ pub(crate) struct Insight<S> {
     possession: Option<u64>,
     away: u32,
     since: Option<S>,
+    own_prev: Option<S>,
     pub(crate) gate_open: bool,
     pub(crate) fake_pending: bool,
     pub(crate) twitch: Option<u8>,
@@ -49,6 +51,7 @@ impl<S: Clone> Insight<S> {
             possession: None,
             away: 0,
             since: None,
+            own_prev: None,
             gate_open: false,
             fake_pending: false,
             twitch: None,
@@ -71,6 +74,7 @@ impl<S: Clone> Insight<S> {
         self.possession = None;
         self.away = 0;
         self.since = None;
+        self.own_prev = None;
         self.gate_open = false;
         self.fake_pending = false;
         self.twitch = None;
@@ -149,9 +153,25 @@ impl<S: Clone> Insight<S> {
         Seen { started, rally }
     }
 
+    pub(crate) fn watch_own<A, P>(&mut self, playbook: &P, state: &S, me: PlayerId)
+    where
+        A: GameAdapter<State = S>,
+        P: Playbook<A>,
+    {
+        if let (Some(prev), Some(attempt)) = (&self.own_prev, &mut self.attempt)
+            && playbook.read(prev, state, me).shot.is_some()
+        {
+            attempt.fired = true;
+        }
+        self.own_prev = Some(state.clone());
+    }
+
     pub(crate) fn start_attempt(&mut self, choice: &Choice) {
-        self.end_attempt();
         self.since.clone_from(&self.prev);
+        if self.attempt.is_some_and(|a| a.fired) {
+            return;
+        }
+        self.end_attempt();
         if choice.shown.is_some() || choice.deceptive {
             self.attempt = Some(Attempt {
                 shown: choice.shown,
@@ -159,6 +179,7 @@ impl<S: Clone> Insight<S> {
                 deceptive: choice.deceptive,
                 covered: None,
                 won: false,
+                fired: false,
             });
         }
     }

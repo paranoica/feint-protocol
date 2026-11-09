@@ -225,3 +225,26 @@ fn a_frozen_tick_is_one_sample() {
         "a paused host closed the attempt"
     );
 }
+
+#[test]
+fn a_fired_attempt_is_not_replaced_by_the_next_commit() {
+    let mut p = LinePlaybook::new(&[0.0], 24);
+    p.reads = true;
+    p.shoots = true;
+    p.flat = true;
+    p.fakes = vec![0.0];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive));
+    game.state.ball_v = 1e-9;
+    drive_score(&mut game, &mut b, 100, [0, 0]);
+    drive_score(&mut game, &mut b, 8, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        (profile.fake_tries, profile.fake_wins),
+        (1.0, 1.0),
+        "the fake had shot; later commits closed it as a loss"
+    );
+}

@@ -272,6 +272,8 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             state = self.roll_forward(adapter, state, seen.tick, now);
         }
         self.seen = seen;
+        self.insight
+            .watch_own::<A, P>(&self.playbook, &state, self.me);
         let due = self
             .last_replan
             .is_none_or(|last| now >= last.saturating_add(self.replan_every));

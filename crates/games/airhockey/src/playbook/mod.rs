@@ -10,8 +10,9 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS, SHOW_BACK,
-    SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack, frame,
+    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS,
+    MIN_BANK_RESTITUTION, SHOW_BACK, SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack,
+    frame,
 };
 
 pub struct HockeyPlaybook {
@@ -120,7 +121,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         if repertoire < 2 {
             return;
         }
-        let banks = (1.0 / self.params.rail_restitution).is_finite();
+        let banks = self.params.rail_restitution >= MIN_BANK_RESTITUTION;
         if banks {
             out.push(Choice {
                 shown: None,

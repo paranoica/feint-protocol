@@ -699,31 +699,34 @@ fn a_shot_is_read_once_even_when_the_mallet_follows_the_puck() {
 
 #[test]
 fn a_tiny_rail_restitution_offers_no_bank_and_a_restrike_is_read() {
-    let tiny = Params {
-        rail_restitution: 1e-310,
-        ..Params::default()
-    };
-    let p = HockeyPlaybook::new(tiny.clone());
-    let state = Match::from_observed(
-        tiny,
-        [Body::default(); 2],
-        World {
-            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
-            mallets: [
-                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
-                Mallet::at_rest(Vec2::new(0.8, 0.3)),
-            ],
-        },
-        0,
-        [0, 0],
-        0,
-    );
-    let mut out = Vec::new();
-    p.options(&state, 0, 2, &Cue::default(), &mut out);
-    assert!(
-        out.iter()
-            .all(|c| c.id != HockeyPlaybook::BANK && c.id != HockeyPlaybook::FAKE_BANK)
-    );
+    for restitution in [1e-310, 1e-200, 0.05] {
+        let tiny = Params {
+            rail_restitution: restitution,
+            ..Params::default()
+        };
+        let p = HockeyPlaybook::new(tiny.clone());
+        let state = Match::from_observed(
+            tiny,
+            [Body::default(); 2],
+            World {
+                puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+                mallets: [
+                    Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                    Mallet::at_rest(Vec2::new(0.8, 0.3)),
+                ],
+            },
+            0,
+            [0, 0],
+            0,
+        );
+        let mut out = Vec::new();
+        p.options(&state, 0, 2, &Cue::default(), &mut out);
+        assert!(
+            out.iter()
+                .all(|c| c.id != HockeyPlaybook::BANK && c.id != HockeyPlaybook::FAKE_BANK),
+            "restitution {restitution}"
+        );
+    }
 
     let p = playbook();
     let mut before = scene(

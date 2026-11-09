@@ -227,3 +227,32 @@ fn level_five_beats_level_two() {
     eprintln!("level 5 won {won} of 60 against level 2");
     assert!(won >= 36, "level 5 won only {won} of 60 against level 2");
 }
+
+#[test]
+#[ignore = "release only: bedrock cmd strength"]
+fn fakes_that_score_are_recorded_as_won() {
+    let mut d = Difficulty::preset(5).unwrap();
+    d.deception = 1.0;
+    d.adaptation = 0.0;
+    let mut game = AirHockey::new(params(), 5);
+    let mut faker = Bot::new(d, HockeyPlaybook::new(params()), &game.spec()).unwrap();
+    let mut idle = Idle;
+    let header = RunHeader {
+        game_id: "airhockey".into(),
+        game_version: airhockey::GAME_VERSION,
+        seed: 7,
+        bodies: vec![body(Side::Level(5), &game), body(Side::Idle, &game)],
+        levels: [5, 0],
+    };
+    let report = run_match(&mut game, [&mut faker, &mut idle], header, 240 * 60).unwrap();
+    let profile = faker.profile("airhockey").expect("level 5 keeps a model");
+    eprintln!(
+        "score {:?}, fake tries {:.2}, wins {:.2}",
+        report.score, profile.fake_tries, profile.fake_wins
+    );
+    assert!(
+        report.score[0] >= 2,
+        "the faker should score against an idle opponent"
+    );
+    assert!(profile.fake_wins > 0.0, "no fake was ever recorded as won");
+}

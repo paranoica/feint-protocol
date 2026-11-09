@@ -21,6 +21,7 @@ pub(super) const SLOW_TICKS: u32 = 120;
 pub(super) const STRIKE_TICKS: u32 = 240;
 pub(super) const HOLD_TICKS: u32 = 24;
 pub(super) const HOLD_RESERVE_SECONDS: f64 = 3.0;
+pub(super) const MIN_BANK_RESTITUTION: f64 = 0.1;
 
 pub(super) fn attack(player: PlayerId) -> f64 {
     if player == 0 { 1.0 } else { -1.0 }
