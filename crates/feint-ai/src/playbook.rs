@@ -11,10 +11,19 @@ pub struct Choice {
     pub real: Option<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cue {
     pub pace: f32,
     pub twitch: Option<u8>,
+}
+
+impl Default for Cue {
+    fn default() -> Self {
+        Self {
+            pace: 1.0,
+            twitch: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

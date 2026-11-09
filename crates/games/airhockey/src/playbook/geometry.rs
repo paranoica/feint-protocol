@@ -12,6 +12,13 @@ pub(super) const AIM_SCALE: f64 = 2.0;
 pub(super) const CHASE_SCALE: f64 = 0.5;
 pub(super) const CONTACT_DRIVE: f64 = 0.15;
 pub(super) const APPROACH_COS: f64 = 0.5;
+pub(super) const SHOW_SIDE: f64 = 0.10;
+pub(super) const SHOW_BACK: f64 = 0.04;
+pub(super) const SHOW_TICKS: u64 = 60;
+pub(super) const SLOW_TICKS: u32 = 120;
+pub(super) const STRIKE_TICKS: u32 = 240;
+pub(super) const HOLD_TICKS: u32 = 24;
+pub(super) const HOLD_STALL_SECONDS: u32 = 4;
 
 pub(super) fn attack(player: PlayerId) -> f64 {
     if player == 0 { 1.0 } else { -1.0 }
@@ -48,8 +55,14 @@ impl HockeyPlaybook {
         if along < -reach && lateral < LINE_TOLERANCE {
             puck + line * 0.15
         } else {
-            puck - line * (reach + RUN_UP)
+            self.set_up(state, player, aim)
         }
+    }
+
+    pub(super) fn set_up(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
+        let puck = state.world.puck.pos;
+        let line = unit(aim - puck, Vec2::new(attack(player), 0.0));
+        puck - line * (self.params.puck_radius + self.params.mallet_radius + RUN_UP)
     }
 
     pub(super) fn puck_in_half_of(state: &Match, player: PlayerId) -> bool {
@@ -95,7 +108,7 @@ impl HockeyPlaybook {
         if approach.dot(line) > APPROACH_COS && (mallet - puck).dot(line) < 0.0 {
             touch + approach * CONTACT_DRIVE
         } else {
-            puck - line * (reach + RUN_UP)
+            self.set_up(state, player, aim)
         }
     }
 }

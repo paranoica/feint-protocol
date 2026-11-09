@@ -9,7 +9,10 @@ use crate::vec2::Vec2;
 mod geometry;
 mod reads;
 
-use geometry::{AIM_SCALE, AIM_Y, CHASE_SCALE, attack, frame};
+use geometry::{
+    AIM_SCALE, AIM_Y, CHASE_SCALE, HOLD_STALL_SECONDS, HOLD_TICKS, SHOW_BACK, SHOW_SIDE,
+    SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack, frame,
+};
 
 pub struct HockeyPlaybook {
     params: Params,
@@ -20,6 +23,10 @@ impl HockeyPlaybook {
     pub const DEFEND: u16 = 1;
     pub const STRIKES: [u16; 3] = [2, 3, 4];
     pub const DEFENDS: [u16; 3] = [5, 6, 7];
+    pub const FAKES: [u16; 2] = [8, 9];
+    pub const BANK: u16 = 10;
+    pub const HOLD: u16 = 11;
+    pub const DASHES: [u16; 3] = [12, 13, 14];
 
     #[must_use]
     pub fn new(params: Params) -> Self {
@@ -29,6 +36,34 @@ impl HockeyPlaybook {
     #[must_use]
     pub fn contact_target(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
         self.contact(state, player, aim)
+    }
+
+    #[must_use]
+    pub fn show_point(&self, state: &Match, player: PlayerId, shown: u8) -> Vec2 {
+        let reach = self.params.puck_radius + self.params.mallet_radius;
+        let side = match shown {
+            0 => SHOW_SIDE,
+            2 => -SHOW_SIDE,
+            _ => 0.0,
+        };
+        state.world.puck.pos + frame(player, Vec2::new(-(reach + SHOW_BACK), side))
+    }
+
+    #[must_use]
+    pub fn bank_aim(&self, state: &Match, player: PlayerId) -> Vec2 {
+        let them = state.world.mallets[usize::from(1 - player.min(1))].pos;
+        let away = if frame(player, them).y >= 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let rail = away * (self.params.half_width - self.params.puck_radius);
+        let beyond = rail + rail / self.params.rail_restitution;
+        frame(player, Vec2::new(self.params.half_length, beyond))
+    }
+
+    fn slow(c: &Choice) -> bool {
+        c.param[1] < 0.5
     }
 
     #[must_use]
@@ -44,16 +79,18 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         state: &Match,
         me: PlayerId,
         repertoire: u8,
-        _cue: &Cue,
+        cue: &Cue,
         out: &mut Vec<Choice>,
     ) {
         out.clear();
+        let pace = cue.pace;
+        let shot_ticks = STRIKE_TICKS + if pace < 0.5 { SLOW_TICKS } else { 0 };
         let choice = |id: u16, intent: u8, horizon_ticks: u32, k: f32, corner: Option<u8>| Choice {
             id,
             intent,
             deceptive: false,
             horizon_ticks,
-            param: [k, 0.0],
+            param: [k, pace],
             shown: corner,
             real: corner,
         };
@@ -68,26 +105,72 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         } else {
             out.push(choice(Self::DEFEND, 2, 120, 0.0, None));
         }
-        if Self::puck_in_half_of(state, me) {
-            for (k, &id) in Self::STRIKES.iter().enumerate() {
-                out.push(choice(id, 1, 240, k as f32, Some(k as u8)));
+        if !Self::puck_in_half_of(state, me) {
+            return;
+        }
+        for (k, &id) in Self::STRIKES.iter().enumerate() {
+            out.push(choice(id, 1, shot_ticks, k as f32, Some(k as u8)));
+        }
+        if repertoire < 2 {
+            return;
+        }
+        for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
+            let real = 2 - shown;
+            out.push(Choice {
+                deceptive: true,
+                shown: Some(shown),
+                ..choice(id, 1, STRIKE_TICKS, f32::from(real), Some(real))
+            });
+        }
+        out.push(Choice {
+            shown: None,
+            ..choice(Self::BANK, 1, shot_ticks, 1.0, Some(1))
+        });
+        if state.stall_ticks() < HOLD_STALL_SECONDS * self.params.tick_hz {
+            out.push(Choice {
+                deceptive: true,
+                ..choice(Self::HOLD, 1, HOLD_TICKS, 1.0, None)
+            });
+        }
+        if let Some(twitch) = cue.twitch {
+            for real in [0u8, 2].into_iter().filter(|&r| r != twitch) {
+                out.push(Choice {
+                    shown: None,
+                    ..choice(
+                        Self::DASHES[usize::from(real)],
+                        1,
+                        STRIKE_TICKS,
+                        f32::from(real),
+                        Some(real),
+                    )
+                });
             }
         }
     }
 
-    fn act(&self, s: &Match, me: PlayerId, c: &Choice, _elapsed: u64, aim: [f64; 2]) -> ActionT {
+    fn act(&self, s: &Match, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
         let noise = frame(me, Vec2::new(aim[0], aim[1]));
+        let lateral = frame(me, Vec2::new(0.0, aim[1] * AIM_SCALE));
         let k = (c.param[0].max(0.0) as usize).min(AIM_Y.len() - 1);
+        let waiting = Self::slow(c) && elapsed < u64::from(SLOW_TICKS);
+        let real = self.corner_aim(me, k as u8) + lateral;
         let target = match c.id {
             Self::CHASE => s.world.puck.pos + noise * CHASE_SCALE,
             Self::DEFEND => self.defence_spot(s, me),
             id if Self::DEFENDS.contains(&id) => {
                 Self::guard(self.own_corner(me, k as u8), s.world.puck.pos)
             }
-            _ => {
-                let seen = Vec2::new(self.params.half_length, AIM_Y[k] + aim[1] * AIM_SCALE);
-                self.strike_target(s, me, frame(me, seen))
+            id if Self::FAKES.contains(&id) && elapsed < SHOW_TICKS => {
+                self.show_point(s, me, c.shown.unwrap_or(1))
             }
+            id if Self::FAKES.contains(&id) || Self::DASHES.contains(&id) => {
+                self.contact(s, me, real)
+            }
+            Self::BANK if waiting => self.set_up(s, me, self.bank_aim(s, me)),
+            Self::BANK => self.contact(s, me, self.bank_aim(s, me) + lateral),
+            Self::HOLD => self.set_up(s, me, self.corner_aim(me, 1)),
+            _ if waiting => self.set_up(s, me, real),
+            _ => self.strike_target(s, me, real),
         };
         self.go_to(me, target)
     }

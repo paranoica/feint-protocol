@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use feint_ai::{Choice, Cue, Playbook, Stance};
+use feint_ai::{Choice, Cue, Playbook, Read, Stance};
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
     GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
@@ -210,6 +210,8 @@ pub struct LinePlaybook {
     pub horizon: u32,
     pub margin: f64,
     pub replies: std::cell::Cell<u32>,
+    pub reads: bool,
+    pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
 }
 
 impl LinePlaybook {
@@ -222,13 +224,16 @@ impl LinePlaybook {
             horizon,
             margin: 0.0,
             replies: std::cell::Cell::new(0),
+            reads: false,
+            twitches: std::cell::RefCell::new(Vec::new()),
         }
     }
 }
 
 impl Playbook<Line> for LinePlaybook {
-    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, _cue: &Cue, out: &mut Vec<Choice>) {
+    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
+        self.twitches.borrow_mut().push(cue.twitch);
         out.extend(self.targets.iter().enumerate().map(|(i, &x)| Choice {
             id: i as u16,
             intent: 1,
@@ -281,6 +286,22 @@ impl Playbook<Line> for LinePlaybook {
 
     fn margin(&self) -> f64 {
         self.margin
+    }
+
+    fn read(&self, before: &LineState, after: &LineState, them: PlayerId) -> Read {
+        let i = usize::from(them.min(1));
+        let (from, to) = (before.pos[i], after.pos[i]);
+        let covered = (self.reads && (to - from).abs() > 0.01).then_some(if to > 0.0 {
+            2
+        } else if to < 0.0 {
+            0
+        } else {
+            1
+        });
+        Read {
+            covered,
+            shot: None,
+        }
     }
 
     fn possession(&self, s: &LineState, _me: PlayerId) -> Option<u64> {

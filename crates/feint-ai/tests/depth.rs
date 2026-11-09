@@ -283,3 +283,23 @@ fn pruning_keeps_the_simulation_budget() {
         "the target nearest the ball should win"
     );
 }
+
+#[test]
+fn the_cue_carries_the_opponents_twitch_until_the_possession_changes() {
+    let mut playbook = LinePlaybook::new(&[0.0], 60);
+    playbook.reads = true;
+    let mut game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 0.0), playbook, 1);
+    let last = |bot: &Bot<Line, LinePlaybook>| *bot.playbook().twitches.borrow().last().unwrap();
+    drive(&mut game, &mut bot, 1);
+    assert_eq!(last(&bot), None);
+    game.state.pos[1] = -0.5;
+    game.state.target[1] = -0.5;
+    drive(&mut game, &mut bot, 30);
+    assert_eq!(last(&bot), Some(0), "the opponent moved to class 0");
+    game.state.ball = -0.1;
+    drive(&mut game, &mut bot, 30);
+    game.state.ball = 0.1;
+    drive(&mut game, &mut bot, 30);
+    assert_eq!(last(&bot), None, "a new possession forgets the twitch");
+}

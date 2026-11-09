@@ -28,6 +28,7 @@ pub(crate) struct Insight<S> {
     possession: Option<u64>,
     pub(crate) gate_open: bool,
     pub(crate) fake_pending: bool,
+    pub(crate) twitch: Option<u8>,
 }
 
 impl<S: Clone> Insight<S> {
@@ -43,6 +44,7 @@ impl<S: Clone> Insight<S> {
             possession: None,
             gate_open: false,
             fake_pending: false,
+            twitch: None,
         }
     }
 
@@ -62,6 +64,7 @@ impl<S: Clone> Insight<S> {
         self.possession = None;
         self.gate_open = false;
         self.fake_pending = false;
+        self.twitch = None;
     }
 
     pub(crate) fn observe<A, P>(
@@ -88,8 +91,11 @@ impl<S: Clone> Insight<S> {
             if let (Some(model), Some(shot)) = (&mut self.model, read.shot) {
                 model.record_shot(shot);
             }
-            if let (Some(attempt), Some(covered)) = (&mut self.attempt, read.covered) {
-                attempt.covered = Some(covered);
+            if let Some(covered) = read.covered {
+                self.twitch = Some(covered);
+                if let Some(attempt) = &mut self.attempt {
+                    attempt.covered = Some(covered);
+                }
             }
             let me_i = usize::from(me);
             let goals = |s: &[i64], i: usize| s.get(i).copied().unwrap_or(0);
@@ -104,6 +110,7 @@ impl<S: Clone> Insight<S> {
         }
         if started {
             self.end_attempt();
+            self.twitch = None;
         }
         self.prev = Some(state.clone());
         self.prev_score.clear();

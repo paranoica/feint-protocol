@@ -87,7 +87,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         options.clear();
         let cue = Cue {
             pace: self.plan.pace(),
-            twitch: None,
+            twitch: self.insight.twitch,
         };
         self.playbook.options(
             state,
