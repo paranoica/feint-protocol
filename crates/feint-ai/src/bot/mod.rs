@@ -9,7 +9,7 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 use crate::difficulty::Difficulty;
 use crate::insight::{Insight, Seen};
 use crate::long_game::Plan;
-use crate::model::{Profile, ProfileError};
+use crate::model::{OpponentModel, Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
 
@@ -34,6 +34,15 @@ struct Committed {
     choice: Choice,
     since: u64,
     aim: [f64; 2],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InsightView {
+    pub current: Option<Choice>,
+    pub intent: Option<(u8, bool)>,
+    pub memory: bool,
+    pub likely_shot: Option<u8>,
+    pub likely_cover: Vec<Option<u8>>,
 }
 
 pub struct Bot<A: GameAdapter, P: Playbook<A>> {
@@ -125,6 +134,25 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
 
     pub fn load_profile(&mut self, profile: &Profile, game_id: &str) -> Result<(), ProfileError> {
         self.insight.load_profile(profile, game_id)
+    }
+
+    #[must_use]
+    pub fn insight(&self) -> InsightView {
+        let model = self.insight.model();
+        let classes = if model.is_some() {
+            self.playbook.signal_classes()
+        } else {
+            0
+        };
+        InsightView {
+            current: self.current(),
+            intent: self.history.back().map(|a| (a.intent, a.deceptive)),
+            memory: model.is_some(),
+            likely_shot: model.and_then(OpponentModel::likely_shot),
+            likely_cover: (0..classes)
+                .map(|s| model.and_then(|m| m.likely_cover(s)))
+                .collect(),
+        }
     }
 
     #[must_use]

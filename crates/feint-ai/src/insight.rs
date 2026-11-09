@@ -232,6 +232,10 @@ impl<S: Clone> Insight<S> {
         }
     }
 
+    pub(crate) fn model(&self) -> Option<&OpponentModel> {
+        self.model.as_ref()
+    }
+
     pub(crate) fn profile(&self, game_id: &str) -> Option<Profile> {
         self.model.as_ref().map(|m| m.export(game_id))
     }

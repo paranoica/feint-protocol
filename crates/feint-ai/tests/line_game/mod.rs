@@ -119,8 +119,14 @@ impl GameAdapter for Line {
         Ok(())
     }
 
-    fn advance(&mut self, _events: &mut Vec<EventT>) {
+    fn advance(&mut self, events: &mut Vec<EventT>) {
         step(&mut self.state);
+        if self.end_at == Some(self.state.tick) {
+            let mut end = EventT::default();
+            end.tick = self.state.tick;
+            end.kind = feint_protocol::EventKind::RoundEnd;
+            events.push(end);
+        }
     }
 
     fn observe(&self, state: &LineState, player: PlayerId, out: &mut ObservationT) {
