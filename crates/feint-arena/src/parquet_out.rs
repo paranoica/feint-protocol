@@ -15,8 +15,6 @@ use parquet::file::properties::WriterProperties;
 use crate::verify::Frame;
 
 const BATCH: usize = 1 << 16;
-const BODIES: [&str; 3] = ["puck", "m0", "m1"];
-const AXES: [&str; 4] = ["x", "y", "vx", "vy"];
 
 fn event_fields() -> Fields {
     Fields::from(vec![
@@ -26,16 +24,10 @@ fn event_fields() -> Fields {
 }
 
 #[must_use]
-pub fn schema() -> Arc<Schema> {
+pub fn schema(columns: &[&str]) -> Arc<Schema> {
     let mut fields = vec![Field::new("tick", DataType::UInt64, false)];
-    for body in BODIES {
-        for axis in AXES {
-            fields.push(Field::new(
-                format!("{body}_{axis}"),
-                DataType::Float64,
-                false,
-            ));
-        }
+    for name in columns {
+        fields.push(Field::new(*name, DataType::Float64, false));
     }
     fields.push(Field::new(
         "events",
@@ -55,12 +47,13 @@ pub fn schema() -> Arc<Schema> {
 
 fn batch(
     frames: &[Frame],
+    width: usize,
     level: u8,
     seed: u64,
     schema: &Arc<Schema>,
 ) -> Result<RecordBatch, ParquetError> {
     let mut tick = UInt64Builder::with_capacity(frames.len());
-    let mut values: Vec<Float64Builder> = (0..12)
+    let mut values: Vec<Float64Builder> = (0..width)
         .map(|_| Float64Builder::with_capacity(frames.len()))
         .collect();
     let mut events = ListBuilder::new(StructBuilder::new(
@@ -72,13 +65,15 @@ fn batch(
     let mut levels = UInt8Builder::with_capacity(frames.len());
     let mut seeds = UInt64Builder::with_capacity(frames.len());
     for f in frames {
+        if f.values.len() != width {
+            return Err(ParquetError::General(format!(
+                "frame {} has {} values for {width} columns",
+                f.tick,
+                f.values.len()
+            )));
+        }
         tick.append_value(f.tick);
-        let kinematics = f
-            .puck
-            .iter()
-            .chain(f.mallets[0].iter())
-            .chain(f.mallets[1].iter());
-        for (builder, v) in values.iter_mut().zip(kinematics) {
+        for (builder, v) in values.iter_mut().zip(&f.values) {
             builder.append_value(*v);
         }
         let item = events.values();
@@ -109,17 +104,18 @@ fn batch(
 
 pub fn write<W: Write + Send>(
     frames: &[Frame],
+    columns: &[&str],
     level: u8,
     seed: u64,
     out: W,
 ) -> Result<(), ParquetError> {
-    let schema = schema();
+    let schema = schema(columns);
     let props = WriterProperties::builder()
         .set_compression(Compression::UNCOMPRESSED)
         .build();
     let mut writer = ArrowWriter::try_new(out, schema.clone(), Some(props))?;
     for chunk in frames.chunks(BATCH) {
-        writer.write(&batch(chunk, level, seed, &schema)?)?;
+        writer.write(&batch(chunk, columns.len(), level, seed, &schema)?)?;
     }
     writer.close()?;
     Ok(())

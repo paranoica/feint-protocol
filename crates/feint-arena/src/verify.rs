@@ -1,10 +1,11 @@
-use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
+use airhockey::AirHockey;
 use feint_ai::{
     Bot, Controller, Difficulty, Memory, Profile, Record, RecordError, Runner, decode_record,
     encode_record,
 };
-use feint_protocol::{ActionT, GameAdapter};
-use feint_web::{GAME_ID, Replayer, Session};
+use feint_protocol::ActionT;
+use feint_web::{HubGame, Play, Replayer};
+use penalty::Penalty;
 
 pub const MAX_TICKS: u64 = 240 * 60 * 30;
 
@@ -24,14 +25,15 @@ pub enum VerifyError {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub tick: u64,
-    pub puck: [f64; 4],
-    pub mallets: [[f64; 4]; 2],
+    pub values: Vec<f64>,
     pub events: Vec<(i8, i8)>,
     pub intent: Option<(u8, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Verified {
+    pub game: &'static str,
+    pub columns: &'static [&'static str],
     pub record: Record,
     pub frames: Vec<Frame>,
     pub finished: bool,
@@ -59,7 +61,19 @@ fn human_actions(record: &Record) -> Result<Vec<ActionT>, VerifyError> {
 
 pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, VerifyError> {
     let record = decode_record(bytes).map_err(VerifyError::Decode)?;
-    if record.header.game_id != GAME_ID || record.header.game_version != GAME_VERSION {
+    match record.header.game_id.as_str() {
+        AirHockey::ID => verify_game::<AirHockey>(record, bytes, profile),
+        Penalty::ID => verify_game::<Penalty>(record, bytes, profile),
+        _ => Err(VerifyError::Game),
+    }
+}
+
+fn verify_game<G: HubGame>(
+    record: Record,
+    bytes: &[u8],
+    profile: Option<&Profile>,
+) -> Result<Verified, VerifyError> {
+    if record.header.game_version != G::VERSION {
         return Err(VerifyError::Game);
     }
     let level = record.header.levels[1];
@@ -70,17 +84,15 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
     if record.ticks == 0 || record.ticks > MAX_TICKS {
         return Err(VerifyError::Ticks);
     }
-    let params = Params::default();
-    let mut game = AirHockey::new(params.clone(), level);
-    let header = Session::header(level, record.header.seed, &game).ok_or(VerifyError::Level)?;
+    let mut game = G::build(level);
+    let header = Play::<G>::header(level, record.header.seed, &game).ok_or(VerifyError::Level)?;
     if header != record.header {
         return Err(VerifyError::Bodies);
     }
     let mut human = Replayer::new(human_actions(&record)?);
-    let mut bot = Bot::new(difficulty, HockeyPlaybook::new(params), &game.spec())
-        .map_err(|_| VerifyError::Level)?;
+    let mut bot = Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| VerifyError::Level)?;
     if let Some(profile) = profile {
-        bot.load_profile(profile, GAME_ID)
+        bot.load_profile(profile, G::ID)
             .map_err(|_| VerifyError::Profile)?;
     }
     let mut runner = Runner::start(&mut game, [&mut human, &mut bot], header)
@@ -89,10 +101,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
     let mut intent = None;
     let mut seen = 0;
     while runner.ticks() < record.ticks
-        && runner.step(
-            &mut game,
-            [&mut human as &mut dyn Controller<AirHockey>, &mut bot],
-        )
+        && runner.step(&mut game, [&mut human as &mut dyn Controller<G>, &mut bot])
     {
         let fresh = &runner.actions()[seen..];
         if record.actions.get(seen..seen + fresh.len()) != Some(fresh) {
@@ -104,12 +113,9 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
             }
         }
         seen = runner.actions().len();
-        let world = &game.live().world;
-        let body = |pos: airhockey::Vec2, vel: airhockey::Vec2| [pos.x, pos.y, vel.x, vel.y];
         frames.push(Frame {
             tick: runner.ticks() - 1,
-            puck: body(world.puck.pos, world.puck.vel),
-            mallets: world.mallets.map(|m| body(m.pos, m.vel)),
+            values: game.frame(),
             events: runner
                 .events()
                 .iter()
@@ -123,13 +129,15 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
         return Err(VerifyError::Mismatch);
     }
     Ok(Verified {
+        game: G::ID,
+        columns: G::COLUMNS,
         record,
         frames,
         finished: report.finished,
         score: report.score,
         digest: report.digest,
         profile: bot
-            .profile(GAME_ID)
+            .profile(G::ID)
             .filter(|_| difficulty_keeps_profiles(level)),
     })
 }

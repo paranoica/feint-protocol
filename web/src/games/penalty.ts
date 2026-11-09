@@ -97,7 +97,7 @@ export const penaltyView: GameView = {
   name: "Penalty shootout",
   pitch: "Five kicks each, then sudden death. The keeper must guess from the shooter's body.",
   hint: "",
-  arena: false,
+  arena: true,
   inputTicks: 2,
 
   setup(match) {

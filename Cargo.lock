@@ -427,6 +427,7 @@ dependencies = [
  "feint-protocol",
  "feint-web",
  "parquet",
+ "penalty",
  "rand_chacha",
  "rusqlite",
  "tokio",

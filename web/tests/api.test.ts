@@ -5,7 +5,8 @@ import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, upload
 test("an upload names nick, ticket and the profile it played with", () => {
   assert.equal(uploadPath("ann b", "00ff", null), "/api/matches?nick=ann%20b&ticket=00ff");
   assert.equal(uploadPath("ёж&co", "00ff", 3), "/api/matches?nick=%D1%91%D0%B6%26co&ticket=00ff&profile=3");
-  assert.equal(profilePath("a/b"), "/api/profile?nick=a%2Fb");
+  assert.equal(profilePath("a/b", "airhockey"), "/api/profile?nick=a%2Fb&game=airhockey");
+  assert.equal(profilePath("ann", "pen alty"), "/api/profile?nick=ann&game=pen%20alty");
 });
 
 test("only a well-formed ticket is trusted", () => {

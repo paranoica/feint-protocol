@@ -7,7 +7,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::parquet_out;
 use crate::verify::Verified;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 pub const MAX_ATTEMPTS: i64 = 3;
 pub const TICKET_SECONDS: u64 = 45 * 60;
 pub const MAX_OPEN_TICKETS: i64 = 512;
@@ -124,6 +124,15 @@ impl Store {
                  COMMIT;",
             )?;
         }
+        if version < 3 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE matches ADD COLUMN game TEXT NOT NULL DEFAULT 'airhockey';
+                 ALTER TABLE profiles ADD COLUMN game TEXT NOT NULL DEFAULT 'airhockey';
+                 PRAGMA user_version = 3;
+                 COMMIT;",
+            )?;
+        }
         Ok(Self {
             conn,
             root: root.to_path_buf(),
@@ -179,16 +188,20 @@ impl Store {
             .optional()?)
     }
 
-    pub fn latest_profile(&self, nick: &str) -> Result<Option<(i64, Vec<u8>)>, StoreError> {
+    pub fn latest_profile(
+        &self,
+        nick: &str,
+        game: &str,
+    ) -> Result<Option<(i64, Vec<u8>)>, StoreError> {
         let Some(player) = self.player(nick)? else {
             return Ok(None);
         };
         Ok(self
             .conn
             .query_row(
-                "SELECT version, blob FROM profiles WHERE player_id = ?1
+                "SELECT version, blob FROM profiles WHERE player_id = ?1 AND game = ?2
                  ORDER BY version DESC LIMIT 1",
-                [player],
+                params![player, game],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?)
@@ -278,11 +291,12 @@ impl Store {
         })?;
         let score = |i: usize| verified.score.get(i).copied().unwrap_or(0);
         tx.execute(
-            "INSERT INTO matches (player_id, level, seed, score_human, score_bot, ticks,
+            "INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks,
                  finished, digest, profile_used, created)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 player,
+                verified.game,
                 i64::from(record.header.levels[1]),
                 to_i64(record.header.seed),
                 score(0),
@@ -295,20 +309,25 @@ impl Store {
             ],
         )?;
         let id = tx.last_insert_rowid();
-        let latest: Option<i64> = tx
-            .query_row(
-                "SELECT MAX(version) FROM profiles WHERE player_id = ?1",
-                [player],
-                |r| r.get(0),
-            )
-            .optional()?
-            .flatten();
+        let newest = |game: Option<&str>| -> Result<Option<i64>, rusqlite::Error> {
+            Ok(tx
+                .query_row(
+                    "SELECT MAX(version) FROM profiles
+                     WHERE player_id = ?1 AND (?2 IS NULL OR game = ?2)",
+                    params![player, game],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten())
+        };
+        let latest = newest(Some(verified.game))?;
         let mut profile_version = None;
         if let Some(blob) = profile.filter(|_| verified.finished && used == latest) {
-            let version = latest.unwrap_or(0) + 1;
+            let version = newest(None)?.unwrap_or(0) + 1;
             tx.execute(
-                "INSERT INTO profiles (player_id, version, parent, blob) VALUES (?1, ?2, ?3, ?4)",
-                params![player, version, used, blob],
+                "INSERT INTO profiles (player_id, game, version, parent, blob)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![player, verified.game, version, used, blob],
             )?;
             profile_version = Some(version);
         }
@@ -345,8 +364,14 @@ fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), S
     fs::write(&temp.rec, bytes)?;
     let file = fs::File::create(&temp.parquet)?;
     let header = &verified.record.header;
-    parquet_out::write(&verified.frames, header.levels[1], header.seed, &file)
-        .map_err(|e| StoreError::Io(e.to_string()))?;
+    parquet_out::write(
+        &verified.frames,
+        verified.columns,
+        header.levels[1],
+        header.seed,
+        &file,
+    )
+    .map_err(|e| StoreError::Io(e.to_string()))?;
     file.sync_all()?;
     Ok(())
 }

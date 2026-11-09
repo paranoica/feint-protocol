@@ -170,9 +170,9 @@ async function fetchTicket(): Promise<Ticket | null> {
   }
 }
 
-async function fetchProfile(nick: string): Promise<{ version: number; bytes: Uint8Array } | null> {
+async function fetchProfile(nick: string, game: string): Promise<{ version: number; bytes: Uint8Array } | null> {
   try {
-    const response = await fetch(profilePath(nick));
+    const response = await fetch(profilePath(nick, game));
     const version = profileVersion(response.headers.get("x-profile-version"));
     if (response.status !== 200 || version === null) {
       return null;
@@ -213,7 +213,7 @@ async function begin(view: GameView, level: number) {
   try {
     saveNick(next.nick);
     const ticket = view.arena ? await fetchTicket() : null;
-    const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick) : null;
+    const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick, view.id) : null;
     const seed = ticket?.seed ?? localSeed(Math.random);
     playing = { ticket, profile: profile?.version ?? null };
     try {

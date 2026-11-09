@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
+use airhockey::AirHockey;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -11,6 +12,8 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use feint_ai::decode_profile;
+use feint_web::HubGame;
+use penalty::Penalty;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use tokio::sync::Semaphore;
@@ -208,8 +211,12 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
     let Some(nick) = query(&uri, "nick").and_then(|n| clean_nick(&n).ok()) else {
         return error(StatusCode::BAD_REQUEST, "nick");
     };
+    let game = query(&uri, "game").unwrap_or_else(|| AirHockey::ID.to_owned());
+    if game != AirHockey::ID && game != Penalty::ID {
+        return error(StatusCode::BAD_REQUEST, "game");
+    }
     let work = arena.clone();
-    match blocking(move || work.with_store(|store| store.latest_profile(&nick))).await {
+    match blocking(move || work.with_store(|store| store.latest_profile(&nick, &game))).await {
         Some(Ok(Some((version, blob)))) => {
             let mut response = (StatusCode::OK, blob).into_response();
             let headers = response.headers_mut();
