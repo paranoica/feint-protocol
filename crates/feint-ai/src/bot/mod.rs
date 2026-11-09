@@ -2,50 +2,18 @@ use std::collections::VecDeque;
 use std::marker::PhantomData;
 
 use feint_protocol::{
-    ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId, TimeMode,
+    ActionT, ChaCha8Rng, GameAdapter, GameSpecT, ObservationT, PlayerId, TimeMode,
 };
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
+use crate::insight::{Insight, Seen};
+use crate::long_game::Plan;
+use crate::model::{Profile, ProfileError};
+use crate::playbook::{Choice, Controller, Playbook};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Choice {
-    pub id: u16,
-    pub intent: u8,
-    pub deceptive: bool,
-    pub horizon_ticks: u32,
-    pub param: [f32; 2],
-}
-
-pub trait Playbook<A: GameAdapter> {
-    fn options(&self, state: &A::State, me: PlayerId, repertoire: u8, out: &mut Vec<Choice>);
-
-    fn act(
-        &self,
-        state: &A::State,
-        me: PlayerId,
-        choice: &Choice,
-        elapsed: u64,
-        aim: [f64; 2],
-    ) -> ActionT;
-
-    fn reply(&self, state: &A::State, them: PlayerId) -> ActionT;
-
-    fn evaluate(&self, state: &A::State, me: PlayerId) -> f64;
-
-    fn margin(&self) -> f64;
-}
-
-pub trait Controller<A: GameAdapter> {
-    fn new_match(&mut self, spec: &GameSpecT, me: PlayerId, seed: u64);
-
-    fn on_tick(&mut self, adapter: &A, obs: &ObservationT) -> Option<ActionT>;
-
-    fn on_event(&mut self, event: &EventT) {
-        let _ = event;
-    }
-}
+mod plan;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotError {
@@ -53,7 +21,7 @@ pub enum BotError {
     BadReaction,
 }
 
-pub const SIMULATION_BUDGET: u32 = 1_200;
+pub const SIMULATION_BUDGET: u32 = 2_400;
 
 pub const MAX_DELAY_TICKS: usize = 1 << 16;
 
@@ -84,8 +52,11 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     current: Option<Committed>,
     last_replan: Option<u64>,
     newest: Option<u64>,
+    observed: Option<u64>,
     history: VecDeque<ActionT>,
     options: Vec<Choice>,
+    insight: Insight<A::State>,
+    plan: Plan,
     _game: PhantomData<fn() -> A>,
 }
 
@@ -111,6 +82,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         } else {
             (None, 0, 1, 1, 1)
         };
+        let insight = Insight::new(&difficulty, playbook.signal_classes());
         Ok(Self {
             difficulty,
             playbook,
@@ -127,8 +99,11 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             current: None,
             last_replan: None,
             newest: None,
+            observed: None,
             history: VecDeque::new(),
             options: Vec::new(),
+            insight,
+            plan: Plan::new(difficulty.long_game),
             _game: PhantomData,
         })
     }
@@ -141,6 +116,15 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     #[must_use]
     pub fn playbook(&self) -> &P {
         &self.playbook
+    }
+
+    #[must_use]
+    pub fn profile(&self, game_id: &str) -> Option<Profile> {
+        self.insight.profile(game_id)
+    }
+
+    pub fn load_profile(&mut self, profile: &Profile, game_id: &str) -> Result<(), ProfileError> {
+        self.insight.load_profile(profile, game_id)
     }
 
     #[must_use]
@@ -161,124 +145,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    fn step(&self, adapter: &A, state: &A::State, own: Option<&ActionT>, ticks: u64) -> A::State {
-        let reply = self.playbook.reply(state, self.opponent());
-        let ticks = u32::try_from(ticks).unwrap_or(u32::MAX);
-        match own {
-            Some(own) => adapter.simulate(state, &[own.clone(), reply], ticks),
-            None => adapter.simulate(state, std::slice::from_ref(&reply), ticks),
-        }
-    }
-
-    fn roll_forward(&self, adapter: &A, state: A::State, from: u64, to: u64) -> A::State {
-        let to = to.min(from.saturating_add(self.delay as u64));
-        let mut state = state;
-        let mut at = from;
-        let mut own = self.history.iter().rev().find(|a| a.tick <= from);
-        for action in self
-            .history
-            .iter()
-            .filter(|a| a.tick > from && a.tick <= to)
-        {
-            if action.tick > at {
-                state = self.step(adapter, &state, own, action.tick - at);
-                at = action.tick;
-            }
-            own = Some(action);
-        }
-        if to > at {
-            state = self.step(adapter, &state, own, to - at);
-        }
-        state
-    }
-
-    fn rollout(
-        &self,
-        adapter: &A,
-        state: &A::State,
-        choice: &Choice,
-        cap: u32,
-        elapsed: u64,
-    ) -> f64 {
-        let horizon = choice.horizon_ticks.clamp(1, cap);
-        let mut state = state.clone();
-        let mut theirs = self.playbook.reply(&state, self.opponent());
-        let mut next_reply = self.reply_every;
-        let mut done = 0;
-        while done < horizon {
-            if done >= next_reply {
-                theirs = self.playbook.reply(&state, self.opponent());
-                next_reply = next_reply.saturating_add(self.reply_every);
-            }
-            let ticks = self.stride.min(horizon - done).min(next_reply - done);
-            let mine = self.playbook.act(
-                &state,
-                self.me,
-                choice,
-                elapsed.saturating_add(u64::from(done)),
-                [0.0; 2],
-            );
-            state = adapter.simulate(&state, &[mine, theirs.clone()], ticks);
-            done += ticks;
-        }
-        self.playbook.evaluate(&state, self.me)
-    }
-
-    fn replan(&mut self, adapter: &A, state: &A::State, now: u64) {
-        let mut options = std::mem::take(&mut self.options);
-        options.clear();
-        self.playbook
-            .options(state, self.me, self.difficulty.repertoire, &mut options);
-        let current = self.current;
-        let offered = |id: u16| options.iter().any(|c| c.id == id);
-        if let Some(cur) = current
-            && offered(cur.choice.id)
-            && now.saturating_sub(cur.since) < u64::from(cur.choice.horizon_ticks / 2)
-        {
-            self.options = options;
-            return;
-        }
-        if options.is_empty() {
-            self.current = None;
-            self.options = options;
-            return;
-        }
-        let cap = (SIMULATION_BUDGET / u32::try_from(options.len()).unwrap_or(u32::MAX)).max(1);
-        let mut best: Option<(Choice, f64)> = None;
-        let mut current_score = None;
-        for choice in &options {
-            let elapsed = current
-                .filter(|c| c.choice.id == choice.id)
-                .map_or(0, |c| now.saturating_sub(c.since));
-            let score = self.rollout(adapter, state, choice, cap, elapsed);
-            if current.is_some_and(|c| c.choice.id == choice.id) {
-                current_score = Some((*choice, score));
-            }
-            let better = best.is_none_or(|(b, bs)| score > bs || (score == bs && choice.id < b.id));
-            if better {
-                best = Some((*choice, score));
-            }
-        }
-        self.options = options;
-        let Some((choice, score)) = best else { return };
-        let keep = match (current, current_score) {
-            (Some(cur), Some((_, cur_score))) => {
-                cur.choice.id == choice.id || score <= cur_score + self.playbook.margin()
-            }
-            _ => false,
-        };
-        match (keep, current, current_score) {
-            (true, Some(cur), Some((offer, _))) => {
-                let attempt = u64::from(cur.choice.horizon_ticks.max(1));
-                if now.saturating_sub(cur.since) >= attempt {
-                    self.commit(offer, now);
-                }
-            }
-            _ => self.commit(choice, now),
-        }
-    }
-
-    fn commit(&mut self, choice: Choice, now: u64) {
+    fn commit(&mut self, choice: Choice, now: u64, importance: f64) {
+        self.insight.start_attempt(&choice);
+        self.plan.committed(&choice, importance);
         let spread = self.difficulty.spread;
         let aim = [
             (self.unit() + self.unit() - 1.0) * spread,
@@ -339,7 +208,19 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         self.current = None;
         self.last_replan = None;
         self.newest = None;
+        self.observed = None;
         self.history.clear();
+        self.insight.new_match();
+        self.plan.reset();
+    }
+
+    fn end_match(&mut self, adapter: &A, obs: &ObservationT) {
+        let state = adapter.state_from_observation(obs, &mut self.rng);
+        let them = self.opponent();
+        let score = obs.score.as_deref().unwrap_or(&[]);
+        self.insight
+            .observe::<A, P>(&self.playbook, &state, score, self.me, them);
+        self.insight.close();
     }
 
     fn on_tick(&mut self, adapter: &A, obs: &ObservationT) -> Option<ActionT> {
@@ -349,6 +230,8 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             self.buffer.clear();
             self.last_replan = None;
             self.current = None;
+            self.observed = None;
+            self.insight.forget_moment();
         }
         self.newest = Some(now);
         if let Some(cadence) = self.cadence {
@@ -359,17 +242,38 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             let delayed = self.buffer.delayed(now)?;
             self.seen.clone_from(delayed);
         } else {
-            if obs.to_act != self.me as i8 {
-                return None;
-            }
             self.seen.clone_from(obs);
         }
         let seen = std::mem::take(&mut self.seen);
         let mut state = adapter.state_from_observation(&seen, &mut self.rng);
+        let them = self.opponent();
+        let score = seen.score.as_deref().unwrap_or(&[]);
+        let fresh = if self.observed == Some(seen.tick) {
+            Seen::default()
+        } else {
+            self.observed = Some(seen.tick);
+            self.insight
+                .observe::<A, P>(&self.playbook, &state, score, self.me, them)
+        };
+        if fresh.rally {
+            self.plan.rally();
+        }
+        if fresh.started {
+            let open = self.unit() < self.difficulty.deception;
+            self.insight.gate_open = open;
+            self.insight.fake_pending = open && self.difficulty.depth < 2;
+            self.current = None;
+        }
+        if self.cadence.is_none() && seen.to_act != self.me as i8 {
+            self.seen = seen;
+            return None;
+        }
         if self.cadence.is_some() && self.difficulty.anticipate {
             state = self.roll_forward(adapter, state, seen.tick, now);
         }
         self.seen = seen;
+        self.insight
+            .watch_own::<A, P>(&self.playbook, &state, self.me);
         let due = self
             .last_replan
             .is_none_or(|last| now >= last.saturating_add(self.replan_every));
@@ -386,6 +290,9 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         let cutoff = now.saturating_sub(self.delay as u64);
         while self.history.len() > 1 && self.history[1].tick <= cutoff {
             self.history.pop_front();
+        }
+        if self.history.back().is_some_and(|last| last.tick == now) {
+            self.history.pop_back();
         }
         self.history.push_back(action.clone());
         Some(action)

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use feint_ai::{Choice, Playbook};
+use feint_ai::{Choice, Cue, Playbook, Read, Stance};
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
     GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
@@ -204,31 +204,58 @@ impl GameAdapter for Line {
 
 pub struct LinePlaybook {
     pub targets: Vec<f32>,
+    pub fakes: Vec<f32>,
+    pub shown: bool,
+    pub flat: bool,
     pub horizon: u32,
     pub margin: f64,
     pub replies: std::cell::Cell<u32>,
+    pub reads: bool,
+    pub fake_real: Option<u8>,
+    pub shoots: bool,
+    pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
 }
 
 impl LinePlaybook {
     pub fn new(targets: &[f32], horizon: u32) -> Self {
         Self {
             targets: targets.to_vec(),
+            fakes: Vec::new(),
+            shown: false,
+            flat: false,
             horizon,
             margin: 0.0,
             replies: std::cell::Cell::new(0),
+            reads: false,
+            fake_real: Some(1),
+            shoots: false,
+            twitches: std::cell::RefCell::new(Vec::new()),
         }
     }
 }
 
 impl Playbook<Line> for LinePlaybook {
-    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, out: &mut Vec<Choice>) {
+    fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
+        self.twitches.borrow_mut().push(cue.twitch);
         out.extend(self.targets.iter().enumerate().map(|(i, &x)| Choice {
             id: i as u16,
             intent: 1,
             deceptive: false,
             horizon_ticks: self.horizon,
             param: [x, 0.0],
+            shown: self.shown.then_some(i as u8),
+            real: self.shown.then_some(i as u8),
+        }));
+        let first = self.targets.len();
+        out.extend(self.fakes.iter().enumerate().map(|(i, &x)| Choice {
+            id: (first + i) as u16,
+            intent: 2,
+            deceptive: true,
+            horizon_ticks: self.horizon,
+            param: [x, 0.0],
+            shown: Some(0),
+            real: self.fake_real,
         }));
     }
 
@@ -246,7 +273,7 @@ impl Playbook<Line> for LinePlaybook {
         a
     }
 
-    fn reply(&self, s: &LineState, them: PlayerId) -> ActionT {
+    fn opponent_move(&self, s: &LineState, them: PlayerId, _stance: Stance) -> ActionT {
         self.replies.set(self.replies.get() + 1);
         let mut a = ActionT::default();
         a.player = them;
@@ -255,10 +282,33 @@ impl Playbook<Line> for LinePlaybook {
     }
 
     fn evaluate(&self, s: &LineState, me: PlayerId) -> f64 {
+        if self.flat {
+            return 0.0;
+        }
         -(s.pos[usize::from(me.min(1))] - s.ball).abs()
     }
 
     fn margin(&self) -> f64 {
         self.margin
+    }
+
+    fn read(&self, before: &LineState, after: &LineState, them: PlayerId) -> Read {
+        let i = usize::from(them.min(1));
+        let (from, to) = (before.pos[i], after.pos[i]);
+        let covered = (self.reads && (to - from).abs() > 0.01).then_some(if to > 0.0 {
+            2
+        } else if to < 0.0 {
+            0
+        } else {
+            1
+        });
+        Read {
+            covered,
+            shot: (self.shoots && before.ball_v == 0.0 && after.ball_v != 0.0).then_some(1),
+        }
+    }
+
+    fn possession(&self, s: &LineState, _me: PlayerId) -> Option<u64> {
+        (s.ball >= 0.0).then_some(0)
     }
 }
