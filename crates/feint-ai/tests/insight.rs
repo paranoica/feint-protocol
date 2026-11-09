@@ -251,10 +251,10 @@ fn a_fired_attempt_is_not_replaced_by_the_next_commit() {
 
 #[test]
 fn a_bait_takes_the_real_class_of_the_strike_that_follows() {
-    let mut p = LinePlaybook::new(&[0.5], 240);
+    let mut p = LinePlaybook::new(&[-0.9, 0.5], 240);
     p.reads = true;
     p.shown = true;
-    p.fakes = vec![-0.9];
+    p.fakes = vec![-0.8];
     p.fake_real = None;
     let mut game = Line::new(0.5, 0.0);
     let mut b = bot(difficulty(1, 1.0), p);
@@ -292,5 +292,49 @@ fn an_attempt_opened_before_the_possession_is_seen_is_not_recorded() {
     assert_eq!(
         tries, 1.0,
         "fakes committed while the ball was away were recorded"
+    );
+}
+
+#[test]
+fn an_attempt_opened_during_a_short_trip_away_counts_once_the_ball_is_back() {
+    let mut p = LinePlaybook::new(&[-0.9], 24);
+    p.reads = true;
+    p.fakes = vec![-0.5];
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(2, 1.0), p);
+    drive_score(&mut game, &mut b, 20, [0, 0]);
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 12, [0, 0]);
+    game.state.ball = 0.5;
+    drive_score(&mut game, &mut b, 8, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        profile.fake_wins, 1.0,
+        "the attempt of the possession was dropped: {profile:?}"
+    );
+}
+
+#[test]
+fn a_bait_does_not_take_a_strike_at_the_class_it_showed() {
+    let mut p = LinePlaybook::new(&[0.5], 240);
+    p.reads = true;
+    p.shown = true;
+    p.fakes = vec![-0.9];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    drive_score(&mut game, &mut b, 200, [0, 0]);
+    assert_eq!(
+        b.current().and_then(|c| c.real),
+        Some(0),
+        "the strike shows and plays class 0"
+    );
+    drive_score(&mut game, &mut b, 8, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(profile.fake_tries, 1.0);
+    assert_eq!(
+        profile.fake_wins, 0.0,
+        "a strike where the bait pointed is no fake"
     );
 }

@@ -98,6 +98,12 @@ impl<S: Clone> Insight<S> {
         let returned = self.away >= MIN_AWAY_SAMPLES;
         let mut started = possession.is_some() && (possession != self.possession || returned);
         let mut rally = false;
+        if possession.is_some()
+            && !started
+            && let Some(attempt) = &mut self.attempt
+        {
+            attempt.premature = false;
+        }
         if possession.is_some() && self.away > 0 {
             self.since = Some(state.clone());
         }
@@ -176,6 +182,7 @@ impl<S: Clone> Insight<S> {
             && bait.deceptive
             && bait.real.is_none()
             && choice.real.is_some()
+            && choice.real != bait.shown
         {
             bait.real = choice.real;
             return;
