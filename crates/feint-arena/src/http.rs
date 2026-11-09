@@ -19,7 +19,7 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 use tokio::sync::Semaphore;
 
 use crate::store::{Saved, Store, StoreError, Upload, clean_nick, stage};
-use crate::verify::verify;
+use crate::verify::{VerifyError, verify};
 
 pub const MAX_BODY: usize = 32 << 20;
 pub const VERIFY_SLOTS: usize = 2;
@@ -366,7 +366,10 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
     if claimed != claim.seed {
         return Err(Refusal::Conflict);
     }
-    let verified = verify(body, profile.as_ref()).map_err(|_| Refusal::Bad("record"))?;
+    let verified = verify(body, profile.as_ref()).map_err(|e| match e {
+        VerifyError::Profile => Refusal::Bad("profile"),
+        _ => Refusal::Bad("record"),
+    })?;
     if verified.record.header.seed != claim.seed {
         return Err(Refusal::Bad("seed"));
     }

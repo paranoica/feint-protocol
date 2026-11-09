@@ -12,6 +12,8 @@ use parquet::basic::Compression;
 use parquet::errors::ParquetError;
 use parquet::file::properties::WriterProperties;
 
+use feint_web::Column;
+
 use crate::verify::Frame;
 
 const BATCH: usize = 1 << 16;
@@ -24,10 +26,10 @@ fn event_fields() -> Fields {
 }
 
 #[must_use]
-pub fn schema(columns: &[&str]) -> Arc<Schema> {
+pub fn schema(columns: &[Column]) -> Arc<Schema> {
     let mut fields = vec![Field::new("tick", DataType::UInt64, false)];
-    for name in columns {
-        fields.push(Field::new(*name, DataType::Float64, false));
+    for c in columns {
+        fields.push(Field::new(c.name, DataType::Float64, c.optional));
     }
     fields.push(Field::new(
         "events",
@@ -47,12 +49,13 @@ pub fn schema(columns: &[&str]) -> Arc<Schema> {
 
 fn batch(
     frames: &[Frame],
-    width: usize,
+    columns: &[Column],
     level: u8,
     seed: u64,
     schema: &Arc<Schema>,
 ) -> Result<RecordBatch, ParquetError> {
     let mut tick = UInt64Builder::with_capacity(frames.len());
+    let width = columns.len();
     let mut values: Vec<Float64Builder> = (0..width)
         .map(|_| Float64Builder::with_capacity(frames.len()))
         .collect();
@@ -74,7 +77,7 @@ fn batch(
         }
         tick.append_value(f.tick);
         for (builder, v) in values.iter_mut().zip(&f.values) {
-            builder.append_value(*v);
+            builder.append_option(*v);
         }
         let item = events.values();
         for &(kind, player) in &f.events {
@@ -104,7 +107,7 @@ fn batch(
 
 pub fn write<W: Write + Send>(
     frames: &[Frame],
-    columns: &[&str],
+    columns: &[Column],
     level: u8,
     seed: u64,
     out: W,
@@ -115,7 +118,7 @@ pub fn write<W: Write + Send>(
         .build();
     let mut writer = ArrowWriter::try_new(out, schema.clone(), Some(props))?;
     for chunk in frames.chunks(BATCH) {
-        writer.write(&batch(chunk, columns.len(), level, seed, &schema)?)?;
+        writer.write(&batch(chunk, columns, level, seed, &schema)?)?;
     }
     writer.close()?;
     Ok(())

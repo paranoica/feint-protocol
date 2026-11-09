@@ -331,6 +331,8 @@ impl Store {
             )?;
             profile_version = Some(version);
         }
+        let dir = dir.join(verified.game);
+        fs::create_dir_all(&dir)?;
         let rec = dir.join(format!("{id}.rec"));
         let pq = dir.join(format!("{id}.parquet"));
         fs::rename(&temp.rec, &rec)?;

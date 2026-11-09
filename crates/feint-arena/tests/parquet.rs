@@ -121,7 +121,7 @@ fn parquet_rows_match_facts_gathered_without_the_writer() {
 fn a_tick_with_several_events_keeps_them_all() {
     let frame = |tick: u64, events: Vec<(i8, i8)>| feint_arena::Frame {
         tick,
-        values: vec![0.0; 12],
+        values: vec![Some(0.0); 12],
         events,
         intent: None,
     };
@@ -163,7 +163,7 @@ fn a_tick_with_several_events_keeps_them_all() {
 
 #[test]
 fn a_penalty_match_is_written_with_its_own_columns() {
-    let game = common::shootout(2, 4, None);
+    let (game, kicks) = common::shootout(2, 4, None);
     let verified = verify(&game.record(), None).unwrap();
     let path = scratch("penalty");
     parquet_out::write(
@@ -192,19 +192,48 @@ fn a_penalty_match_is_written_with_its_own_columns() {
         [last("score0"), last("score1")],
         [f64::from(live[0]), f64::from(live[1])]
     );
-    let kicks = batch.column_by_name("kicks").unwrap();
-    let kicks = kicks.as_primitive::<Float64Type>();
-    assert_eq!(kicks.value(0), 0.0, "the first row is before any kick");
-    assert_eq!(last("kicks"), f64::from(game.view()[9]));
+    let first = batch.column_by_name("kicks").unwrap();
+    assert_eq!(
+        first.as_primitive::<Float64Type>().value(0),
+        0.0,
+        "the first row is before any kick"
+    );
+    assert_eq!(last("kicks"), f64::from(kicks), "one kick per goal or save");
+    for name in ["aim", "dive_target"] {
+        let c = batch.column_by_name(name).unwrap();
+        let c = c.as_primitive::<Float64Type>();
+        assert!(c.is_null(0), "{name} is empty before the first kick");
+        assert!(c.null_count() > 0 && c.null_count() < c.len(), "{name}");
+        assert!(c.iter().flatten().all(f64::is_finite), "{name} has no NaN");
+    }
+    let shooter = batch.column_by_name("shooter").unwrap();
+    assert_eq!(shooter.null_count(), 0);
+    assert!(
+        !batch
+            .schema()
+            .field_with_name("shooter")
+            .unwrap()
+            .is_nullable()
+    );
 
     let short = vec![feint_arena::Frame {
         tick: 0,
-        values: vec![0.0; 3],
+        values: vec![Some(0.0); 3],
         events: vec![],
         intent: None,
     }];
     assert!(
         parquet_out::write(&short, Penalty::COLUMNS, 1, 1, File::create(&path).unwrap()).is_err(),
         "a frame narrower than its columns"
+    );
+    let mut gap = verified.frames[..1].to_vec();
+    let at = Penalty::COLUMNS
+        .iter()
+        .position(|c| c.name == "shooter")
+        .unwrap();
+    gap[0].values[at] = None;
+    assert!(
+        parquet_out::write(&gap, Penalty::COLUMNS, 1, 1, File::create(&path).unwrap()).is_err(),
+        "an empty value in a column that is never empty"
     );
 }

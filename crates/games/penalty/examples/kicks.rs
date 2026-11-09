@@ -108,6 +108,7 @@ fn main() -> ExitCode {
         }
         if after.kicks != before.kicks {
             leans.clear();
+            mind = None;
             kicks.push(fresh(after.shooter()));
         }
     }

@@ -4,7 +4,7 @@ use feint_ai::{
     encode_record,
 };
 use feint_protocol::ActionT;
-use feint_web::{HubGame, Play, Replayer};
+use feint_web::{Column, HubGame, Play, Replayer};
 use penalty::Penalty;
 
 pub const MAX_TICKS: u64 = 240 * 60 * 30;
@@ -25,7 +25,7 @@ pub enum VerifyError {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub tick: u64,
-    pub values: Vec<f64>,
+    pub values: Vec<Option<f64>>,
     pub events: Vec<(i8, i8)>,
     pub intent: Option<(u8, bool)>,
 }
@@ -33,7 +33,7 @@ pub struct Frame {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Verified {
     pub game: &'static str,
-    pub columns: &'static [&'static str],
+    pub columns: &'static [Column],
     pub record: Record,
     pub frames: Vec<Frame>,
     pub finished: bool,

@@ -4,5 +4,5 @@ mod session;
 #[allow(unsafe_code)]
 mod wasm;
 
-pub use hub::{HubGame, HumanInput, Pad, body};
+pub use hub::{Column, HubGame, HumanInput, Pad, body};
 pub use session::{GAME_ID, Play, Pointer, Replayer, Session, SessionError};

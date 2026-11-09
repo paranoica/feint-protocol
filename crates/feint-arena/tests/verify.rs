@@ -208,7 +208,7 @@ fn a_forgery_early_in_the_match_is_refused_without_replaying_the_rest() {
 
 #[test]
 fn penalty_records_verify_with_their_own_columns_and_profiles() {
-    let s = common::shootout(3, 7, None);
+    let (s, kicks) = common::shootout(3, 7, None);
     let bytes = s.record();
     let v = verify(&bytes, None).unwrap();
     assert_eq!((v.game, v.columns), (Penalty::ID, Penalty::COLUMNS));
@@ -221,9 +221,20 @@ fn penalty_records_verify_with_their_own_columns_and_profiles() {
             .all(|f| f.values.len() == Penalty::COLUMNS.len())
     );
     let last = &v.frames.last().unwrap().values;
-    let at = |name: &str| last[Penalty::COLUMNS.iter().position(|c| *c == name).unwrap()];
+    let at = |name: &str| {
+        last[Penalty::COLUMNS
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap()]
+        .unwrap()
+    };
     assert_eq!([at("score0"), at("score1")], s.score().map(f64::from));
-    assert_eq!(at("kicks"), f64::from(s.view()[9]));
+    assert_eq!(at("kicks"), f64::from(kicks), "one kick per goal or save");
+    assert_eq!(
+        verify(&bytes, None),
+        verify(&bytes, None),
+        "a verification is a value"
+    );
 
     let bot_at = |r: &Record| r.actions.iter().position(|a| a.player == 1).unwrap();
     let edited = forge(&bytes, |r| {
@@ -239,12 +250,12 @@ fn penalty_records_verify_with_their_own_columns_and_profiles() {
         "a penalty record is not hockey"
     );
 
-    let five = common::shootout(5, 8, None);
+    let (five, _) = common::shootout(5, 8, None);
     let v5 = verify(&five.record(), None).unwrap();
     assert_eq!(v5.profile, five.profile());
     let p = v5.profile.unwrap();
     assert_eq!(p.game_id, Penalty::ID);
-    let second = common::shootout(5, 9, Some(&p));
+    let (second, _) = common::shootout(5, 9, Some(&p));
     assert!(verify(&second.record(), Some(&p)).is_ok());
     let hockey = Session::new(5, 1).unwrap().profile().unwrap();
     assert_eq!(
