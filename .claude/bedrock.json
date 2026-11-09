@@ -66,6 +66,10 @@
       "run": "scripts/arena-check.sh",
       "heavy": true
     },
+    "ffi-check": {
+      "run": "scripts/ffi-check.sh",
+      "heavy": true
+    },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
       "heavy": true

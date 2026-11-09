@@ -47,3 +47,6 @@ jobs:
       - run: scripts/gen-protocol.sh --check
       - run: scripts/wasm-check.sh
       - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored
+      - name: Install cbindgen 0.29.4 (the header is checked against it)
+        run: cargo install cbindgen --version 0.29.4 --locked
+      - run: scripts/ffi-check.sh
