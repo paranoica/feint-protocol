@@ -90,6 +90,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         let cue = Cue {
             pace: self.plan.pace(),
             twitch: self.insight.twitch,
+            held: self.current.map(|c| c.choice.id),
         };
         self.playbook.options(
             state,

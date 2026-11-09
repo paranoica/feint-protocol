@@ -326,6 +326,7 @@ fn feints_are_offered_with_their_signals_and_dashes_follow_a_twitch() {
         let cue = Cue {
             pace: 1.0,
             twitch: Some(twitch),
+            held: None,
         };
         p.options(&state, 0, 2, &cue, &mut out);
         let d = found(&out, HockeyPlaybook::DASHES[dash]).expect("a dash away from the twitch");
@@ -465,7 +466,10 @@ fn a_slow_rally_waits_before_striking() {
         [0, 0],
     );
     let contact = |pace: f32| {
-        let cue = Cue { pace, twitch: None };
+        let cue = Cue {
+            pace,
+            ..Cue::default()
+        };
         let strike = option(&state, &cue, HockeyPlaybook::STRIKES[0]);
         let (worlds, _) = run_choice(&state, &strike, 360);
         worlds
@@ -626,6 +630,7 @@ fn every_class_can_be_shown_falsely_and_dashes_need_a_real_twitch() {
             &Cue {
                 pace: 1.0,
                 twitch: Some(twitch),
+                held: None,
             },
             &mut out,
         );
@@ -679,6 +684,7 @@ fn a_dash_strikes_into_the_corner_away_from_the_twitch() {
     let cue = Cue {
         pace: 1.0,
         twitch: Some(0),
+        held: None,
     };
     let dash = option(&state, &cue, HockeyPlaybook::DASHES[2]);
     let (worlds, _) = run_choice(&state, &dash, 240);
@@ -927,5 +933,43 @@ fn a_fake_winds_up_pumps_short_of_the_puck_then_fires_the_other_corner() {
         "shown right, fired left: {:?} at {:?}",
         at.puck.vel,
         at.puck.pos
+    );
+}
+
+#[test]
+fn a_fake_under_way_stays_offered_where_a_new_one_would_not_start() {
+    let p = playbook();
+    let mut fast = scene(
+        Vec2::new(-0.3, 0.35),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)],
+        [0, 0],
+    );
+    fast.world.puck.vel = Vec2::new(3.0, 0.0);
+    let mut out = Vec::new();
+    p.options(&fast, 0, 2, &Cue::default(), &mut out);
+    assert!(
+        !out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id)),
+        "no new fake on a fast puck by the rail"
+    );
+    let held = Cue {
+        held: Some(HockeyPlaybook::FAKES[1]),
+        ..Cue::default()
+    };
+    p.options(&fast, 0, 2, &held, &mut out);
+    let ids: Vec<u16> = out.iter().map(|c| c.id).collect();
+    assert!(
+        ids.contains(&HockeyPlaybook::FAKES[1]),
+        "the fake under way: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&HockeyPlaybook::FAKES[0]),
+        "only the one under way: {ids:?}"
+    );
+    let mut gone = fast.clone();
+    gone.world.puck.pos = Vec2::new(0.3, 0.0);
+    p.options(&gone, 0, 2, &held, &mut out);
+    assert!(
+        !out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id)),
+        "a puck that left the half ends the fake"
     );
 }

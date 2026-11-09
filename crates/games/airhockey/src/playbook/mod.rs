@@ -147,15 +147,16 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         }
         let central = state.world.puck.pos.y.abs() < FAKE_LANE;
         let speed = state.world.puck.vel.length();
-        if speed < FAKE_SPEED {
-            for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]).filter(|_| central) {
-                let real = 2 - shown;
-                out.push(Choice {
-                    deceptive: true,
-                    shown: Some(shown),
-                    ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
-                });
+        for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
+            if !(central && speed < FAKE_SPEED) && cue.held != Some(id) {
+                continue;
             }
+            let real = 2 - shown;
+            out.push(Choice {
+                deceptive: true,
+                shown: Some(shown),
+                ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
+            });
         }
         if speed < CONTROL_SPEED {
             if banks {

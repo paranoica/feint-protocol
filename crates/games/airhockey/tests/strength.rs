@@ -512,3 +512,39 @@ fn probe_goal_credit() {
         "PROBE bot goals {total}: credited to attempts {credited}, defender touched last {defender_last}, no touch in 1 s {no_touch}"
     );
 }
+
+#[test]
+#[ignore = "probe"]
+fn probe_fake_lengths() {
+    let mut lengths = Vec::new();
+    for seed in 0..10u64 {
+        let me = (seed % 2) as u8;
+        let sides = if me == 0 {
+            [Side::Level(5), Side::Human]
+        } else {
+            [Side::Human, Side::Level(5)]
+        };
+        let report = record(seed, sides).0;
+        let mut start: Option<u64> = None;
+        let mut last = 0u64;
+        for a in report.actions.iter().filter(|a| a.player == me) {
+            match (a.deceptive, start) {
+                (true, None) => start = Some(a.tick),
+                (false, Some(s)) => {
+                    lengths.push(last - s);
+                    start = None;
+                }
+                _ => {}
+            }
+            last = a.tick;
+        }
+    }
+    lengths.sort_unstable();
+    let full = lengths.iter().filter(|&&l| l >= 132).count();
+    eprintln!(
+        "PROBE {} fakes in 10 matches, {} lasted past wind-up and pump, median {} ticks",
+        lengths.len(),
+        full,
+        lengths.get(lengths.len() / 2).copied().unwrap_or(0)
+    );
+}

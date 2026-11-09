@@ -15,6 +15,7 @@ pub struct Choice {
 pub struct Cue {
     pub pace: f32,
     pub twitch: Option<u8>,
+    pub held: Option<u16>,
 }
 
 impl Default for Cue {
@@ -22,6 +23,7 @@ impl Default for Cue {
         Self {
             pace: 1.0,
             twitch: None,
+            held: None,
         }
     }
 }
