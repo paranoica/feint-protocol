@@ -84,27 +84,32 @@ impl OpponentModel {
         self.decay();
         let (shown, real, covered) = (self.class(shown), self.class(real), self.class(covered));
         if let (Some(s), Some(c)) = (shown, covered) {
-            self.bite[s * self.classes + c] += 1.0;
+            Self::bump(&mut self.bite[s * self.classes + c]);
             self.bite_events[s] = self.bite_events[s].saturating_add(1);
         }
         if let (Some(s), Some(r)) = (shown, real) {
-            self.mine[s * self.classes + r] += 1.0;
+            Self::bump(&mut self.mine[s * self.classes + r]);
             self.mine_events[s] = self.mine_events[s].saturating_add(1);
         }
         if deceptive {
-            self.fake_tries += 1.0;
+            Self::bump(&mut self.fake_tries);
             if won {
-                self.fake_wins += 1.0;
+                Self::bump(&mut self.fake_wins);
             }
         }
     }
 
     pub fn record_shot(&mut self, class: u8) {
+        let Some(c) = self.class(Some(class)) else {
+            return;
+        };
         self.decay();
-        if let Some(c) = self.class(Some(class)) {
-            self.shots[c] += 1.0;
-            self.shot_events = self.shot_events.saturating_add(1);
-        }
+        Self::bump(&mut self.shots[c]);
+        self.shot_events = self.shot_events.saturating_add(1);
+    }
+
+    fn bump(count: &mut f64) {
+        *count = (*count + 1.0).min(COUNT_CAP);
     }
 
     fn row(table: &[f64], classes: usize, row: usize) -> &[f64] {
@@ -112,6 +117,9 @@ impl OpponentModel {
     }
 
     fn argmax(values: &[f64], prefer: usize) -> Option<u8> {
+        if values.iter().sum::<f64>() <= 0.0 {
+            return None;
+        }
         let mut best: Option<(usize, f64)> = None;
         for (i, &v) in values.iter().enumerate() {
             let wins = best.is_none_or(|(b, bv)| v > bv || (v == bv && i == prefer && b != prefer));

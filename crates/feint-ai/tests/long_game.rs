@@ -216,7 +216,7 @@ fn the_pattern_is_repeated_while_the_score_is_calm() {
             }
             firsts.push(first.expect("acts in every possession"));
             game.state.ball = -0.2;
-            for _ in 0..8 {
+            for _ in 0..40 {
                 let mut obs = feint_protocol::ObservationT::default();
                 game.observe(&game.state, 0, &mut obs);
                 if let Some(a) = bot.on_tick(&game, &obs) {

@@ -4,6 +4,8 @@ use crate::difficulty::{Difficulty, Memory};
 use crate::model::{OpponentModel, Profile, ProfileError};
 use crate::playbook::{Choice, Playbook, Stance};
 
+const MIN_AWAY_SAMPLES: u32 = 6;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Attempt {
     shown: Option<u8>,
@@ -26,6 +28,8 @@ pub(crate) struct Insight<S> {
     prev_score: Vec<i64>,
     attempt: Option<Attempt>,
     possession: Option<u64>,
+    away: u32,
+    since: Option<S>,
     pub(crate) gate_open: bool,
     pub(crate) fake_pending: bool,
     pub(crate) twitch: Option<u8>,
@@ -42,6 +46,8 @@ impl<S: Clone> Insight<S> {
             prev_score: Vec::new(),
             attempt: None,
             possession: None,
+            away: 0,
+            since: None,
             gate_open: false,
             fake_pending: false,
             twitch: None,
@@ -62,6 +68,8 @@ impl<S: Clone> Insight<S> {
         self.prev_score.clear();
         self.attempt = None;
         self.possession = None;
+        self.away = 0;
+        self.since = None;
         self.gate_open = false;
         self.fake_pending = false;
         self.twitch = None;
@@ -80,29 +88,34 @@ impl<S: Clone> Insight<S> {
         P: Playbook<A>,
     {
         let possession = playbook.possession(state, me);
-        let mut started = possession.is_some() && possession != self.possession;
+        let returned = self.away >= MIN_AWAY_SAMPLES;
+        let mut started = possession.is_some() && (possession != self.possession || returned);
         let mut rally = false;
         if let Some(prev) = &self.prev {
             rally = score
                 .iter()
                 .zip(&self.prev_score)
                 .any(|(now, before)| now > before);
-            let read = playbook.read(prev, state, them);
-            if let (Some(model), Some(shot)) = (&mut self.model, read.shot) {
+            if let (Some(model), Some(shot)) =
+                (&mut self.model, playbook.read(prev, state, them).shot)
+            {
                 model.record_shot(shot);
             }
-            if let Some(covered) = read.covered {
+            let reference = self.since.as_ref().unwrap_or(prev);
+            if let Some(covered) = playbook.read(reference, state, them).covered {
                 self.twitch = Some(covered);
                 if let Some(attempt) = &mut self.attempt {
                     attempt.covered = Some(covered);
                 }
             }
-            let me_i = usize::from(me);
-            let goals = |s: &[i64], i: usize| s.get(i).copied().unwrap_or(0);
-            if goals(score, me_i) > goals(&self.prev_score, me_i) {
+            let goals = |s: &[i64], p: PlayerId| s.get(usize::from(p)).copied().unwrap_or(0);
+            if goals(score, me) > goals(&self.prev_score, me) {
                 if let Some(attempt) = &mut self.attempt {
                     attempt.won = true;
                 }
+                self.end_attempt();
+            }
+            if goals(score, them) > goals(&self.prev_score, them) {
                 self.end_attempt();
             }
         } else {
@@ -111,16 +124,24 @@ impl<S: Clone> Insight<S> {
         if started {
             self.end_attempt();
             self.twitch = None;
+            self.since = Some(state.clone());
+        }
+        if possession.is_some() {
+            self.away = 0;
+            self.possession = possession;
+        } else {
+            self.away = self.away.saturating_add(1);
+            self.end_attempt();
         }
         self.prev = Some(state.clone());
         self.prev_score.clear();
         self.prev_score.extend_from_slice(score);
-        self.possession = possession;
         Seen { started, rally }
     }
 
     pub(crate) fn start_attempt(&mut self, choice: &Choice) {
         self.end_attempt();
+        self.since.clone_from(&self.prev);
         if choice.shown.is_some() || choice.deceptive {
             self.attempt = Some(Attempt {
                 shown: choice.shown,
@@ -138,7 +159,8 @@ impl<S: Clone> Insight<S> {
 
     fn end_attempt(&mut self) {
         if let (Some(a), Some(model)) = (self.attempt.take(), &mut self.model) {
-            let won = a.won || (a.deceptive && a.covered.is_some() && a.covered != a.real);
+            let fooled = a.real.is_some() && a.covered.is_some() && a.covered != a.real;
+            let won = a.won || (a.deceptive && fooled);
             model.record_attempt(a.shown, a.real, a.covered, a.deceptive, won);
         }
     }

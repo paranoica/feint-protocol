@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use feint_protocol::{ActionT, PlayerId};
 
 use crate::params::Params;
@@ -55,9 +57,6 @@ fn runs(actions: &[ActionT], player: PlayerId) -> Vec<Run> {
     let mut out: Vec<Run> = Vec::new();
     let mut open: Option<Run> = None;
     for a in actions.iter().filter(|a| a.player == player) {
-        if let Some(run) = &mut open {
-            run.until = run.until.min(a.tick);
-        }
         let attack = a.intent == ATTACK_INTENT;
         match &mut open {
             Some(run)
@@ -69,6 +68,9 @@ fn runs(actions: &[ActionT], player: PlayerId) -> Vec<Run> {
                 run.until = a.tick.saturating_add(RUN_GAP_TICKS);
             }
             _ => {
+                if let Some(run) = &mut open {
+                    run.until = a.tick;
+                }
                 out.extend(open.take());
                 open = attack.then_some(Run {
                     start: a.tick,
@@ -83,29 +85,59 @@ fn runs(actions: &[ActionT], player: PlayerId) -> Vec<Run> {
     out
 }
 
-fn between(frames: &[Frame], from: u64, to: u64) -> impl Iterator<Item = &Frame> {
-    frames.iter().filter(move |f| f.tick >= from && f.tick < to)
+fn span(frames: &[Frame], from: u64, to: u64) -> std::ops::Range<usize> {
+    let lo = frames.partition_point(|f| f.tick < from);
+    let hi = frames.partition_point(|f| f.tick <= to).max(lo);
+    lo..hi
 }
 
 fn first_at(frames: &[Frame], tick: u64) -> Option<&Frame> {
-    between(frames, tick, u64::MAX).next()
+    frames.get(span(frames, tick, u64::MAX).start)
+}
+
+fn touch_starts(frames: &[Frame], reach: f64) -> Vec<[bool; 2]> {
+    let touching = |f: &Frame, i: usize| (f.puck - f.mallets[i]).length() <= reach;
+    let mut was = [false; 2];
+    frames
+        .iter()
+        .map(|f| {
+            let now = [touching(f, 0), touching(f, 1)];
+            let starts = [now[0] && !was[0], now[1] && !was[1]];
+            was = now;
+            starts
+        })
+        .collect()
 }
 
 #[must_use]
 pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<Attempt> {
     let reach = params.puck_radius + params.mallet_radius + CONTACT_SLACK;
+    let mut frames = Cow::Borrowed(frames);
+    if !frames.is_sorted_by_key(|f| f.tick) {
+        frames.to_mut().sort_by_key(|f| f.tick);
+    }
+    let mut actions = Cow::Borrowed(actions);
+    if !actions.is_sorted_by_key(|a| a.tick) {
+        actions.to_mut().sort_by_key(|a| a.tick);
+    }
+    let frames = frames.as_ref();
+    let starts = touch_starts(frames, reach);
     let mut out = Vec::new();
     for player in 0..2u8 {
         let me = usize::from(player);
         let them = 1 - me;
         let first = out.len();
-        for run in runs(actions, player) {
-            let contact = between(frames, run.start + 1, run.until + 1)
-                .find(|f| (f.puck - f.mallets[me]).length() <= reach)
-                .map(|f| f.tick);
+        let found = runs(&actions, player);
+        for run in &found {
+            let window = span(frames, run.start.saturating_add(1), run.until);
+            let contact = window
+                .clone()
+                .find(|&k| starts[k][me])
+                .map(|k| frames[k].tick);
             let mut shown = None;
             let mut widest = 0.0;
-            for f in between(frames, run.start + 1, contact.unwrap_or(run.until) + 1) {
+            let shown_until = contact.unwrap_or(run.until);
+            for f in &frames[span(frames, run.start.saturating_add(1), shown_until)] {
                 let rel = seen(player, f.mallets[me] - f.puck);
                 if rel.x < 0.0 && rel.y.abs() > widest {
                     widest = rel.y.abs();
@@ -130,20 +162,23 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
                 scored: false,
             });
         }
-        let mine = &mut out[first..];
-        for pair in frames.windows(2) {
-            if pair[1].score[me] <= pair[0].score[me] {
+        for k in 1..frames.len() {
+            if frames[k].score[me] <= frames[k - 1].score[me] {
                 continue;
             }
-            let goal = pair[1].tick;
-            let last = mine
-                .iter_mut()
-                .filter(|a| {
-                    a.contact
-                        .is_some_and(|c| c <= goal && goal - c <= SCORE_WINDOW_TICKS)
-                })
-                .max_by_key(|a| a.contact);
-            if let Some(a) = last {
+            let goal = frames[k].tick;
+            let recent = span(frames, goal.saturating_sub(SCORE_WINDOW_TICKS), goal);
+            let Some(last) = recent.rev().find(|&j| starts[j][0] || starts[j][1]) else {
+                continue;
+            };
+            if starts[last][them] {
+                continue;
+            }
+            let touched = frames[last].tick;
+            let credited = found.iter().zip(&mut out[first..]).find(|(run, a)| {
+                a.contact == Some(touched) && run.start < touched && touched <= run.until
+            });
+            if let Some((_, a)) = credited {
                 a.scored = true;
             }
         }

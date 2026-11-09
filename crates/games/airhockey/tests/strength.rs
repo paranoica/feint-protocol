@@ -157,9 +157,9 @@ fn bot_tally(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> Tally {
 #[test]
 #[ignore = "release only: bedrock cmd strength"]
 fn a_reader_bites_on_fakes_in_the_log() {
-    let t = bot_tally(4, Side::Reader, 0..20);
+    let t = bot_tally(4, Side::Reader, 0..40);
     eprintln!("level 4 against a reader: {t:?}");
-    assert!(t.fakes >= 10, "only {} fakes in 20 matches", t.fakes);
+    assert!(t.fakes >= 10, "only {} fakes in 40 matches", t.fakes);
     assert!(
         2 * t.shifted >= t.fakes,
         "the reader shifted towards the shown side in {} of {} fakes",

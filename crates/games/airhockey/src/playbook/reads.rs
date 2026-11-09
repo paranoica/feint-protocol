@@ -10,6 +10,7 @@ const SHIFT: f64 = 0.03;
 const COVER_REACH: f64 = 0.06;
 const SHOT_SPEED: f64 = 2.0;
 const CORNER_SPLIT: f64 = 0.035;
+const MAX_BOUNCES: usize = 4;
 
 impl HockeyPlaybook {
     fn covered_class(&self, state: &Match, defender: PlayerId) -> Option<u8> {
@@ -38,8 +39,20 @@ impl HockeyPlaybook {
             return None;
         }
         let goal_x = attack(shooter) * self.params.half_length;
-        let t = (goal_x - puck.pos.x) / puck.vel.x;
-        let crossing = frame(shooter, Vec2::new(goal_x, puck.pos.y + puck.vel.y * t));
+        let limit = self.params.half_width - self.params.puck_radius;
+        let mut left = (goal_x - puck.pos.x) / puck.vel.x;
+        let (mut y, mut vy) = (puck.pos.y, puck.vel.y);
+        for _ in 0..MAX_BOUNCES {
+            let wall = if vy > 0.0 { limit } else { -limit };
+            if vy == 0.0 || (wall - y) / vy >= left {
+                break;
+            }
+            left -= (wall - y) / vy;
+            y = wall;
+            vy = -vy * self.params.rail_restitution;
+        }
+        let y = (y + vy * left).clamp(-limit, limit);
+        let crossing = frame(shooter, Vec2::new(goal_x, y));
         Some(if crossing.y < -CORNER_SPLIT {
             0
         } else if crossing.y > CORNER_SPLIT {
@@ -67,8 +80,8 @@ impl HockeyPlaybook {
     pub(super) fn match_importance(&self, state: &Match) -> f64 {
         let [a, b] = state.score();
         let win = self.params.goals_to_win;
-        let near = |g: u32| g + 1 >= win;
-        let late_tie = a == b && a + 2 >= win;
+        let near = |g: u32| g.saturating_add(1) >= win;
+        let late_tie = a == b && a.saturating_add(2) >= win;
         if near(a) || near(b) || late_tie {
             1.0
         } else {

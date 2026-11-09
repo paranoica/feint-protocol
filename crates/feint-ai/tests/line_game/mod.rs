@@ -211,6 +211,7 @@ pub struct LinePlaybook {
     pub margin: f64,
     pub replies: std::cell::Cell<u32>,
     pub reads: bool,
+    pub fake_real: Option<u8>,
     pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
 }
 
@@ -225,6 +226,7 @@ impl LinePlaybook {
             margin: 0.0,
             replies: std::cell::Cell::new(0),
             reads: false,
+            fake_real: Some(1),
             twitches: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -251,7 +253,7 @@ impl Playbook<Line> for LinePlaybook {
             horizon_ticks: self.horizon,
             param: [x, 0.0],
             shown: Some(0),
-            real: Some(1),
+            real: self.fake_real,
         }));
     }
 

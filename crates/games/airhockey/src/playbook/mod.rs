@@ -10,7 +10,7 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_STALL_SECONDS, HOLD_TICKS, SHOW_BACK,
+    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_RESERVE_SECONDS, HOLD_TICKS, SHOW_BACK,
     SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack, frame,
 };
 
@@ -27,6 +27,7 @@ impl HockeyPlaybook {
     pub const BANK: u16 = 10;
     pub const HOLD: u16 = 11;
     pub const DASHES: [u16; 3] = [12, 13, 14];
+    pub const FAKE_BANK: u16 = 15;
 
     #[must_use]
     pub fn new(params: Params) -> Self {
@@ -51,15 +52,19 @@ impl HockeyPlaybook {
 
     #[must_use]
     pub fn bank_aim(&self, state: &Match, player: PlayerId) -> Vec2 {
+        let rail =
+            self.bank_side(state, player) * (self.params.half_width - self.params.puck_radius);
+        let beyond = rail + rail / self.params.rail_restitution;
+        frame(player, Vec2::new(self.params.half_length, beyond))
+    }
+
+    fn bank_side(&self, state: &Match, player: PlayerId) -> f64 {
         let them = state.world.mallets[usize::from(1 - player.min(1))].pos;
-        let away = if frame(player, them).y >= 0.0 {
+        if frame(player, them).y >= 0.0 {
             -1.0
         } else {
             1.0
-        };
-        let rail = away * (self.params.half_width - self.params.puck_radius);
-        let beyond = rail + rail / self.params.rail_restitution;
-        frame(player, Vec2::new(self.params.half_length, beyond))
+        }
     }
 
     fn slow(c: &Choice) -> bool {
@@ -115,10 +120,13 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         if repertoire < 2 {
             return;
         }
-        out.push(Choice {
-            shown: None,
-            ..choice(Self::BANK, 1, shot_ticks, 1.0, Some(1))
-        });
+        let banks = self.params.rail_restitution > 0.0;
+        if banks {
+            out.push(Choice {
+                shown: None,
+                ..choice(Self::BANK, 1, shot_ticks, 1.0, Some(1))
+            });
+        }
         if state.world.puck.vel.length() < CONTROL_SPEED {
             for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
                 let real = 2 - shown;
@@ -128,14 +136,29 @@ impl Playbook<AirHockey> for HockeyPlaybook {
                     ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
                 });
             }
-            if state.stall_ticks() < HOLD_STALL_SECONDS * self.params.tick_hz {
+            if banks {
+                let shown = if self.bank_side(state, me) < 0.0 {
+                    2
+                } else {
+                    0
+                };
                 out.push(Choice {
                     deceptive: true,
+                    shown: Some(shown),
+                    ..choice(Self::FAKE_BANK, 1, fake_ticks, 1.0, Some(1))
+                });
+            }
+            let hz = f64::from(self.params.tick_hz);
+            let reserve = f64::from(state.stall_ticks()) + HOLD_RESERVE_SECONDS * hz;
+            if reserve < self.params.stall_seconds * hz {
+                out.push(Choice {
+                    deceptive: true,
+                    shown: Some(1),
                     ..choice(Self::HOLD, 1, HOLD_TICKS, 1.0, None)
                 });
             }
         }
-        if let Some(twitch) = cue.twitch {
+        if let Some(twitch) = cue.twitch.filter(|&t| usize::from(t) < AIM_Y.len()) {
             for real in [0u8, 2].into_iter().filter(|&r| r != twitch) {
                 out.push(Choice {
                     shown: None,
@@ -163,12 +186,13 @@ impl Playbook<AirHockey> for HockeyPlaybook {
             id if Self::DEFENDS.contains(&id) => {
                 Self::guard(self.own_corner(me, k as u8), s.world.puck.pos)
             }
-            id if Self::FAKES.contains(&id) && elapsed < SHOW_TICKS => {
+            id if (Self::FAKES.contains(&id) || id == Self::FAKE_BANK) && elapsed < SHOW_TICKS => {
                 self.show_point(s, me, c.shown.unwrap_or(1))
             }
             id if Self::FAKES.contains(&id) || Self::DASHES.contains(&id) => {
                 self.contact(s, me, real)
             }
+            Self::FAKE_BANK => self.contact(s, me, self.bank_aim(s, me) + lateral),
             Self::BANK if waiting => self.set_up(s, me, self.bank_aim(s, me)),
             Self::BANK => self.contact(s, me, self.bank_aim(s, me) + lateral),
             Self::HOLD => self.set_up(s, me, self.corner_aim(me, 1)),
@@ -222,6 +246,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
     }
 
     fn possession(&self, state: &Match, me: PlayerId) -> Option<u64> {
-        Self::puck_in_half_of(state, me).then_some(0)
+        let [a, b] = state.score();
+        Self::puck_in_half_of(state, me).then_some(u64::from(a) + u64::from(b))
     }
 }

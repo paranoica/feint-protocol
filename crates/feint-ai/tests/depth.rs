@@ -94,7 +94,7 @@ fn depth_below_two_feints_rarely_and_randomly() {
     let report = shootout(thinker(1, 0.1, Memory::Match), KeeperRule::Biter, 100, 3);
     let fakes = deceptive_kicks(&report);
     assert!(
-        (3..=20).contains(&fakes.len()),
+        (5..=15).contains(&fakes.len()),
         "{} deceptive kicks of 100",
         fakes.len()
     );
@@ -220,28 +220,51 @@ fn realtime(depth: u8, deception: f64) -> Difficulty {
 }
 
 #[test]
-fn a_held_fake_survives_replans_within_its_possession() {
-    let mut tested = 0;
-    for seed in 0..40 {
-        let mut playbook = LinePlaybook::new(&[0.0], 240);
-        playbook.fakes = vec![0.5];
-        let mut game = Line::new(0.5, 0.0);
-        let mut bot = line_bot(realtime(2, 0.5), playbook, seed);
-        drive(&mut game, &mut bot, 1);
-        if bot.current().is_none_or(|c| !c.deceptive) {
-            continue;
-        }
-        tested += 1;
-        let fake = bot.current().unwrap().id;
-        game.state.ball = 0.1;
-        drive(&mut game, &mut bot, 100);
+fn a_fake_committed_with_the_gate_shut_is_held_for_ten_replans() {
+    let mut playbook = LinePlaybook::new(&[0.0], 240);
+    playbook.fakes = vec![0.5];
+    playbook.flat = true;
+    let mut game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 1.0), playbook, 3);
+    drive(&mut game, &mut bot, 1);
+    let fake = bot
+        .current()
+        .filter(|c| c.deceptive)
+        .expect("depth 1 commits its one fake")
+        .id;
+    for replan in 0..12 {
+        drive(&mut game, &mut bot, 24);
         assert_eq!(
             bot.current().map(|c| c.id),
             Some(fake),
-            "seed {seed}: the held fake was dropped"
+            "dropped at replan {replan}"
         );
     }
-    assert!(tested >= 5, "only {tested} seeds committed to the fake");
+}
+
+#[test]
+fn the_gate_is_rolled_once_per_possession() {
+    let mut outcomes = Vec::new();
+    for seed in 0..40 {
+        let mut playbook = LinePlaybook::new(&[0.0], 24);
+        playbook.fakes = vec![0.5];
+        let mut game = Line::new(0.5, 0.0);
+        let mut bot = line_bot(realtime(2, 0.5), playbook, seed);
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            drive(&mut game, &mut bot, 24);
+            seen.push(bot.current().is_some_and(|c| c.deceptive));
+        }
+        assert!(
+            seen.windows(2).all(|w| w[0] == w[1]),
+            "seed {seed}: {seen:?}"
+        );
+        outcomes.push(seen[0]);
+    }
+    assert!(
+        outcomes.contains(&true) && outcomes.contains(&false),
+        "{outcomes:?}"
+    );
 }
 
 #[test]
@@ -302,4 +325,19 @@ fn the_cue_carries_the_opponents_twitch_until_the_possession_changes() {
     game.state.ball = 0.1;
     drive(&mut game, &mut bot, 30);
     assert_eq!(last(&bot), None, "a new possession forgets the twitch");
+}
+
+#[test]
+fn a_frozen_tick_does_not_grow_the_memory() {
+    let game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 0.0), LinePlaybook::new(&[0.0], 60), 1);
+    let obs = observe(&game);
+    for _ in 0..100 {
+        bot.on_tick(&game, &obs);
+    }
+    assert!(
+        bot.memory_len() <= 1,
+        "{} actions kept for one tick",
+        bot.memory_len()
+    );
 }

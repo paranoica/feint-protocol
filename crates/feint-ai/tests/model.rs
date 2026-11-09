@@ -142,3 +142,37 @@ fn ties_assume_the_opponent_bites() {
     }
     assert_eq!(mix.likely_real(2), Some(2));
 }
+
+#[test]
+fn imported_event_counts_without_counts_behind_them_do_not_steer() {
+    let mut m = OpponentModel::new(3, 0.0);
+    let mut p = m.export("g");
+    p.bite_events = vec![u32::MAX; 3];
+    p.mine_events = vec![u32::MAX; 3];
+    p.shot_events = u32::MAX;
+    m.import(&p, "g").unwrap();
+    assert_eq!(m.likely_cover(0), None);
+    assert_eq!(m.likely_real(2), None);
+    assert_eq!(m.likely_shot(), None);
+    m.record_attempt(Some(0), Some(2), Some(1), true, true);
+    assert_eq!(m.likely_cover(0), Some(1), "real evidence still counts");
+}
+
+#[test]
+fn a_shot_outside_the_classes_is_no_event() {
+    let mut m = OpponentModel::new(3, 1.0);
+    m.record_shot(0);
+    m.record_shot(7);
+    assert_eq!(m.export("g").shots[0], 1.0);
+    assert_eq!(m.export("g").shot_events, 1);
+}
+
+#[test]
+fn a_model_full_to_the_cap_still_imports_its_own_export() {
+    let mut m = OpponentModel::new(3, 0.0);
+    for _ in 0..1_000_001 {
+        m.record_shot(1);
+    }
+    let p = m.export("g");
+    assert_eq!(OpponentModel::new(3, 0.0).import(&p, "g"), Ok(()));
+}

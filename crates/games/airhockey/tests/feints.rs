@@ -385,6 +385,18 @@ fn a_fake_wind_up_shows_one_side_then_shoots_the_other() {
             .any(|w| (w.mallets[0].pos - show).length() < 0.03),
         "never reached the show point"
     );
+    let on_shown_side = worlds
+        .iter()
+        .take(96)
+        .filter(|w| {
+            let rel = w.mallets[0].pos - w.puck.pos;
+            rel.x < 0.0 && rel.y > 0.06
+        })
+        .count();
+    assert!(
+        on_shown_side >= 48,
+        "the mallet sat on the shown side for only {on_shown_side} ticks"
+    );
     let hit = worlds
         .iter()
         .find(|w| w.puck.vel.length() > 0.5)
@@ -436,4 +448,229 @@ fn a_slow_rally_waits_before_striking() {
     };
     let (fast, slow) = (contact(1.0), contact(0.0));
     assert!(slow >= fast + 60, "fast at {fast}, slow at {slow}");
+}
+
+#[test]
+fn extreme_params_neither_panic_nor_offer_an_impossible_bank() {
+    let dead_rails = Params {
+        rail_restitution: 0.0,
+        ..Params::default()
+    };
+    let p = HockeyPlaybook::new(dead_rails.clone());
+    let state = Match::from_observed(
+        dead_rails,
+        [Body::default(); 2],
+        World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.8, 0.0)),
+            ],
+        },
+        0,
+        [0, 0],
+        0,
+    );
+    let mut out = Vec::new();
+    p.options(&state, 0, 2, &Cue::default(), &mut out);
+    assert!(
+        out.iter().all(|c| c.id != HockeyPlaybook::BANK),
+        "no bank shot off dead rails"
+    );
+    assert!(out.iter().any(|c| c.id == HockeyPlaybook::STRIKES[0]));
+
+    let huge = Params {
+        goals_to_win: u32::MAX,
+        tick_hz: u32::MAX,
+        ..Params::default()
+    };
+    let p = HockeyPlaybook::new(huge.clone());
+    let state = Match::from_observed(
+        huge,
+        [Body::default(); 2],
+        World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.8, 0.0)),
+            ],
+        },
+        0,
+        [u32::MAX - 1, 0],
+        0,
+    );
+    p.options(&state, 0, 2, &Cue::default(), &mut out);
+    assert!(out.iter().any(|c| c.id == HockeyPlaybook::HOLD));
+    assert_eq!(p.importance(&state, 0), 1.0);
+}
+
+#[test]
+fn a_goal_starts_a_new_possession() {
+    let p = playbook();
+    let puck = Vec2::new(-0.4, 0.0);
+    let mallets = [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.0)];
+    let before = p.possession(&scene(puck, mallets, [0, 0]), 0);
+    let after = p.possession(&scene(puck, mallets, [0, 1]), 0);
+    assert!(before.is_some() && after.is_some() && before != after);
+    assert_eq!(p.possession(&scene(-puck, mallets, [0, 1]), 0), None);
+}
+
+#[test]
+fn hold_keeps_three_seconds_for_the_attack_before_the_stall_rule() {
+    let short = Params {
+        stall_seconds: 2.0,
+        ..Params::default()
+    };
+    let p = HockeyPlaybook::new(short.clone());
+    let state = Match::from_observed(
+        short,
+        [Body::default(); 2],
+        World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.8, 0.0)),
+            ],
+        },
+        0,
+        [0, 0],
+        0,
+    );
+    let mut out = Vec::new();
+    p.options(&state, 0, 2, &Cue::default(), &mut out);
+    assert!(
+        out.iter().all(|c| c.id != HockeyPlaybook::HOLD),
+        "no hold when the stall rule is 2 s"
+    );
+}
+
+#[test]
+fn a_bank_shot_is_read_where_it_enters_the_goal() {
+    let p = playbook();
+    for shooter in [0u8, 1] {
+        let defender = 1 - shooter;
+        let puck = side(shooter, Vec2::new(-0.4, 0.0));
+        let mut mallets = [Vec2::ZERO; 2];
+        mallets[usize::from(shooter)] = side(shooter, Vec2::new(-0.49, 0.0));
+        mallets[usize::from(defender)] = side(shooter, Vec2::new(0.9, 0.3));
+        let before = scene(puck, mallets, [0, 0]);
+        let aim = p.bank_aim(&before, shooter);
+        let mut after = before.clone();
+        after.world.puck.vel = unit(aim - puck) * 6.0;
+        assert_eq!(
+            p.read(&before, &after, shooter).shot,
+            Some(1),
+            "shooter {shooter}"
+        );
+    }
+}
+
+#[test]
+fn every_class_can_be_shown_falsely_and_dashes_need_a_real_twitch() {
+    let p = playbook();
+    let state = scene(
+        Vec2::new(-0.4, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.8, 0.3)],
+        [0, 0],
+    );
+    let mut out = Vec::new();
+    p.options(&state, 0, 2, &Cue::default(), &mut out);
+    for class in 0..3u8 {
+        assert!(
+            out.iter().any(|c| c.deceptive && c.shown == Some(class)),
+            "no fake shows class {class}: a pattern there could never be broken"
+        );
+    }
+    let fake_bank = out
+        .iter()
+        .find(|c| c.id == HockeyPlaybook::FAKE_BANK)
+        .expect("a fake ending in a bank shot");
+    assert!(
+        fake_bank.deceptive && fake_bank.real == Some(1) && fake_bank.shown == Some(2),
+        "{fake_bank:?}"
+    );
+
+    let dashes = |twitch: u8| {
+        let mut out = Vec::new();
+        p.options(
+            &state,
+            0,
+            2,
+            &Cue {
+                pace: 1.0,
+                twitch: Some(twitch),
+            },
+            &mut out,
+        );
+        out.iter()
+            .filter(|c| HockeyPlaybook::DASHES.contains(&c.id))
+            .filter_map(|c| c.real)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        dashes(1),
+        vec![0, 2],
+        "away from the centre is either corner"
+    );
+    assert!(dashes(3).is_empty() && dashes(255).is_empty());
+}
+
+#[test]
+fn a_fake_bank_shows_a_corner_then_scores_off_the_rail() {
+    let state = scene(
+        Vec2::new(-0.4, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.95, 0.45)],
+        [0, 0],
+    );
+    let fake = option(&state, &Cue::default(), HockeyPlaybook::FAKE_BANK);
+    let (worlds, end) = run_choice(&state, &fake, 480);
+    let show = playbook().show_point(&state, 0, 2);
+    assert!(
+        worlds
+            .iter()
+            .take(96)
+            .any(|w| (w.mallets[0].pos - show).length() < 0.03)
+    );
+    assert_eq!(end.score(), [1, 0], "the fake bank did not score");
+    let lowest = worlds
+        .iter()
+        .map(|w| w.puck.pos.y)
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        lowest < -0.44,
+        "it went in without touching the rail: lowest y {lowest}"
+    );
+}
+
+#[test]
+fn a_dash_strikes_into_the_corner_away_from_the_twitch() {
+    let state = scene(
+        Vec2::new(-0.4, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
+        [0, 0],
+    );
+    let cue = Cue {
+        pace: 1.0,
+        twitch: Some(0),
+    };
+    let dash = option(&state, &cue, HockeyPlaybook::DASHES[2]);
+    let (worlds, _) = run_choice(&state, &dash, 240);
+    let hit = worlds
+        .iter()
+        .find(|w| w.puck.vel.length() > 0.5)
+        .expect("the puck was struck");
+    assert!(
+        worlds
+            .iter()
+            .position(|w| w.puck.vel.length() > 0.5)
+            .unwrap()
+            < 60,
+        "a dash does not wait"
+    );
+    let wanted = unit(Vec2::new(1.0, 0.07) - Vec2::new(-0.4, 0.0));
+    assert!(
+        unit(hit.puck.vel).dot(wanted) > 2.0f64.to_radians().cos_approx(),
+        "exit {:?}",
+        hit.puck.vel
+    );
 }

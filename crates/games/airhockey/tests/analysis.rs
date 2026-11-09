@@ -51,7 +51,7 @@ fn at(t: u64) -> Frame {
         _ => (rest, behind, v(0.9, 0.0)),
     };
     let score = [
-        u32::from(t >= 150) + u32::from(t >= 900) + u32::from(t >= 1200),
+        u32::from(t >= 100) + u32::from(t >= 900) + u32::from(t >= 1200),
         u32::from(t >= 780),
     ];
     Frame {
@@ -159,4 +159,152 @@ fn the_analyser_counts_shifts_and_goals_from_logged_fields() {
             .all(|a| !a.scored && a.shown.is_none() && a.contact.is_none())
     );
     assert!(attempts(&Params::default(), &frames, &[]).is_empty());
+}
+
+#[test]
+fn ticks_at_the_end_of_time_and_unsorted_logs_are_handled() {
+    let late = run(0, u64::MAX - 10..=u64::MAX - 10, 1, true);
+    let found = attempts(&Params::default(), &[], &late);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].contact.is_none() && !found[0].scored);
+
+    let frames: Vec<Frame> = (0..=1400).map(at).collect();
+    let mut actions = run(0, 0..=72, 1, true);
+    actions.extend(run(0, 300..=400, 1, false));
+    let sorted = attempts(&Params::default(), &frames, &actions);
+    let mut reversed_frames = frames.clone();
+    reversed_frames.reverse();
+    let mut reversed_actions = actions.clone();
+    reversed_actions.reverse();
+    assert_eq!(
+        attempts(&Params::default(), &reversed_frames, &reversed_actions),
+        sorted
+    );
+}
+
+fn quiet(t: u64, puck: Vec2, m0: Vec2, m1: Vec2, score: [u32; 2]) -> Frame {
+    Frame {
+        tick: t,
+        puck,
+        mallets: [m0, m1],
+        score,
+    }
+}
+
+#[test]
+fn contact_is_looked_for_until_the_next_action_however_late() {
+    let frames: Vec<Frame> = (0..=200)
+        .map(|t| {
+            let m0 = if t == 50 { v(-0.49, 0.0) } else { v(-0.8, 0.0) };
+            quiet(t, v(-0.4, 0.0), m0, v(0.9, 0.0), [0, 0])
+        })
+        .collect();
+    let mut actions = run(0, 0..=0, 1, false);
+    actions.extend(run(0, 100..=100, 2, false));
+    let found = attempts(&Params::default(), &frames, &actions);
+    assert_eq!(found[0].contact, Some(50));
+}
+
+#[test]
+fn a_goal_is_credited_only_when_the_attempt_touched_last() {
+    let touch = v(-0.49, 0.0);
+    let score = |t: u64| [u32::from(t >= 100), 0];
+    let log = |later: Option<(u64, usize)>| -> Vec<Frame> {
+        (0..=200)
+            .map(|t| {
+                let mut f = quiet(t, v(-0.4, 0.0), v(-0.8, 0.0), v(0.9, 0.0), score(t));
+                if t == 10 {
+                    f.mallets[0] = touch;
+                }
+                if let Some((at, who)) = later
+                    && t == at
+                {
+                    f.mallets[who] = v(-0.4, 0.09);
+                }
+                f
+            })
+            .collect()
+    };
+    let actions = run(0, 0..=8, 1, true);
+    let credited = |frames: &[Frame]| attempts(&Params::default(), frames, &actions)[0].scored;
+    assert!(credited(&log(None)), "the fake touched last");
+    assert!(
+        !credited(&log(Some((60, 1)))),
+        "the opponent touched it after the fake"
+    );
+    assert!(
+        !credited(&log(Some((60, 0)))),
+        "a later touch outside the attempt"
+    );
+}
+
+fn scripted(goal_at: u64, touches: &[(u64, usize)]) -> Vec<Frame> {
+    (0..=500)
+        .map(|t| {
+            let mut f = quiet(
+                t,
+                v(-0.4, 0.0),
+                v(-0.8, 0.0),
+                v(0.9, 0.0),
+                [u32::from(t >= goal_at), 0],
+            );
+            for &(at, who) in touches {
+                if t == at {
+                    f.mallets[who] = if who == 0 {
+                        v(-0.49, 0.0)
+                    } else {
+                        v(-0.4, 0.09)
+                    };
+                }
+            }
+            f
+        })
+        .collect()
+}
+
+#[test]
+fn touches_are_episodes_owned_by_the_toucher() {
+    let held: Vec<(u64, usize)> = (76..=80).map(|t| (t, 0)).collect();
+    let mut actions = run(0, 0..=72, 1, true);
+    actions.extend(run(0, 78..=100, 1, false));
+    let found = attempts(&Params::default(), &scripted(120, &held), &actions);
+    let (fake, tail) = (found[0], found[1]);
+    assert!(fake.contact == Some(76) && fake.scored, "{fake:?}");
+    assert!(
+        tail.contact.is_none() && !tail.scored,
+        "the tail started inside the fake's touch: {tail:?}"
+    );
+
+    let honest = run(0, 0..=50, 1, false);
+    let found = attempts(
+        &Params::default(),
+        &scripted(500, &[(20, 1), (30, 0)]),
+        &honest,
+    );
+    assert_eq!(
+        found[0].contact,
+        Some(30),
+        "the opponent's touch is not the attempt's contact"
+    );
+
+    let both = attempts(
+        &Params::default(),
+        &scripted(100, &[(10, 0), (10, 1)]),
+        &run(0, 0..=8, 1, true),
+    );
+    assert!(
+        !both[0].scored,
+        "a touch shared with the opponent credits no one"
+    );
+
+    let late = attempts(
+        &Params::default(),
+        &scripted(400, &[(10, 0)]),
+        &run(0, 0..=8, 1, true),
+    );
+    assert!(
+        late[0].contact == Some(10) && !late[0].scored,
+        "a goal 390 ticks after the touch: {:?}",
+        late[0]
+    );
 }

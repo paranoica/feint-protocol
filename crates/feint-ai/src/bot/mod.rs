@@ -281,6 +281,9 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         while self.history.len() > 1 && self.history[1].tick <= cutoff {
             self.history.pop_front();
         }
+        if self.history.back().is_some_and(|last| last.tick == now) {
+            self.history.pop_back();
+        }
         self.history.push_back(action.clone());
         Some(action)
     }
