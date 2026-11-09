@@ -45,6 +45,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: scripts/gen-protocol.sh --check
+      - name: Install wasm-bindgen CLI 0.2.128 (must match the wasm-bindgen crate)
+        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
       - run: scripts/wasm-check.sh
       - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored
       - name: Install cbindgen 0.29.4 (the header is checked against it)
