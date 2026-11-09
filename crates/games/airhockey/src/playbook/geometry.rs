@@ -12,9 +12,11 @@ pub(super) const AIM_SCALE: f64 = 2.0;
 pub(super) const CHASE_SCALE: f64 = 0.5;
 pub(super) const CONTACT_DRIVE: f64 = 0.15;
 pub(super) const APPROACH_COS: f64 = 0.5;
+pub(super) const SIDE_SPEED: f64 = 0.3;
 pub(super) const SHOW_SIDE: f64 = 0.10;
 pub(super) const SHOW_BACK: f64 = 0.04;
-pub(super) const SHOW_TICKS: u64 = 60;
+pub(super) const SHOW_TICKS: u64 = 96;
+pub(super) const CONTROL_SPEED: f64 = 1.0;
 pub(super) const SLOW_TICKS: u32 = 120;
 pub(super) const STRIKE_TICKS: u32 = 240;
 pub(super) const HOLD_TICKS: u32 = 24;
@@ -100,12 +102,17 @@ impl HockeyPlaybook {
 
     pub(super) fn contact(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
         let puck = state.world.puck.pos;
-        let mallet = state.world.mallets[usize::from(player.min(1))].pos;
+        let body = state.world.mallets[usize::from(player.min(1))];
+        let mallet = body.pos;
         let reach = self.params.puck_radius + self.params.mallet_radius;
         let line = unit(aim - puck, Vec2::new(attack(player), 0.0));
         let touch = puck - line * reach;
         let approach = unit(touch - mallet, line);
-        if approach.dot(line) > APPROACH_COS && (mallet - puck).dot(line) < 0.0 {
+        let drift = (body.vel.x * approach.y - body.vel.y * approach.x).abs();
+        if approach.dot(line) > APPROACH_COS
+            && (mallet - puck).dot(line) < 0.0
+            && drift < SIDE_SPEED
+        {
             touch + approach * CONTACT_DRIVE
         } else {
             self.set_up(state, player, aim)

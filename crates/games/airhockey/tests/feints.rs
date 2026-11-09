@@ -171,6 +171,8 @@ fn contact_aiming_leaves_along_the_aim_from_any_side() {
         Vec2::new(-0.8, 0.0),
         Vec2::new(-0.65, 0.2),
         Vec2::new(-0.65, -0.2),
+        Vec2::new(-0.53, 0.10),
+        Vec2::new(-0.53, -0.10),
     ] {
         let mut world = World {
             puck: Puck::at_rest(puck),
@@ -325,6 +327,22 @@ fn feints_are_offered_with_their_signals_and_dashes_follow_a_twitch() {
         !out.iter().any(|c| c.deceptive),
         "repertoire 1 has no feints"
     );
+
+    for speed in [1.5, 0.5] {
+        let mut moving = state.clone();
+        moving.world.puck.vel = Vec2::new(0.0, speed);
+        p.options(&moving, 0, 2, &Cue::default(), &mut out);
+        let controlled = speed < 1.0;
+        assert_eq!(
+            out.iter().any(|c| c.deceptive),
+            controlled,
+            "puck speed {speed}"
+        );
+        assert!(
+            found(&out, HockeyPlaybook::STRIKES[1]).is_some(),
+            "strikes stay on a moving puck"
+        );
+    }
 }
 
 fn run_choice(state: &Match, choice: &Choice, ticks: u32) -> (Vec<World>, Match) {
@@ -371,10 +389,12 @@ fn a_fake_wind_up_shows_one_side_then_shoots_the_other() {
         .iter()
         .find(|w| w.puck.vel.length() > 0.5)
         .expect("the puck was struck");
-    let crossing = hit.puck.pos.y + hit.puck.vel.y * (1.0 - hit.puck.pos.x) / hit.puck.vel.x;
+    let wanted = unit(Vec2::new(1.0, 0.07) - Vec2::new(-0.4, 0.0));
+    let cos = unit(hit.puck.vel).dot(wanted);
     assert!(
-        crossing > 0.035,
-        "shown right, so it must go left: crossing at {crossing}"
+        cos > 2.0f64.to_radians().cos_approx(),
+        "shown right, so it must go into the left corner: exit {:?}, wanted {wanted:?}",
+        hit.puck.vel
     );
 }
 

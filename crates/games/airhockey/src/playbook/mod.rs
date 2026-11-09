@@ -10,8 +10,8 @@ mod geometry;
 mod reads;
 
 use geometry::{
-    AIM_SCALE, AIM_Y, CHASE_SCALE, HOLD_STALL_SECONDS, HOLD_TICKS, SHOW_BACK, SHOW_SIDE,
-    SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack, frame,
+    AIM_SCALE, AIM_Y, CHASE_SCALE, CONTROL_SPEED, HOLD_STALL_SECONDS, HOLD_TICKS, SHOW_BACK,
+    SHOW_SIDE, SHOW_TICKS, SLOW_TICKS, STRIKE_TICKS, attack, frame,
 };
 
 pub struct HockeyPlaybook {
@@ -85,6 +85,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         out.clear();
         let pace = cue.pace;
         let shot_ticks = STRIKE_TICKS + if pace < 0.5 { SLOW_TICKS } else { 0 };
+        let fake_ticks = STRIKE_TICKS + SHOW_TICKS as u32;
         let choice = |id: u16, intent: u8, horizon_ticks: u32, k: f32, corner: Option<u8>| Choice {
             id,
             intent,
@@ -114,23 +115,25 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         if repertoire < 2 {
             return;
         }
-        for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
-            let real = 2 - shown;
-            out.push(Choice {
-                deceptive: true,
-                shown: Some(shown),
-                ..choice(id, 1, STRIKE_TICKS, f32::from(real), Some(real))
-            });
-        }
         out.push(Choice {
             shown: None,
             ..choice(Self::BANK, 1, shot_ticks, 1.0, Some(1))
         });
-        if state.stall_ticks() < HOLD_STALL_SECONDS * self.params.tick_hz {
-            out.push(Choice {
-                deceptive: true,
-                ..choice(Self::HOLD, 1, HOLD_TICKS, 1.0, None)
-            });
+        if state.world.puck.vel.length() < CONTROL_SPEED {
+            for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
+                let real = 2 - shown;
+                out.push(Choice {
+                    deceptive: true,
+                    shown: Some(shown),
+                    ..choice(id, 1, fake_ticks, f32::from(real), Some(real))
+                });
+            }
+            if state.stall_ticks() < HOLD_STALL_SECONDS * self.params.tick_hz {
+                out.push(Choice {
+                    deceptive: true,
+                    ..choice(Self::HOLD, 1, HOLD_TICKS, 1.0, None)
+                });
+            }
         }
         if let Some(twitch) = cue.twitch {
             for real in [0u8, 2].into_iter().filter(|&r| r != twitch) {
