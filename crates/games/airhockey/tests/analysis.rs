@@ -349,7 +349,15 @@ fn a_fake_that_nudges_first_is_read_at_its_strike() {
         .collect();
     let found = attempts(&Params::default(), &frames, &run(0, 0..=64, 1, true));
     let fake = found[0];
-    assert_eq!(fake.contact, Some(60), "the strike, not the nudge: {fake:?}");
-    assert_eq!(fake.shown, Some(0), "the wind-up came after the nudge: {fake:?}");
+    assert_eq!(
+        fake.contact,
+        Some(60),
+        "the strike, not the nudge: {fake:?}"
+    );
+    assert_eq!(
+        fake.shown,
+        Some(0),
+        "the wind-up came after the nudge: {fake:?}"
+    );
     assert!(fake.scored, "{fake:?}");
 }
