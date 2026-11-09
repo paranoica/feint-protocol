@@ -143,7 +143,6 @@ fn encoded_envelope_carries_protocol_version() {
 
 #[test]
 fn kuhn_poker_fits_schema_v0_1() {
-    // The same deal seen by each player: own card visible, the other's card absent.
     let seen_by = |player: u8, card: f32, score: Vec<i64>| {
         make!(ObservationT {
             tick: 2,
@@ -192,8 +191,6 @@ fn other_or_missing_protocol_version_is_rejected() {
     assert_eq!(decode(&bytes), Err(DecodeError::Version("0.2".into())));
     let bytes = raw_envelope(None, message.clone(), true);
     assert_eq!(decode(&bytes), Err(DecodeError::Version(String::new())));
-    // The accepted version on the same message decodes, so the refusals above are the
-    // version's doing.
     let bytes = raw_envelope(Some(PROTOCOL_VERSION), message.clone(), true);
     assert_eq!(decode(&bytes), Ok(message));
 }
@@ -229,7 +226,6 @@ fn hostile_buffers_never_panic_or_decode_to_another_message() {
     for len in 0..512 {
         let mut buf: Vec<u8> = (0..len).map(|_| next_byte()).collect();
         if len >= 8 && len % 2 == 0 {
-            // Half of them carry the identifier, so the verifier itself gets the noise.
             buf[4..8].copy_from_slice(b"FNT0");
         }
         assert!(

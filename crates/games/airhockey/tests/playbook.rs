@@ -18,7 +18,6 @@ fn bodies_for(game: &AirHockey, levels: [u8; 2]) -> Vec<BodyParamsT> {
         .collect()
 }
 
-/// A game reset with `seed` (even: served to player 0, odd: to player 1).
 fn game(seed: u64, levels: [u8; 2]) -> AirHockey {
     let mut game = AirHockey::new(Params::default(), levels[0]);
     let bodies = bodies_for(&game, levels);
@@ -26,7 +25,6 @@ fn game(seed: u64, levels: [u8; 2]) -> AirHockey {
     game
 }
 
-/// Let `bot` play side `me` for `ticks`; the other side sends nothing.
 fn play(game: &mut AirHockey, bot: &mut HockeyBot, me: u8, ticks: u32) {
     let mut obs = ObservationT::default();
     let mut events = Vec::new();
@@ -39,7 +37,6 @@ fn play(game: &mut AirHockey, bot: &mut HockeyBot, me: u8, ticks: u32) {
     }
 }
 
-/// `p` as seen from side `me`: player 1 sees the table rotated.
 fn side(me: u8, p: Vec2) -> Vec2 {
     if me == 0 { p } else { -p }
 }
@@ -47,8 +44,6 @@ fn side(me: u8, p: Vec2) -> Vec2 {
 #[test]
 fn level_one_drives_at_the_puck_and_touches_it() {
     for me in [0u8, 1] {
-        // An even seed serves to player 0, an odd one to player 1: the puck waits in the
-        // bot's own half.
         let mut game = game(u64::from(me), [1, 1]);
         let mut level_one = bot(1, &game, me, 7);
         assert_eq!(game.live().world.puck.vel, Vec2::ZERO);
@@ -69,7 +64,6 @@ fn level_two_defends_when_the_puck_is_away() {
         game.game_mut().world.puck = Puck::at_rest(puck);
         let mut level_two = bot(2, &game, me, 3);
         play(&mut game, &mut level_two, me, 480);
-        // 0.15 m from the own goal's centre, towards the puck.
         let goal = side(me, Vec2::new(-1.0, 0.0));
         let dir = (puck - goal) * (1.0 / (puck - goal).length());
         let spot = goal + dir * 0.15;
@@ -86,6 +80,26 @@ fn level_two_defends_when_the_puck_is_away() {
 }
 
 #[test]
+fn level_two_picks_whichever_corner_is_open() {
+    for me in [0u8, 1] {
+        let mut game = game(0, [2, 2]);
+        {
+            let world = &mut game.game_mut().world;
+            world.puck = Puck::at_rest(side(me, Vec2::new(-0.4, 0.0)));
+            world.mallets[usize::from(me)] = Mallet::at_rest(side(me, Vec2::new(-0.8, 0.0)));
+            world.mallets[usize::from(1 - me)] = Mallet::at_rest(side(me, Vec2::new(0.92, -0.08)));
+        }
+        let mut level_two = bot(2, &game, me, 5);
+        play(&mut game, &mut level_two, me, 73);
+        assert_eq!(
+            level_two.current().map(|c| c.id),
+            Some(HockeyPlaybook::STRIKES[2]),
+            "side {me}: should aim at the open left corner"
+        );
+    }
+}
+
+#[test]
 fn level_two_strikes_away_from_the_covering_mallet() {
     for me in [0u8, 1] {
         let mut game = game(0, [2, 2]);
@@ -94,11 +108,8 @@ fn level_two_strikes_away_from_the_covering_mallet() {
             let world = &mut game.game_mut().world;
             world.puck = Puck::at_rest(side(me, Vec2::new(-0.4, 0.0)));
             world.mallets[usize::from(me)] = Mallet::at_rest(side(me, Vec2::new(-0.8, 0.0)));
-            // The opponent stands in its mouth covering the striker's left corner.
             world.mallets[them] = Mallet::at_rest(side(me, Vec2::new(0.92, 0.08)));
         }
-        // Choosing the corner does not depend on aim noise; scoring does, so the strike
-        // itself is checked with a perfectly accurate level-2 bot.
         let mut level_two = bot(2, &game, me, 5);
         let mut accurate = {
             let mut d = Difficulty::preset(2).unwrap();
@@ -127,7 +138,6 @@ fn level_two_strikes_away_from_the_covering_mallet() {
 #[test]
 fn bots_keep_their_level_body() {
     let mut game = game(0, [1, 5]);
-    // Bodies travel through the protocol as f32: 40 % of 12 m/s arrives as f32 4.8.
     let bodies = game.live().bodies;
     let low_speed = f64::from(4.8f32);
     assert_eq!(
@@ -143,7 +153,14 @@ fn bots_keep_their_level_body() {
     let mut obs = [ObservationT::default(), ObservationT::default()];
     let mut events = Vec::new();
     let mut top = [0.0f64; 2];
-    for _ in 0..240 * 60 {
+    let limits = [bodies[0].max_accel(), bodies[1].max_accel()];
+    let reach = 0.04 + 0.05;
+    let dt = 1.0 / 240.0;
+    for _ in 0..240 * 180 {
+        if game.live().is_over() {
+            break;
+        }
+        let before = game.live().world;
         for (me, bot) in [(0u8, &mut low), (1, &mut high)] {
             game.observe(game.live(), me, &mut obs[usize::from(me)]);
             if let Some(action) = bot.on_tick(&game, &obs[usize::from(me)]) {
@@ -151,8 +168,19 @@ fn bots_keep_their_level_body() {
             }
         }
         game.advance(&mut events);
-        for (best, mallet) in top.iter_mut().zip(&game.live().world.mallets) {
-            *best = best.max(mallet.vel.length());
+        let after = game.live().world;
+        for i in 0..2 {
+            top[i] = top[i].max(after.mallets[i].vel.length());
+            let clear =
+                |w: &airhockey::World| (w.puck.pos - w.mallets[i].pos).length() > reach + 0.1;
+            if clear(&before) && clear(&after) {
+                let dv = (after.mallets[i].vel - before.mallets[i].vel).length();
+                assert!(
+                    dv <= limits[i] * dt * (1.0 + 1e-9),
+                    "side {i}: {} m/s² away from the puck",
+                    dv / dt
+                );
+            }
         }
     }
     assert!(

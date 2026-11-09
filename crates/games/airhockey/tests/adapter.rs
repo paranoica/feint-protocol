@@ -35,7 +35,6 @@ fn observe(game: &AirHockey, player: u8) -> ObservationT {
     obs
 }
 
-/// An asymmetric world, so that every rotation mistake shows.
 fn set_scene(game: &mut AirHockey) {
     let world = &mut game.game_mut().world;
     world.puck = Puck {
@@ -136,7 +135,6 @@ fn rotating_back_from_player_one_restores_the_world() {
             "{i}"
         );
     }
-    // Player 1 knows its own target; the opponent's is hidden and guessed as standing still.
     assert!(near(
         guess.world.mallets[1].target,
         live.world.mallets[1].target
@@ -544,8 +542,6 @@ fn the_published_body_maximum_is_accepted_by_reset() {
 
 #[test]
 fn rebuilt_puck_about_to_score_scores_in_the_planner() {
-    // f32 rounds any x within ~3e-8 of the line to exactly 1.0; the rebuilt puck must stay
-    // short of the line so the planner still sees it cross.
     for x in [1.0 - 1e-12, 0.999_999_99] {
         let mut game = fresh();
         game.game_mut().world.puck = Puck {

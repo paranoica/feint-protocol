@@ -1,6 +1,5 @@
 use airhockey::{BadBody, Params};
 
-/// A change that breaks one rule of the parameters.
 type Breaker = fn(&mut Params);
 
 #[test]
@@ -24,7 +23,6 @@ fn broken_params_are_reported() {
         ("restitution above 1", |p| p.rail_restitution = 1.2),
         ("damping that reverses the puck", |p| p.damping = 1e4),
         ("no goals to win", |p| p.goals_to_win = 0),
-        // 20 m/s puck + 12 m/s mallet over a 1/240 s step: 13 cm > 9 cm of reach.
         ("too coarse for the speed cap", |p| p.substeps = 1),
     ];
     for (what, breaks) in cases {

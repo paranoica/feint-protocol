@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Regenerate the Rust protocol types from schema/feint.fbs.
-# --check: fail when the committed file differs from a fresh generation.
 set -euo pipefail
 
 FLATC_VERSION="25.12.19"

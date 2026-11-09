@@ -15,7 +15,6 @@ fn delay_is_the_rounded_reaction_in_ticks() {
     assert_eq!(delay_ticks(0, 240), 0);
     assert_eq!(delay_ticks(2, 240), 0, "0.48 ticks rounds down");
     assert_eq!(delay_ticks(3, 240), 1, "0.72 ticks rounds up");
-    // No overflow at the extremes: round(MAX · MAX / 1000) in 64-bit arithmetic.
     let max = u64::from(u32::MAX);
     assert_eq!(
         delay_ticks(u32::MAX, u32::MAX) as u64,
@@ -26,31 +25,31 @@ fn delay_is_the_rounded_reaction_in_ticks() {
 #[test]
 fn reaction_buffer_returns_the_observation_n_ticks_old() {
     let mut zero = ReactionBuffer::new(0);
-    assert!(zero.delayed().is_none() && zero.newest().is_none());
+    assert!(zero.delayed(0).is_none() && zero.newest().is_none());
     zero.push(&obs(5));
-    assert_eq!(zero.delayed().map(|o| o.tick), Some(5));
+    assert_eq!(zero.delayed(5).map(|o| o.tick), Some(5));
 
     let mut buf = ReactionBuffer::new(3);
     for t in 0..3 {
         buf.push(&obs(t));
         assert!(
-            buf.delayed().is_none(),
+            buf.delayed(t).is_none(),
             "saw the world before 3 ticks passed (t = {t})"
         );
         assert_eq!(buf.newest().map(|o| o.tick), Some(t));
     }
     buf.push(&obs(3));
-    assert_eq!(buf.delayed(), Some(&obs(0)));
+    assert_eq!(buf.delayed(3), Some(&obs(0)));
     for t in 4..=10 {
         buf.push(&obs(t));
     }
-    assert_eq!(buf.delayed(), Some(&obs(7)));
+    assert_eq!(buf.delayed(10), Some(&obs(7)));
     assert_eq!(buf.newest(), Some(&obs(10)));
 
     buf.clear();
-    assert!(buf.delayed().is_none() && buf.newest().is_none());
+    assert!(buf.delayed(10).is_none() && buf.newest().is_none());
     buf.push(&obs(20));
-    assert!(buf.delayed().is_none(), "old observations survived clear");
+    assert!(buf.delayed(20).is_none(), "old observations survived clear");
 }
 
 #[test]
@@ -82,4 +81,18 @@ fn decision_ticks_follow_the_formula() {
             "{decision_hz}/{tick_hz}"
         );
     }
+}
+
+#[test]
+fn delay_is_measured_in_ticks_not_in_calls() {
+    let mut buf = ReactionBuffer::new(72);
+    for t in (0..=400).step_by(4) {
+        buf.push(&obs(t));
+    }
+    assert_eq!(buf.delayed(400).map(|o| o.tick), Some(328));
+    let mut gap = ReactionBuffer::new(3);
+    for t in [0, 1, 2, 1_000_000] {
+        gap.push(&obs(t));
+    }
+    assert_eq!(gap.delayed(1_000_000).map(|o| o.tick), Some(2));
 }

@@ -1,6 +1,3 @@
-//! Feint protocol v0.1: the message schema shared by every game and the core, and the
-//! [`GameAdapter`] trait a game implements to be played by the core.
-
 #[allow(
     clippy::all,
     clippy::pedantic,
@@ -21,24 +18,16 @@ pub use adapter::{AdapterError, GameAdapter, PlayerId};
 pub use feint_generated::feint::protocol::*;
 pub use rand_chacha::ChaCha8Rng;
 
-/// The protocol version every envelope carries; v0.x may break between minor versions.
 pub const PROTOCOL_VERSION: &str = "0.1";
 
-/// The largest message `decode` accepts.
 pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
 
-/// Why a buffer could not be decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
-    /// Larger than [`MAX_MESSAGE_BYTES`].
     TooLarge(usize),
-    /// Not a Feint envelope (missing file identifier).
     NotFeint,
-    /// The FlatBuffers verifier refused the buffer.
     Invalid(String),
-    /// The envelope carries a protocol version other than [`PROTOCOL_VERSION`].
     Version(String),
-    /// The envelope carries no message.
     Empty,
 }
 
@@ -56,7 +45,6 @@ impl std::fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-/// Wrap a message in a versioned envelope and serialise it.
 pub fn encode(message: &MessageT) -> Vec<u8> {
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
     let body = message.pack(&mut fbb);
@@ -73,15 +61,10 @@ pub fn encode(message: &MessageT) -> Vec<u8> {
     fbb.finished_data().to_vec()
 }
 
-/// Verify and deserialise an envelope from untrusted bytes.
-///
-/// # Errors
-/// Any [`DecodeError`]; never panics on hostile input.
 pub fn decode(bytes: &[u8]) -> Result<MessageT, DecodeError> {
     if bytes.len() > MAX_MESSAGE_BYTES {
         return Err(DecodeError::TooLarge(bytes.len()));
     }
-    // The identifier sits at bytes 4..8; shorter buffers cannot hold it.
     if bytes.len() < 8 || !envelope_buffer_has_identifier(bytes) {
         return Err(DecodeError::NotFeint);
     }
@@ -96,7 +79,6 @@ pub fn decode(bytes: &[u8]) -> Result<MessageT, DecodeError> {
     match envelope.protocol_version() {
         Some(PROTOCOL_VERSION) => {}
         other => {
-            // Only a short prefix: the string is the client's and may be a megabyte long.
             let seen = other.unwrap_or_default().chars().take(16).collect();
             return Err(DecodeError::Version(seen));
         }

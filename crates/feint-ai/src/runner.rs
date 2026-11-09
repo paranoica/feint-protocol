@@ -2,7 +2,6 @@ use feint_protocol::{ActionT, AdapterError, BodyParamsT, GameAdapter, Observatio
 
 use crate::bot::Controller;
 
-/// Everything a match needs to be replayed besides its actions (FNT-D6, FNT-D9).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunHeader {
     pub game_id: String,
@@ -12,22 +11,16 @@ pub struct RunHeader {
     pub levels: [u8; 2],
 }
 
-/// A played match: its header, outcome and every action the game accepted.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunReport {
     pub header: RunHeader,
     pub score: Vec<i64>,
     pub ticks: u64,
-    /// The game reported a result; otherwise the tick cap ended it.
     pub finished: bool,
     pub actions: Vec<ActionT>,
     pub digest: u64,
 }
 
-/// Play one match between two controllers, at most `max_ticks` ticks.
-///
-/// # Errors
-/// The adapter refused the header's bodies.
 pub fn run_match<A: GameAdapter>(
     adapter: &mut A,
     controllers: [&mut dyn Controller<A>; 2],
@@ -80,17 +73,12 @@ pub fn run_match<A: GameAdapter>(
     })
 }
 
-/// Re-play a report's actions on a fresh adapter; returns the final digest.
-///
-/// # Errors
-/// The adapter refused the header's bodies or a recorded action.
 pub fn replay<A: GameAdapter>(adapter: &mut A, report: &RunReport) -> Result<u64, AdapterError> {
     adapter.reset(report.header.seed, &report.header.bodies)?;
     let mut pending = report.actions.iter().peekable();
     let mut events = Vec::new();
     for tick in 0..report.ticks {
         while let Some(action) = pending.next_if(|a| a.tick <= tick) {
-            // Recorded actions were accepted once; a refusal now means the replay diverged.
             adapter.apply(action)?;
         }
         events.clear();

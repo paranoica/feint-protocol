@@ -1,5 +1,3 @@
-//! «Pick»: a turn-based game with discrete actions and a legal-action mask, standing in for
-//! poker. Players alternate; the one to act picks a legal index.
 #![allow(dead_code)]
 
 use feint_ai::{Choice, Playbook};
@@ -8,7 +6,6 @@ use feint_protocol::{
     MatchResultT, ObservationT, PlayerId, TimeMode,
 };
 
-/// Index 1 is never legal.
 pub const LEGAL: [u8; 3] = [1, 0, 1];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,7 +114,6 @@ impl GameAdapter for Pick {
     }
 }
 
-/// Always prefers index 2; scores a state by the sum of the player's own picks.
 pub struct PickPlaybook;
 
 impl Playbook<Pick> for PickPlaybook {

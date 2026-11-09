@@ -1,7 +1,3 @@
-// Feint protocol v0.1: messages between a game and the core.
-// Game-neutral by design: a game describes itself in GameSpec, so nothing here
-// names a particular game (FNT-D2).
-
 namespace feint.protocol;
 
 file_identifier "FNT0";
@@ -33,19 +29,15 @@ table GameSpec {
   observation: [Dim];
   body_params: [Dim];
   signals: [Dim];
-  // Index 0 means "no intent"; the labels are for logs only.
   intent_labels: [string];
 }
 
-// What one player may see at one tick, in that player's own frame.
 table Observation {
   tick: ulong;
   player: ubyte;
-  // The player to act in a turn-based game; -1 when everyone acts every tick.
   to_act: byte = -1;
   state: [float];
   opponent_signals: [float];
-  // 1 per legal discrete action; empty when the action space is continuous.
   legal: [ubyte];
   score: [long];
 }
@@ -55,7 +47,6 @@ table Action {
   player: ubyte;
   values: [float];
   discrete: int = -1;
-  // Neither intent nor deceptive ever reaches the opponent.
   intent: ubyte;
   deceptive: bool;
 }
@@ -63,7 +54,6 @@ table Action {
 table Event {
   tick: ulong;
   kind: EventKind;
-  // -1 when the event belongs to no player.
   player: byte = -1;
 }
 

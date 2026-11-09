@@ -1,7 +1,6 @@
 use crate::params::Params;
 use crate::vec2::Vec2;
 
-/// The puck: a circle sliding on the table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Puck {
     pub pos: Vec2,
@@ -17,7 +16,6 @@ impl Puck {
         }
     }
 
-    /// Bounce off the posts: points at the four mouth edges.
     pub fn hit_posts(&mut self, params: &Params) {
         let r = params.puck_radius;
         for end in [-1.0, 1.0] {
@@ -39,7 +37,6 @@ impl Puck {
         }
     }
 
-    /// Bounce off the side rails, and off the end rails outside the mouth.
     pub fn hit_rails(&mut self, params: &Params) {
         let r = params.puck_radius;
         let y_max = params.half_width - r;
@@ -56,7 +53,6 @@ impl Puck {
         }
     }
 
-    /// Reflect the velocity component going against `normal`, scaled by `restitution`.
     fn bounce(&mut self, normal: Vec2, restitution: f64) {
         let into = self.vel.dot(normal);
         if into < 0.0 {

@@ -6,7 +6,6 @@ use feint_protocol::{ActionT, GameAdapter, ObservationT};
 use line_game::{Line, LinePlaybook, line_spec};
 use pick_game::{LEGAL, Pick, PickPlaybook, PickState, pick_spec};
 
-/// Level 2 with the reaction, anticipation and spread a test needs.
 fn difficulty(reaction_ms: u32, anticipate: bool, spread: f64) -> Difficulty {
     let mut d = Difficulty::preset(2).unwrap();
     d.reaction_ms = reaction_ms;
@@ -27,7 +26,6 @@ fn observe(game: &Line, player: u8) -> ObservationT {
     obs
 }
 
-/// Run the bot as player 0 for `ticks`, applying its actions; never calls `live()`.
 fn drive(game: &mut Line, bot: &mut Bot<Line, LinePlaybook>, ticks: u64) -> Vec<ActionT> {
     let mut actions = Vec::new();
     let mut events = Vec::new();
@@ -61,7 +59,6 @@ fn bot_new_refuses_a_realtime_cadence_it_cannot_keep() {
 
 #[test]
 fn best_option_wins() {
-    // Ball still at 0.8; one second ahead the targets end 1.8, 0.8 and 0.2 from it.
     let mut game = Line::new(0.8, 0.0);
     let mut bot = line_bot(
         difficulty(0, false, 0.0),
@@ -98,9 +95,8 @@ fn margin_keeps_the_current_option_until_another_is_clearly_better() {
             Some(0),
             "0.2 from the ball beats 0.25"
         );
-        // Now option 1 ends 0.15 from the ball and option 0 ends 0.3: better by 0.15.
         game.state.ball = 0.1;
-        drive(&mut game, &mut bot, 48);
+        drive(&mut game, &mut bot, 144);
         assert_eq!(
             bot.current().map(|c| c.id),
             Some(expected),
@@ -148,8 +144,6 @@ fn nothing_before_the_reaction_delay_has_passed() {
 
 #[test]
 fn anticipation_plans_from_now_not_from_the_delayed_state() {
-    // 400 ms = 96 ticks: the ball, at 0.5/s from -0.15, is seen left of the player but is
-    // now at +0.05, to its right. One-tick horizons: only the starting state decides.
     for (anticipate, expected) in [(false, 0), (true, 1)] {
         let mut game = Line::new(-0.15, 0.5);
         let mut bot = line_bot(
@@ -322,12 +316,111 @@ fn turn_based_bot_acts_only_on_its_turn_and_picks_legal_actions() {
 
 #[test]
 fn rollouts_ask_the_opponent_once_per_its_reaction_time() {
-    // One option, a 240-tick horizon at 240 Hz: an opponent reacting in 250 ms (60 ticks)
-    // is asked at ticks 0, 60, 120 and 180 — four replies, not one per 4-tick stride.
     let game = Line::new(0.0, 0.0);
     let mut bot = line_bot(difficulty(0, false, 0.0), LinePlaybook::new(&[0.5], 240), 1);
     bot.on_tick(&game, &observe(&game, 0))
         .expect("acts at once");
     assert_eq!(feint_ai::OPPONENT_REACTION_MS, 250);
     assert_eq!(bot.playbook().replies.get(), 4);
+}
+
+#[test]
+fn commitment_holds_for_half_an_attempt() {
+    let mut game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(
+        difficulty(0, false, 0.0),
+        LinePlaybook::new(&[-0.2, 0.8], 240),
+        1,
+    );
+    drive(&mut game, &mut bot, 1);
+    assert_eq!(bot.current().map(|c| c.id), Some(0));
+    game.state.ball = 0.8;
+    drive(&mut game, &mut bot, 100);
+    assert_eq!(
+        bot.current().map(|c| c.id),
+        Some(0),
+        "dropped its option within half an attempt"
+    );
+    drive(&mut game, &mut bot, 48);
+    assert_eq!(bot.current().map(|c| c.id), Some(1));
+}
+
+#[test]
+fn each_new_attempt_draws_new_aim_noise() {
+    let mut game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(difficulty(0, false, 0.08), LinePlaybook::new(&[0.0], 60), 4);
+    let actions = drive(&mut game, &mut bot, 600);
+    let aims: Vec<f32> = actions
+        .iter()
+        .map(|a| a.values.as_ref().unwrap()[0])
+        .collect();
+    assert!(
+        aims[..12].windows(2).all(|w| w[0] == w[1]),
+        "aim changed within an attempt"
+    );
+    let distinct = {
+        let mut v = aims.clone();
+        v.sort_by(f32::total_cmp);
+        v.dedup();
+        v.len()
+    };
+    assert!(distinct >= 5, "only {distinct} aims over 10 attempts");
+}
+
+#[test]
+fn a_tick_gap_rolls_forward_at_most_the_delay() {
+    let game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(difficulty(300, true, 0.0), LinePlaybook::new(&[0.0], 1), 1);
+    let mut obs = observe(&game, 0);
+    for t in 0..72 {
+        obs.tick = t;
+        bot.on_tick(&game, &obs);
+    }
+    game.simulated.set(0);
+    obs.tick = 1_000_000;
+    bot.on_tick(&game, &obs).expect("acts on a decision tick");
+    let simulated = game.simulated.get();
+    assert!(
+        simulated <= 72 + u64::from(feint_ai::SIMULATION_BUDGET),
+        "simulated {simulated} ticks"
+    );
+}
+
+#[test]
+fn absurd_ticks_neither_panic_nor_freeze_the_bot() {
+    let mut game = Line::new(0.0, 0.0);
+    let mut bot = line_bot(
+        difficulty(0, false, 0.0),
+        LinePlaybook::new(&[-0.5, 0.5], 60),
+        1,
+    );
+    drive(&mut game, &mut bot, 100);
+    let mut forged = observe(&game, 0);
+    forged.tick = u64::MAX - 3;
+    let _ = bot.on_tick(&game, &forged);
+    game.state.ball = -0.8;
+    let actions = drive(&mut game, &mut bot, 200);
+    assert!(
+        actions.len() >= 45,
+        "the bot froze after a forged tick: {} actions",
+        actions.len()
+    );
+    assert_eq!(
+        bot.current().map(|c| c.id),
+        Some(0),
+        "it never replanned towards the ball"
+    );
+    assert!(
+        bot.memory_len() <= 30,
+        "history kept growing: {}",
+        bot.memory_len()
+    );
+}
+
+#[test]
+fn bot_new_refuses_a_reaction_longer_than_it_can_buffer() {
+    let mut d = difficulty(0, false, 0.0);
+    d.reaction_ms = u32::MAX;
+    let made = Bot::<Line, _>::new(d, LinePlaybook::new(&[0.0], 1), &line_spec(60));
+    assert!(matches!(made, Err(BotError::BadReaction)));
 }

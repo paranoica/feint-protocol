@@ -1,5 +1,3 @@
-//! Air hockey for Feint: deterministic 2D physics and its game adapter (FNT-D4, FNT-D5).
-
 pub mod adapter;
 pub mod game;
 pub mod mallet;

@@ -10,13 +10,11 @@ fn step(m: &mut Match) -> Vec<MatchEvent> {
     events
 }
 
-/// Park both mallets in the top corners so they touch nothing.
 fn park(m: &mut Match) {
     m.world.mallets[0] = Mallet::at_rest(Vec2::new(-0.95, 0.45));
     m.world.mallets[1] = Mallet::at_rest(Vec2::new(0.95, 0.45));
 }
 
-/// Fire the puck into the goal of the side that concedes; returns the events up to the goal.
 fn score_against(m: &mut Match, conceding: Side) -> Vec<MatchEvent> {
     park(m);
     let (x, vx) = match conceding {
@@ -68,8 +66,6 @@ fn goal_serves_puck_at_rest_to_conceding_side() {
 fn serve_onto_a_mallet_pushes_the_mallet_off_without_nan() {
     let mut m = new_match(1);
     score_against(&mut m, Side::Low);
-    // The puck now waits at (-0.5, 0); put the Low mallet's centre exactly there and
-    // concede again, so the next serve lands on it.
     score_against(&mut m, Side::Low);
     m.world.mallets[0] = Mallet::at_rest(Vec2::new(-0.5, 0.0));
     m.world.puck = Puck {
@@ -131,7 +127,6 @@ fn match_ends_at_seven_goals_and_freezes() {
 
 #[test]
 fn stall_of_seven_seconds_serves_to_the_other_player() {
-    // Seed 0 serves at (-0.5, 0); the mallets stand at x = ±0.8 and never touch it.
     let mut m = new_match(0);
     let stall_ticks = 7 * 240;
     for t in 0..stall_ticks - 1 {

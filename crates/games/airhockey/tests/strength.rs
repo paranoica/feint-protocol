@@ -1,11 +1,7 @@
-//! Headless strength checks. Release only (`bedrock cmd strength`): each runs dozens of
-//! whole matches between bots.
-
 use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, RunHeader, RunReport, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 
-/// First to 3 keeps matches short; a 3-minute cap ends a stalemate.
 const GOALS: u32 = 3;
 const CAP_TICKS: u64 = 240 * 180;
 
@@ -21,7 +17,6 @@ fn bot(level: u8, game: &AirHockey) -> Bot<AirHockey, HockeyPlaybook> {
     Bot::new(d, HockeyPlaybook::new(params()), &game.spec()).unwrap()
 }
 
-/// Stands where it is: never sends an action.
 struct Idle;
 
 impl Controller<AirHockey> for Idle {
@@ -32,7 +27,6 @@ impl Controller<AirHockey> for Idle {
     }
 }
 
-/// A match between two levels (0 = idle at the human's peak body), `levels[i]` on side i.
 fn play(seed: u64, levels: [u8; 2]) -> RunReport {
     let mut game = AirHockey::new(params(), levels[0].max(1));
     let peak = game.live().bodies[0];
@@ -68,7 +62,6 @@ fn play(seed: u64, levels: [u8; 2]) -> RunReport {
     run_match(&mut game, [a[0].as_mut(), b[0].as_mut()], header, CAP_TICKS).unwrap()
 }
 
-/// Side `me` won: the match finished with it ahead (at the cap a lead is not a win).
 fn won(report: &RunReport, me: usize) -> bool {
     report.finished && report.score[me] > report.score[1 - me]
 }

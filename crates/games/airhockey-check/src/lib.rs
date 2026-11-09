@@ -1,18 +1,12 @@
-//! One scripted match, the same on every target: native and wasm32 must agree on its
-//! digest, or physics is not deterministic across targets (FNT-D4).
-
 use airhockey::{Body, Input, Match, Params};
 
-/// Ticks in the scripted match: long enough for many contacts and goals.
 pub const TICKS: u64 = 50_000;
 
-/// The digest after the scripted match.
 #[must_use]
 pub fn scripted_digest() -> u64 {
     scripted_match().digest()
 }
 
-/// The scripted match, played to its end or to [`TICKS`].
 #[must_use]
 pub fn scripted_match() -> Match {
     let mut game = Match::new(Params::default(), [Body::default(); 2], 0xFE1);
@@ -50,7 +44,6 @@ pub fn scripted_match() -> Match {
     game
 }
 
-/// The entry point the wasm check calls.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn run_digest() -> u64 {

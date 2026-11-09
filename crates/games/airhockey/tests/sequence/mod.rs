@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-/// A fixed pseudo-random sequence, so test scripts are the same on every run.
 pub struct Lcg(pub u64);
 
 impl Lcg {
@@ -12,7 +11,6 @@ impl Lcg {
         self.0 >> 11
     }
 
-    /// Uniform in `[0, 1)`.
     pub fn unit(&mut self) -> f64 {
         self.next() as f64 / (1u64 << 53) as f64
     }

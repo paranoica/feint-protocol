@@ -4,8 +4,6 @@ use crate::puck::Puck;
 use crate::vec2::Vec2;
 use crate::world::{SIDES, World, away_from_goal, regions};
 
-/// One player's mallet target for one tick, in the world frame, exactly as recorded
-/// (FNT-D6).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
     pub tick: u64,
@@ -13,7 +11,6 @@ pub struct Input {
     pub target: [f32; 2],
 }
 
-/// Why an input was refused; a refused input changes nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputError {
     WrongTick { expected: u64, got: u64 },
@@ -22,24 +19,13 @@ pub enum InputError {
     MatchOver,
 }
 
-/// What happened on a tick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MatchEvent {
-    Goal {
-        tick: u64,
-        scorer: Side,
-    },
-    /// The puck stayed in one half too long and goes to the other player.
-    RoundEnd {
-        tick: u64,
-        to: Side,
-    },
-    Over {
-        tick: u64,
-    },
+    Goal { tick: u64, scorer: Side },
+    RoundEnd { tick: u64, to: Side },
+    Over { tick: u64 },
 }
 
-/// A match: the world plus score, serve and stall rules (FNT-D5).
 #[derive(Clone, Debug)]
 pub struct Match {
     pub params: Params,
@@ -48,18 +34,12 @@ pub struct Match {
     seed: u64,
     tick: u64,
     score: [u32; 2],
-    /// The half the puck has been in since `stall_ticks` started counting.
     stall_half: Option<Side>,
     stall_ticks: u32,
     over: bool,
 }
 
 impl Match {
-    /// The first serve goes to the side picked by the seed's lowest bit.
-    ///
-    /// # Panics
-    /// When `params` fail [`Params::validate`] or a body is beyond their declared limits:
-    /// both are configuration, not input (untrusted bodies go through [`Params::body`]).
     #[must_use]
     pub fn new(params: Params, bodies: [Body; 2], seed: u64) -> Self {
         if let Err(why) = params.validate() {
@@ -88,7 +68,6 @@ impl Match {
         game
     }
 
-    /// A match rebuilt from what a player observed; the stall half follows the puck.
     #[must_use]
     pub fn from_observed(
         params: Params,
@@ -114,7 +93,6 @@ impl Match {
         }
     }
 
-    /// Ticks the puck has spent in its current half.
     #[must_use]
     pub fn stall_ticks(&self) -> u32 {
         self.stall_ticks
@@ -125,7 +103,6 @@ impl Match {
         self.seed
     }
 
-    /// The tick the next `step` will run.
     #[must_use]
     pub fn tick(&self) -> u64 {
         self.tick
@@ -141,10 +118,6 @@ impl Match {
         self.over
     }
 
-    /// Set a player's mallet target for the coming tick; it holds until replaced.
-    ///
-    /// # Errors
-    /// Another tick, an unknown player, a non-finite target or a finished match.
     pub fn apply(&mut self, input: Input) -> Result<(), InputError> {
         if self.over {
             return Err(InputError::MatchOver);
@@ -168,7 +141,6 @@ impl Match {
         Ok(())
     }
 
-    /// Run one tick, appending what happened. Does nothing once the match is over.
     pub fn step(&mut self, events: &mut Vec<MatchEvent>) {
         if self.over {
             return;
@@ -206,7 +178,6 @@ impl Match {
         }
     }
 
-    /// FNV-1a over the exact bits of everything that shapes the rest of the match.
     #[must_use]
     pub fn digest(&self) -> u64 {
         let w = &self.world;
@@ -239,7 +210,6 @@ impl Match {
         fnv1a(&words)
     }
 
-    /// Put the puck at rest on `to`'s serve spot; a mallet standing there is pushed off.
     fn serve(&mut self, to: Side) {
         let x = self.params.half_length * 0.5;
         let spot = match to {

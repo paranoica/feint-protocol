@@ -1,6 +1,5 @@
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
-/// A 2D vector in metres or metres per second.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2 {
     pub x: f64,
@@ -25,7 +24,6 @@ impl Vec2 {
         self.dot(self).sqrt()
     }
 
-    /// The same direction scaled down to at most `max` long.
     #[must_use]
     pub fn clamp_length(self, max: f64) -> Self {
         let length = self.length();
@@ -36,7 +34,6 @@ impl Vec2 {
         }
     }
 
-    /// Each component clamped into `[lo, hi]` of the same component.
     #[must_use]
     pub fn clamp_each(self, lo: Self, hi: Self) -> Self {
         Self::new(self.x.clamp(lo.x, hi.x), self.y.clamp(lo.y, hi.y))

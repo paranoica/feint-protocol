@@ -1,6 +1,3 @@
-//! Its own test binary: the counting allocator replaces the global one for everything here.
-//! Counts are per thread, since the test harness runs tests and prints on other threads.
-
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 

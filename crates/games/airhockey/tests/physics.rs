@@ -14,7 +14,6 @@ fn no_damping() -> Params {
     }
 }
 
-/// Mallets parked in the top corners, out of the way of the shots below.
 fn parked(params: &Params) -> World {
     let mut world = World::new(params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.95, 0.45));
@@ -30,7 +29,6 @@ fn close(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol * (1.0 + b.abs())
 }
 
-/// First goal within `ticks`, with the tick it happened on.
 fn first_goal(world: &mut World, params: &Params, ticks: u32) -> Option<(u32, Side)> {
     (0..ticks).find_map(|t| world.tick(params, &bodies()).map(|side| (t, side)))
 }
@@ -42,7 +40,6 @@ fn shoot(from: Vec2, vel: Vec2, params: &Params, ticks: u32) -> (Option<Side>, W
     (goal, world)
 }
 
-/// Shoot towards +x until the puck first comes back; `None` when it scored or never did.
 fn comes_back(from: Vec2, speed: f64, params: &Params) -> Option<World> {
     let mut world = parked(params);
     world.puck = Puck {
@@ -172,16 +169,12 @@ fn shot_just_outside_mouth_bounces_off_end_rail() {
 #[test]
 fn shot_at_post_deflects() {
     let params = no_damping();
-    // Centre on the post line: a head-on hit on the post sends the puck straight back.
     let back = comes_back(Vec2::new(0.6, 0.125), 5.0, &params).expect("bounced back, no goal");
     assert!(close(back.puck.vel.x, -0.9 * 5.0, 1e-12), "{:?}", back.puck);
 }
 
 #[test]
 fn post_grazed_at_cap_speed_deflects() {
-    // Inside the mouth, 2 mm into the post's reach: at the cap a substep moves the puck
-    // 2.1 cm, the contact chord is 2.5 cm, so the post cannot be skipped. It turns the
-    // puck towards the middle of the goal.
     let params = no_damping();
     let mut world = parked(&params);
     world.puck = Puck {
@@ -206,16 +199,12 @@ fn post_grazed_at_cap_speed_deflects() {
 fn goal_is_decided_by_the_crossing_point() {
     let params = Params::default();
     let at = |x0, y0, x1, y1| goal_crossing(Vec2::new(x0, y0), Vec2::new(x1, y1), &params);
-    // Crosses at y = 0.12 inside the mouth, ends outside its y range.
     assert_eq!(at(0.99, 0.10, 1.01, 0.14), Some(Side::Low));
-    // Crosses at y = 0.13 outside the mouth, whichever end is inside.
     assert_eq!(at(0.99, 0.06, 1.01, 0.20), None);
     assert_eq!(at(0.99, 0.20, 1.01, 0.06), None);
     assert_eq!(at(-0.99, -0.10, -1.01, -0.12), Some(Side::High));
-    // Landing exactly on the line counts; exactly on the post line does not.
     assert_eq!(at(0.99, 0.0, 1.0, 0.0), Some(Side::Low));
     assert_eq!(at(0.99, 0.125, 1.01, 0.125), None);
-    // No crossing, or crossing outwards.
     assert_eq!(at(0.98, 0.0, 0.99, 0.0), None);
     assert_eq!(at(1.01, 0.0, 0.99, 0.0), None);
 }
@@ -419,7 +408,6 @@ fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
     let mut world = World::new(&params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4));
     world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, 0.42));
-    // Clamped to the centre line: the mallet holds still there.
     world.mallets[1].target = Vec2::new(-1.0, 0.42);
     world.puck = Puck {
         pos: Vec2::new(0.172, 0.41),

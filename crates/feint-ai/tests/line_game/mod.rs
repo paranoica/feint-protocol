@@ -1,5 +1,3 @@
-//! «Line»: two players on [-1, 1] chase a ball moving at constant speed. Small enough to
-//! know every outcome by hand; realtime at 240 Hz with decisions at 60 Hz.
 #![allow(dead_code)]
 
 use feint_ai::{Choice, Playbook};
@@ -22,10 +20,9 @@ pub struct LineState {
 
 pub struct Line {
     pub state: LineState,
-    /// When set, `live()` panics: the bot must never call it.
     pub forbid_live: bool,
-    /// The match ends at this tick, if set.
     pub end_at: Option<u64>,
+    pub simulated: std::cell::Cell<u64>,
 }
 
 impl Line {
@@ -41,6 +38,7 @@ impl Line {
             },
             forbid_live: false,
             end_at: None,
+            simulated: std::cell::Cell::new(0),
         }
     }
 }
@@ -73,7 +71,7 @@ fn step(state: &mut LineState) {
         let reach = state.speed[i] * dt;
         state.pos[i] += gap.clamp(-reach, reach);
     }
-    state.tick += 1;
+    state.tick = state.tick.saturating_add(1);
 }
 
 fn set_target(state: &mut LineState, action: &ActionT) {
@@ -168,6 +166,7 @@ impl GameAdapter for Line {
         for _ in 0..ticks {
             step(&mut next);
         }
+        self.simulated.set(self.simulated.get() + u64::from(ticks));
         next
     }
 
@@ -203,12 +202,10 @@ impl GameAdapter for Line {
     }
 }
 
-/// Options are targets on the line, given by the test; the best place is the ball.
 pub struct LinePlaybook {
     pub targets: Vec<f32>,
     pub horizon: u32,
     pub margin: f64,
-    /// How many times the core asked for the opponent's reply.
     pub replies: std::cell::Cell<u32>,
 }
 

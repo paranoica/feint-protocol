@@ -1,5 +1,3 @@
-//! The core must never name a game (FNT-D7): games plug in through traits only.
-
 use std::fs;
 use std::path::Path;
 

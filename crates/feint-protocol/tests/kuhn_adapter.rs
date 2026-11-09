@@ -1,6 +1,3 @@
-//! A minimal Kuhn-poker adapter: shows that `GameAdapter` carries a turn-based game with
-//! hidden information and no body, as stage 3 needs, without changing the trait.
-
 #[macro_use]
 mod builders;
 

@@ -25,7 +25,6 @@ fn bot(level: u8, game: &Line) -> Bot<Line, LinePlaybook> {
     Bot::new(d, LinePlaybook::new(&[-0.6, 0.0, 0.6], 60), &game.spec()).unwrap()
 }
 
-/// Sends an action stamped one tick late every tick: the game must refuse all of them.
 struct Late;
 
 impl Controller<Line> for Late {

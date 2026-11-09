@@ -3,7 +3,6 @@ use std::f64::consts::FRAC_1_SQRT_2;
 use crate::params::{Body, Params};
 use crate::vec2::Vec2;
 
-/// Which end a player defends: `Low` defends x = -half_length, `High` defends +half_length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     Low,
@@ -19,7 +18,6 @@ impl Side {
         }
     }
 
-    /// The index of this side's player and mallet.
     #[must_use]
     pub fn index(self) -> usize {
         match self {
@@ -29,7 +27,6 @@ impl Side {
     }
 }
 
-/// The box a mallet's centre must stay in: its own half, inside the rails.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
     pub min: Vec2,
@@ -51,7 +48,6 @@ impl Region {
         }
     }
 
-    /// The nearest point of the region.
     #[must_use]
     pub fn clamp(&self, point: Vec2) -> Vec2 {
         Vec2::new(
@@ -61,7 +57,6 @@ impl Region {
     }
 }
 
-/// A mallet driven towards a target point under its owner's body limits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mallet {
     pub pos: Vec2,
@@ -70,7 +65,6 @@ pub struct Mallet {
 }
 
 impl Mallet {
-    /// At rest at `pos`, aiming at where it stands.
     #[must_use]
     pub fn at_rest(pos: Vec2) -> Self {
         Self {
@@ -80,12 +74,6 @@ impl Mallet {
         }
     }
 
-    /// Advance one substep of `dt` seconds.
-    ///
-    /// Speed never exceeds the body's limit and the velocity changes by at most
-    /// `max_accel·dt` per substep. Near the target and near the region's edges the speed
-    /// is capped by the discrete braking profile, so the mallet stops on the target and
-    /// never has to stop harder than it can.
     pub fn step(&mut self, region: &Region, body: &Body, dt: f64) {
         if !self.target.is_finite() {
             self.target = self.pos;
@@ -108,9 +96,6 @@ impl Mallet {
             want = to_target * (speed / distance);
         }
 
-        // Per axis with a/√2, so braking towards two edges at once stays within `accel`.
-        // The braking correction comes first; only what is left of the budget turns the
-        // mallet towards its target, so a sharp turn can never cost it the ability to stop.
         let edge_accel = accel * FRAC_1_SQRT_2;
         let lo = Vec2::new(
             -braking_speed(self.pos.x - region.min.x, edge_accel, dt),
@@ -128,10 +113,6 @@ impl Mallet {
         self.stop_at_edges(region);
     }
 
-    /// Move out to `distance` from `from` (the puck pinned by a rail or the other mallet)
-    /// and drop the velocity towards it. A contact force: it may exceed the body's
-    /// acceleration, unlike the controller. `fallback` is the direction when the centres
-    /// coincide.
     pub(crate) fn push_off(&mut self, from: Vec2, distance: f64, fallback: Vec2, region: &Region) {
         let offset = self.pos - from;
         let gap = offset.length();
@@ -151,8 +132,6 @@ impl Mallet {
         self.stop_at_edges(region);
     }
 
-    /// Only reached when the mallet was already moving faster than it could brake, such as
-    /// right after being pushed by the puck: the edge stops it like a wall.
     fn stop_at_edges(&mut self, region: &Region) {
         if self.pos.x < region.min.x || self.pos.x > region.max.x {
             self.pos.x = self.pos.x.clamp(region.min.x, region.max.x);
@@ -165,12 +144,6 @@ impl Mallet {
     }
 }
 
-/// The highest speed from which braking by `accel·dt` per step of `dt` stops within
-/// `distance`, with semi-implicit Euler (speed first, then position).
-///
-/// Starting at `(k + r)·a·dt` with whole `k` and `r` in `[0, 1)`, the steps cover
-/// `(k + 1)(k/2 + r)·a·dt²`; this inverts that sum. The continuous `sqrt(2·a·d)` and its
-/// smooth discrete fit both overshoot on the last, fractional step.
 fn braking_speed(distance: f64, accel: f64, dt: f64) -> f64 {
     if distance <= 0.0 {
         return 0.0;
@@ -178,7 +151,6 @@ fn braking_speed(distance: f64, accel: f64, dt: f64) -> f64 {
     let unit = accel * dt;
     let w = distance / (unit * dt);
     if !w.is_finite() {
-        // An acceleration so small that a·dt² is subnormal: the body cannot brake at all.
         return 0.0;
     }
     let k = (((8.0 * w + 1.0).sqrt() - 1.0) / 2.0).floor();

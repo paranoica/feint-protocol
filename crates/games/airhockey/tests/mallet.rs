@@ -58,7 +58,6 @@ fn mallet_respects_speed_and_accel_limits() {
         });
         let mut travelled = 0.0;
         for _ in 0..2_000 {
-            // Targets anywhere, including the other half and beyond the rails.
             mallet.target = Vec2::new(rng.range(-1.5, 1.5), rng.range(-0.8, 0.8));
             let hold = 1 + (rng.unit() * 120.0) as u32;
             for _ in 0..hold {
@@ -93,8 +92,6 @@ fn mallet_reaches_target_without_overshoot_in_near_minimal_time() {
     let mut mallet = Mallet::at_rest(start);
     mallet.target = target;
 
-    // From rest to rest under acceleration a, top speed never reached here:
-    // the bang-bang time is 2·sqrt(d/a).
     let peak = (body.max_accel() * distance).sqrt();
     assert!(peak < body.max_speed());
     let minimal = 2.0 * (distance / body.max_accel()).sqrt();

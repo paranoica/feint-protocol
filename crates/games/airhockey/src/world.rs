@@ -3,7 +3,6 @@ use crate::params::{Body, Params};
 use crate::puck::Puck;
 use crate::vec2::Vec2;
 
-/// Everything that moves: the puck and both mallets (index 0 is `Side::Low`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct World {
     pub puck: Puck,
@@ -11,7 +10,6 @@ pub struct World {
 }
 
 impl World {
-    /// Puck at rest in the centre, each mallet at rest in front of its goal.
     #[must_use]
     pub fn new(params: &Params) -> Self {
         let x = params.half_length * 0.8;
@@ -24,8 +22,6 @@ impl World {
         }
     }
 
-    /// Advance one tick; returns the side that scored, if any. After a goal the rest of
-    /// the tick is skipped and the world is left as it was at the crossing.
     pub fn tick(&mut self, params: &Params, bodies: &[Body; 2]) -> Option<Side> {
         let dt = params.substep_dt();
         let regions = regions(params);
@@ -43,7 +39,6 @@ impl World {
             if let Some(scorer) = goal_crossing(old, self.puck.pos, params) {
                 return Some(scorer);
             }
-            // Rails win over mallets: a pinned puck stays put and the mallet gives way.
             self.puck.hit_rails(params);
             for ((mallet, region), side) in self.mallets.iter_mut().zip(&regions).zip(SIDES) {
                 mallet.push_off(self.puck.pos, reach, -away_from_goal(side), region);
@@ -58,8 +53,6 @@ impl World {
     }
 }
 
-/// The side that scores when the puck centre moves from `old` to `new`: it must cross an end
-/// line with the crossing point inside the mouth.
 #[must_use]
 pub fn goal_crossing(old: Vec2, new: Vec2, params: &Params) -> Option<Side> {
     let end = params.half_length;
@@ -75,8 +68,6 @@ pub fn goal_crossing(old: Vec2, new: Vec2, params: &Params) -> Option<Side> {
     (y.abs() < params.mouth_half_width).then_some(scorer)
 }
 
-/// Push the puck out of `mallet` and bounce it off the moving mallet, which has infinite
-/// mass. `owner` decides the push direction when the centres coincide.
 pub fn puck_mallet(puck: &mut Puck, mallet: &Mallet, owner: Side, params: &Params) {
     let reach = params.puck_radius + params.mallet_radius;
     let offset = puck.pos - mallet.pos;
@@ -96,10 +87,7 @@ pub fn puck_mallet(puck: &mut Puck, mallet: &Mallet, owner: Side, params: &Param
     }
 }
 
-/// When a mallet could not give way (held at the edge of its half), the puck slides off it
-/// along the rail instead, so that neither ends a substep inside the other.
 fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
-    // Overlaps at rounding level are what push_off leaves behind, not contacts.
     const SLACK: f64 = 1e-12;
     let reach = params.puck_radius + params.mallet_radius;
     let offset = puck.pos - mallet.pos;
@@ -121,8 +109,6 @@ fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
         let dx = (reach * reach - dy * dy).max(0.0).sqrt();
         pos.x = mallet.pos.x + if offset.x >= 0.0 { dx } else { -dx };
     }
-    // Inside the mouth the puck may stand past the rail line, but stays short of the goal
-    // line: the goal check has already run for this substep and runs again on the next.
     let x_limit = if pos.y.abs() < params.mouth_half_width {
         params.half_length.next_down()
     } else {
@@ -145,7 +131,6 @@ fn slide_off(puck: &mut Puck, mallet: &Mallet, params: &Params) {
 
 pub(crate) const SIDES: [Side; 2] = [Side::Low, Side::High];
 
-/// The direction from a side's goal towards the other end.
 pub(crate) fn away_from_goal(side: Side) -> Vec2 {
     match side {
         Side::Low => Vec2::new(1.0, 0.0),
@@ -153,7 +138,6 @@ pub(crate) fn away_from_goal(side: Side) -> Vec2 {
     }
 }
 
-/// The region of each mallet, by index.
 #[must_use]
 pub fn regions(params: &Params) -> [Region; 2] {
     [

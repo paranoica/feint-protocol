@@ -3,8 +3,6 @@ use sequence::Lcg;
 
 use airhockey::{Body, Input, Match, MatchEvent, Params, World};
 
-/// Scripted play: each player sends a new target at irregular ticks, sometimes aimed at the
-/// puck so goals happen. Returns the inputs it sent and the digest after every tick.
 fn play(seed: u64, ticks: u64, tweak_at: Option<u64>) -> (Match, Vec<Input>, Vec<u64>) {
     let mut m = Match::new(Params::default(), [Body::default(); 2], seed);
     let mut rng = Lcg(seed ^ 0x5EED);

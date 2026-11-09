@@ -6,26 +6,17 @@ use crate::game::Match;
 use crate::params::Params;
 use crate::vec2::Vec2;
 
-/// Aim points on the opponent's goal line, in the striker's frame: right, centre, left.
-/// At ±0.07 the puck's edge stays 1.5 cm clear of the posts.
 const AIM_Y: [f64; 3] = [-0.07, 0.0, 0.07];
-/// Run-up behind the puck before a strike, beyond contact distance.
 const RUN_UP: f64 = 0.1;
-/// How close to the aim line the mallet must be before it strikes.
 const LINE_TOLERANCE: f64 = 0.01;
-/// How far in front of its goal's centre a defender stands, towards the puck.
 const DEFENCE_DEPTH: f64 = 0.15;
-/// Metres of aim error per unit of the core's aim noise.
 const AIM_SCALE: f64 = 2.0;
-/// A chase only needs to reach the puck: a quarter of the aim error.
 const CHASE_SCALE: f64 = 0.5;
 
-/// +1 when `player` attacks towards +x (player 0), −1 otherwise.
 fn attack(player: PlayerId) -> f64 {
     if player == 0 { 1.0 } else { -1.0 }
 }
 
-/// World and player frames differ by a 180° rotation for player 1.
 fn frame(player: PlayerId, v: Vec2) -> Vec2 {
     if player == 0 { v } else { -v }
 }
@@ -39,7 +30,6 @@ fn unit(v: Vec2, fallback: Vec2) -> Vec2 {
     }
 }
 
-/// Hand-made hockey tactics for levels 1–2: chase, defend, strike a corner (FNT-D7).
 pub struct HockeyPlaybook {
     params: Params,
 }
@@ -47,8 +37,6 @@ pub struct HockeyPlaybook {
 impl HockeyPlaybook {
     pub const CHASE: u16 = 0;
     pub const DEFEND: u16 = 1;
-    /// Strikes at the right corner, the centre and the left corner of the opponent's goal,
-    /// as the striker sees it.
     pub const STRIKES: [u16; 3] = [2, 3, 4];
 
     #[must_use]
@@ -56,15 +44,12 @@ impl HockeyPlaybook {
         Self { params }
     }
 
-    /// The point between `player`'s goal and the puck where its mallet defends.
     fn defence_spot(&self, state: &Match, player: PlayerId) -> Vec2 {
         let goal = Vec2::new(-attack(player) * self.params.half_length, 0.0);
         let towards = unit(state.world.puck.pos - goal, Vec2::new(attack(player), 0.0));
         goal + towards * DEFENCE_DEPTH
     }
 
-    /// A strike in two phases: get behind the puck exactly on the aim line, then drive
-    /// through it, so the contact normal is the aim line itself.
     fn strike_target(&self, state: &Match, player: PlayerId, aim: Vec2) -> Vec2 {
         let puck = state.world.puck.pos;
         let mallet = state.world.mallets[usize::from(player.min(1))].pos;
@@ -84,7 +69,6 @@ impl HockeyPlaybook {
         attack(player) * state.world.puck.pos.x < 0.0
     }
 
-    /// An action sending `player`'s mallet to a world point, inside the action space.
     fn go_to(&self, player: PlayerId, world: Vec2) -> ActionT {
         let seen = frame(player, world);
         let (l, w) = (
@@ -116,7 +100,6 @@ impl Playbook<AirHockey> for HockeyPlaybook {
             return;
         }
         out.push(choice(Self::DEFEND, 2, 120, 0.0));
-        // A strike needs the puck within reach: in the striker's own half.
         if Self::puck_in_half_of(state, me) {
             for (k, &id) in Self::STRIKES.iter().enumerate() {
                 out.push(choice(id, 1, 240, k as f32));
@@ -147,9 +130,6 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         self.go_to(them, target)
     }
 
-    /// Goals dominate (10 each); then the puck's position and speed towards the opponent,
-    /// and danger near the own goal. Defending while the puck is away needs no term: then
-    /// `defend` is the only option.
     fn evaluate(&self, s: &Match, me: PlayerId) -> f64 {
         let me_i = usize::from(me.min(1));
         let score = s.score();

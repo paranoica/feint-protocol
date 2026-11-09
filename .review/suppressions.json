@@ -7,6 +7,14 @@
       "quote_substr": "        let me = usize::from(player.min(1));",
       "reason": "trait contract: PlayerId < num_players, observe is called by the trusted runner, not with network input",
       "ts": 1794182754.0153801
+    },
+    {
+      "fingerprint": "795caec0b2e7",
+      "category": "correctness",
+      "file_glob": "crates/games/airhockey/src/*",
+      "quote_substr": "const AIM_SCALE: f64 = 2.0;",
+      "reason": "play area means the 2 m table length; a puck centre within the 0.125 m mouth scores, so ~10 % of corner aims leave it, not 35 %",
+      "ts": 1794186869.641741
     }
   ]
 }

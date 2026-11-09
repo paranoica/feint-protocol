@@ -10,14 +10,10 @@ use crate::puck::Puck;
 use crate::vec2::Vec2;
 use crate::world::{World, regions};
 
-/// Physics version: bump it whenever a change alters any recorded match (FNT-D6).
 pub const GAME_VERSION: u32 = 1;
 
-/// Length of the observation vector; see [`AirHockey::spec`] for the field names.
 pub const OBSERVATION_LEN: usize = 15;
 
-/// Air hockey behind the Feint protocol. Everything a player sends or sees is in that
-/// player's own frame: player 1 sees the table rotated 180° (FNT-D6).
 pub struct AirHockey {
     game: Match,
     level: u8,
@@ -25,11 +21,8 @@ pub struct AirHockey {
 }
 
 impl AirHockey {
-    /// # Panics
-    /// When `params` fail [`Params::validate`].
     #[must_use]
     pub fn new(params: Params, level: u8) -> Self {
-        // The human plays at the declared peak; bots get their level's share of it (FNT-D8).
         let body = Body::new(params.max_body_speed, params.max_body_accel).unwrap_or_default();
         Self {
             game: Match::new(params, [body; 2], 0),
@@ -38,7 +31,6 @@ impl AirHockey {
         }
     }
 
-    /// Direct access for match set-up and tests; the bot must never get it.
     pub fn game_mut(&mut self) -> &mut Match {
         &mut self.game
     }
@@ -105,8 +97,6 @@ impl GameAdapter for AirHockey {
     fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
         const WHY: &str = "two positive finite values per player";
         let params = &self.game.params;
-        // The spec publishes the limits as f32, which may round up: a value equal to the
-        // published maximum is taken as the maximum itself.
         let within = |value: f32, max: f64| {
             if value.is_finite() && value <= max as f32 {
                 f64::from(value).min(max)
@@ -198,10 +188,6 @@ impl GameAdapter for AirHockey {
         score.extend(state.score().map(i64::from));
     }
 
-    /// Exact up to f32 rounding, except the opponent's target, which no player can see:
-    /// it is guessed as the opponent's current position. Values the rules cannot produce
-    /// (non-finite, off the table, over the limits) are pulled back inside them, so a
-    /// forged observation cannot crash or corrupt the planner.
     fn state_from_observation(&self, obs: &ObservationT, _rng: &mut ChaCha8Rng) -> Match {
         let params = &self.game.params;
         let frame = Frame::of(obs.player);
@@ -233,8 +219,6 @@ impl GameAdapter for AirHockey {
         let seen = read(0);
         let y_max = params.half_width - params.puck_radius;
         let y = seen.y.clamp(-y_max, y_max);
-        // Inside the mouth the puck may stand up to, never on, the goal line: f32 rounds a
-        // puck a hair short of it to exactly the line, where it could no longer cross.
         let x_max = if y.abs() < params.mouth_half_width {
             params.half_length.next_down()
         } else {
@@ -282,8 +266,6 @@ impl GameAdapter for AirHockey {
         next
     }
 
-    /// The acting player's mallet one tick later, in the opponent's frame: exactly what
-    /// the opponent's next observation shows as `opponent_signals`.
     fn signals(&self, state: &Match, action: &ActionT, out: &mut Vec<f32>) {
         out.clear();
         let player = usize::from(action.player.min(1));
@@ -311,7 +293,6 @@ impl GameAdapter for AirHockey {
     }
 }
 
-/// A player's view of the table: player 1 sees it rotated 180°.
 #[derive(Clone, Copy)]
 enum Frame {
     AsIs,
@@ -341,7 +322,6 @@ impl Frame {
     }
 }
 
-/// Check an action against the action space and turn it into a world-frame input.
 fn to_input(action: &ActionT, params: &Params) -> Result<Input, AdapterError> {
     if action.player > 1 {
         return Err(AdapterError::BadPlayer(action.player));
