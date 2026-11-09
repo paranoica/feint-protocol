@@ -1,4 +1,5 @@
 use airhockey::AirHockey;
+use duel::QuickDraw;
 use feint_ai::{
     Bot, Controller, Difficulty, Memory, Profile, Record, RecordError, Runner, decode_record,
     encode_record,
@@ -64,6 +65,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
     match record.header.game_id.as_str() {
         AirHockey::ID => verify_game::<AirHockey>(record, bytes, profile),
         Penalty::ID => verify_game::<Penalty>(record, bytes, profile),
+        QuickDraw::ID => verify_game::<QuickDraw>(record, bytes, profile),
         _ => Err(VerifyError::Game),
     }
 }

@@ -462,3 +462,37 @@ fn a_penalty_shootout_plays_through_the_hub_with_one_shot_inputs() {
     }
     assert!(watched.record().is_empty());
 }
+
+#[test]
+fn a_duel_plays_through_the_hub_with_held_draws_and_one_shot_sidesteps() {
+    use feint_web::Play;
+    let mut game = Play::<duel::QuickDraw>::new(3, 5).unwrap();
+    let mut guard = 0;
+    let mut rolled = 0;
+    while !game.finished() {
+        let v = game.view();
+        let their_x = v[7];
+        let their_hand = v[8];
+        game.set_input(&[their_x, 1.0, 0.0]);
+        if their_hand > 0.4 && v[6] == 0.0 {
+            game.push_input(&[their_x, 1.0, if rolled % 2 == 0 { -1.0 } else { 1.0 }]);
+            rolled += 1;
+        }
+        game.advance(4);
+        guard += 1;
+        assert!(guard < 240 * 600, "the duel never ended");
+    }
+    let score = game.score();
+    assert!(
+        score[0] + score[1] >= 5,
+        "a finished duel has a winner: {score:?}"
+    );
+    assert!(rolled > 0);
+    assert!(game.record().len() > 50);
+    assert_eq!(game.view().len(), 20);
+    let mut watched = Play::<duel::QuickDraw>::spectate(5, 2, 1).unwrap();
+    while !watched.finished() {
+        watched.advance(16);
+    }
+    assert!(watched.record().is_empty());
+}

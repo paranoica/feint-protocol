@@ -28,6 +28,7 @@ export interface GameView {
   press(event: PointerEvent, rect: DOMRect): boolean;
   move(event: PointerEvent, rect: DOMRect): void;
   release(event: PointerEvent): boolean;
+  key?(event: KeyboardEvent): boolean;
   send(match: WebMatch): void;
   sideColors(): [string, string];
 }

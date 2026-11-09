@@ -100,7 +100,7 @@ test("two bots play for a watcher and each shows its own mind", () => {
 });
 
 test("the hub builds a game by id and keeps the hockey entry points", () => {
-  assert.deepEqual(Array.from(games()), ["airhockey", "penalty"]);
+  assert.deepEqual(Array.from(games()), ["airhockey", "penalty", "duel"]);
   const game = WebMatch.create("airhockey", 2, 5);
   assert.equal(game.game_id(), "airhockey");
   assert.equal(game.arena(), true);
@@ -149,5 +149,43 @@ test("every hub view agrees with its wasm game on uploading to the arena", async
     const game = WebMatch.create(view.id, 1, 1);
     assert.equal(view.arena, game.arena(), view.id);
     game.free();
+  }
+});
+
+test("a duel runs in wasm with a held draw and a pushed sidestep", () => {
+  const game = WebMatch.create("duel", 2, 3);
+  assert.equal(game.arena(), true);
+  assert.equal(game.layout().length, 5);
+  let stepped = 0;
+  for (let i = 0; i < 240 * 900 && !game.finished(); i += 2) {
+    const v = game.view();
+    game.set_input(new Float32Array([v[7], 1, 0]));
+    if (v[8] > 0.4 && v[6] === 0) {
+      game.push_input(new Float32Array([v[7], 1, stepped % 2 === 0 ? -1 : 1]));
+      stepped += 1;
+    }
+    game.advance(2);
+  }
+  assert.equal(game.finished(), true);
+  const [a, b] = Array.from(game.score());
+  assert.ok(Math.max(a, b) === 5, `${a}:${b}`);
+  assert.ok(stepped > 0);
+  game.free();
+});
+
+test("every hub game starts a level 5 match from that game's own profile", () => {
+  for (const id of ["penalty", "duel"]) {
+    const first = WebMatch.create(id, 5, 1);
+    for (let i = 0; i < 240 * 900 && !first.finished(); i += 16) {
+      first.advance(16);
+    }
+    const profile = first.profile();
+    assert.ok(profile.length > 0, id);
+    const next = WebMatch.create_with_profile(id, 5, 2, profile);
+    assert.equal(next.game_id(), id);
+    assert.equal(next.memory_of(1), true);
+    next.free();
+    first.free();
+    assert.throws(() => WebMatch.create_with_profile(id, 3, 2, profile), `${id}: level 3 takes no profile`);
   }
 });

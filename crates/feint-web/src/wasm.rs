@@ -1,4 +1,5 @@
 use airhockey::AirHockey;
+use duel::QuickDraw;
 use feint_ai::{InsightView, Profile, decode_profile, encode_profile};
 use feint_protocol::EventKind;
 use penalty::Penalty;
@@ -110,12 +111,24 @@ fn unknown(_: impl std::fmt::Debug) -> JsValue {
     JsValue::from_str("unknown game or level")
 }
 
-fn start(game: &str, level: u8, seed: u32) -> Result<Box<dyn Live>, JsValue> {
+fn start(
+    game: &str,
+    level: u8,
+    seed: u32,
+    profile: Option<&Profile>,
+) -> Result<Box<dyn Live>, JsValue> {
     let seed = u64::from(seed);
+    let refused =
+        |_| JsValue::from_str("unknown game, bad level or a profile this level takes not");
     match game {
-        <AirHockey as HubGame>::ID => Ok(Box::new(Session::new(level, seed).map_err(unknown)?)),
+        <AirHockey as HubGame>::ID => Ok(Box::new(
+            Session::with_profile(level, seed, profile).map_err(refused)?,
+        )),
         <Penalty as HubGame>::ID => Ok(Box::new(
-            Play::<Penalty>::new(level, seed).map_err(unknown)?,
+            Play::<Penalty>::with_profile(level, seed, profile).map_err(refused)?,
+        )),
+        <QuickDraw as HubGame>::ID => Ok(Box::new(
+            Play::<QuickDraw>::with_profile(level, seed, profile).map_err(refused)?,
         )),
         _ => Err(unknown(game)),
     }
@@ -130,6 +143,9 @@ fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>,
         <Penalty as HubGame>::ID => Ok(Box::new(
             Play::<Penalty>::spectate(left, right, seed).map_err(unknown)?,
         )),
+        <QuickDraw as HubGame>::ID => Ok(Box::new(
+            Play::<QuickDraw>::spectate(left, right, seed).map_err(unknown)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -140,6 +156,7 @@ pub fn games() -> Vec<String> {
     vec![
         <AirHockey as HubGame>::ID.to_string(),
         <Penalty as HubGame>::ID.to_string(),
+        <QuickDraw as HubGame>::ID.to_string(),
     ]
 }
 
@@ -175,15 +192,7 @@ impl WebMatch {
         profile: &[u8],
     ) -> Result<WebMatch, JsValue> {
         let profile = decode_profile(profile).map_err(|_| JsValue::from_str("bad profile"))?;
-        let seed = u64::from(seed);
-        let session: Box<dyn Live> = match game {
-            <AirHockey as HubGame>::ID => Box::new(
-                Session::with_profile(level, seed, Some(&profile))
-                    .map_err(|_| JsValue::from_str("this level takes no profile"))?,
-            ),
-            _ => return Err(unknown(game)),
-        };
-        Ok(WebMatch { session })
+        start(game, level, seed, Some(&profile)).map(|session| WebMatch { session })
     }
 
     pub fn spectate(left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
@@ -191,7 +200,7 @@ impl WebMatch {
     }
 
     pub fn create(game: &str, level: u8, seed: u32) -> Result<WebMatch, JsValue> {
-        start(game, level, seed).map(|session| WebMatch { session })
+        start(game, level, seed, None).map(|session| WebMatch { session })
     }
 
     pub fn watch(game: &str, left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
