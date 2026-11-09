@@ -121,7 +121,7 @@ test("the hub builds a game by id and keeps the hockey entry points", () => {
 
 test("a penalty shootout runs in wasm with presses as one-shot inputs", () => {
   const game = WebMatch.create("penalty", 2, 3);
-  assert.equal(game.arena(), false);
+  assert.equal(game.arena(), true, "penalty shootouts are uploaded to the arena");
   assert.equal(game.layout().length, 5);
   let kicked = 0;
   for (let i = 0; i < 240 * 600 && !game.finished(); i += 4) {
@@ -137,4 +137,17 @@ test("a penalty shootout runs in wasm with presses as one-shot inputs", () => {
   assert.ok(game.finished(), "the shootout finished");
   assert.ok(Array.from(game.score()).some((g) => g > 0));
   game.free();
+});
+
+test("every hub view agrees with its wasm game on uploading to the arena", async () => {
+  const host = globalThis as Record<string, unknown>;
+  host.document ??= { documentElement: {} };
+  host.getComputedStyle ??= () => ({ getPropertyValue: () => "" });
+  const { GAMES } = await import("../src/games/index.ts");
+  assert.deepEqual(GAMES.map((g) => g.id).sort(), Array.from(games()).sort());
+  for (const view of GAMES) {
+    const game = WebMatch.create(view.id, 1, 1);
+    assert.equal(view.arena, game.arena(), view.id);
+    game.free();
+  }
 });

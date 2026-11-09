@@ -27,8 +27,8 @@ export function profileVersion(header: string | null): number | null {
   return Number(header);
 }
 
-export function profilePath(nick: string): string {
-  return `/api/profile?nick=${encodeURIComponent(nick)}`;
+export function profilePath(nick: string, game: string): string {
+  return `/api/profile?nick=${encodeURIComponent(nick)}&game=${encodeURIComponent(game)}`;
 }
 
 export function uploadPath(nick: string, ticket: string, profile: number | null): string {

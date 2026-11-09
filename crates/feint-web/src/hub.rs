@@ -6,6 +6,26 @@ use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT,
 
 use crate::session::Pointer;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Column {
+    pub name: &'static str,
+    pub optional: bool,
+}
+
+const fn kept(name: &'static str) -> Column {
+    Column {
+        name,
+        optional: false,
+    }
+}
+
+const fn optional(name: &'static str) -> Column {
+    Column {
+        name,
+        optional: true,
+    }
+}
+
 pub trait HumanInput {
     fn set(&mut self, values: &[f32]);
     fn push(&mut self, values: &[f32]);
@@ -17,6 +37,7 @@ pub trait HubGame: GameAdapter + Sized + 'static {
     const ID: &'static str;
     const VERSION: u32;
     const ARENA: bool;
+    const COLUMNS: &'static [Column];
 
     fn build(level: u8) -> Self;
     fn book() -> Self::Book;
@@ -28,6 +49,7 @@ pub trait HubGame: GameAdapter + Sized + 'static {
     fn view(&self) -> Vec<f32>;
     fn layout(&self) -> Vec<f32>;
     fn class_point(book: &Self::Book, attacker: u8, class: u8) -> [f32; 2];
+    fn frame(&self) -> Vec<Option<f64>>;
 }
 
 #[must_use]
@@ -104,6 +126,20 @@ impl HubGame for AirHockey {
     const ID: &'static str = "airhockey";
     const VERSION: u32 = GAME_VERSION;
     const ARENA: bool = true;
+    const COLUMNS: &'static [Column] = &[
+        kept("puck_x"),
+        kept("puck_y"),
+        kept("puck_vx"),
+        kept("puck_vy"),
+        kept("m0_x"),
+        kept("m0_y"),
+        kept("m0_vx"),
+        kept("m0_vy"),
+        kept("m1_x"),
+        kept("m1_y"),
+        kept("m1_vx"),
+        kept("m1_vy"),
+    ];
 
     fn build(level: u8) -> Self {
         AirHockey::new(Params::default(), level)
@@ -173,6 +209,20 @@ impl HubGame for AirHockey {
         let p = book.class_point(attacker, class);
         [p.x as f32, p.y as f32]
     }
+
+    fn frame(&self) -> Vec<Option<f64>> {
+        let world = &self.live().world;
+        let [a, b] = world.mallets;
+        [
+            (world.puck.pos, world.puck.vel),
+            (a.pos, a.vel),
+            (b.pos, b.vel),
+        ]
+        .iter()
+        .flat_map(|(p, v)| [p.x, p.y, v.x, v.y])
+        .map(Some)
+        .collect()
+    }
 }
 
 impl HubGame for penalty::Penalty {
@@ -180,7 +230,26 @@ impl HubGame for penalty::Penalty {
     type Human = Pad;
     const ID: &'static str = "penalty";
     const VERSION: u32 = penalty::GAME_VERSION;
-    const ARENA: bool = false;
+    const ARENA: bool = true;
+    const COLUMNS: &'static [Column] = &[
+        kept("shooter"),
+        kept("phase"),
+        kept("t"),
+        kept("kicks"),
+        kept("dist"),
+        kept("running"),
+        kept("lean"),
+        kept("lean_target"),
+        optional("aim"),
+        kept("ball_y"),
+        kept("keeper_y"),
+        kept("keeper_target"),
+        optional("dive_target"),
+        kept("dive_left"),
+        kept("dived"),
+        kept("score0"),
+        kept("score1"),
+    ];
 
     fn build(level: u8) -> Self {
         penalty::Penalty::new(penalty::Params::default(), level)
@@ -260,5 +329,29 @@ impl HubGame for penalty::Penalty {
     fn class_point(book: &Self::Book, _attacker: u8, class: u8) -> [f32; 2] {
         let [x, y] = book.class_point(class);
         [x as f32, y as f32]
+    }
+
+    fn frame(&self) -> Vec<Option<f64>> {
+        let s = self.live();
+        let flag = |b: bool| Some(f64::from(u8::from(b)));
+        vec![
+            Some(f64::from(s.shooter())),
+            Some(s.phase.code()),
+            Some(f64::from(s.t)),
+            Some(f64::from(s.kicks)),
+            Some(s.dist),
+            flag(s.running),
+            Some(s.lean),
+            Some(s.lean_target),
+            s.aim,
+            Some(s.ball_y),
+            Some(s.keeper_y),
+            Some(s.keeper_target),
+            s.dive.map(|d| d.target),
+            Some(s.dive.map_or(0.0, |d| f64::from(d.left))),
+            flag(s.dived),
+            Some(f64::from(s.score[0])),
+            Some(f64::from(s.score[1])),
+        ]
     }
 }

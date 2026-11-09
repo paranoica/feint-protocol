@@ -1,6 +1,9 @@
+mod common;
+
 use feint_ai::{Record, decode_record, encode_record};
 use feint_arena::{MAX_TICKS, VerifyError, verify};
-use feint_web::Session;
+use feint_web::{HubGame, Session};
+use penalty::Penalty;
 
 fn script(tick: u64) -> (f32, f32) {
     let points = [(-0.6, 0.3), (-0.2, -0.4), (-0.8, 0.0), (-0.4, 0.45)];
@@ -200,5 +203,64 @@ fn a_forgery_early_in_the_match_is_refused_without_replaying_the_rest() {
     assert!(
         refused * 4 < whole,
         "refused in {refused:?}, a full verification took {whole:?}"
+    );
+}
+
+#[test]
+fn penalty_records_verify_with_their_own_columns_and_profiles() {
+    let (s, kicks) = common::shootout(3, 7, None);
+    let bytes = s.record();
+    let v = verify(&bytes, None).unwrap();
+    assert_eq!((v.game, v.columns), (Penalty::ID, Penalty::COLUMNS));
+    assert!(v.finished);
+    assert_eq!(v.digest, s.digest());
+    assert_eq!(v.frames.len() as u64, v.record.ticks);
+    assert!(
+        v.frames
+            .iter()
+            .all(|f| f.values.len() == Penalty::COLUMNS.len())
+    );
+    let last = &v.frames.last().unwrap().values;
+    let at = |name: &str| {
+        last[Penalty::COLUMNS
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap()]
+        .unwrap()
+    };
+    assert_eq!([at("score0"), at("score1")], s.score().map(f64::from));
+    assert_eq!(at("kicks"), f64::from(kicks), "one kick per goal or save");
+    assert_eq!(
+        verify(&bytes, None),
+        verify(&bytes, None),
+        "a verification is a value"
+    );
+
+    let bot_at = |r: &Record| r.actions.iter().position(|a| a.player == 1).unwrap();
+    let edited = forge(&bytes, |r| {
+        let i = bot_at(r);
+        r.actions[i].values = Some(vec![0.5, 1.0, 1.0, 3.0]);
+    });
+    assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
+    let newer = forge(&bytes, |r| r.header.game_version += 1);
+    assert_eq!(verify(&newer, None).err(), Some(VerifyError::Game));
+    let as_hockey = forge(&bytes, |r| r.header.game_id = "airhockey".into());
+    assert!(
+        verify(&as_hockey, None).is_err(),
+        "a penalty record is not hockey"
+    );
+
+    let (five, _) = common::shootout(5, 8, None);
+    let v5 = verify(&five.record(), None).unwrap();
+    assert_eq!(v5.profile, five.profile());
+    let p = v5.profile.unwrap();
+    assert_eq!(p.game_id, Penalty::ID);
+    let (second, _) = common::shootout(5, 9, Some(&p));
+    assert!(verify(&second.record(), Some(&p)).is_ok());
+    let hockey = Session::new(5, 1).unwrap().profile().unwrap();
+    assert_eq!(
+        verify(&second.record(), Some(&hockey)).err(),
+        Some(VerifyError::Profile),
+        "a hockey profile cannot drive a penalty keeper"
     );
 }

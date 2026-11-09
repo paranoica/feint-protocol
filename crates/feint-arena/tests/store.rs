@@ -16,11 +16,11 @@ fn the_database_is_versioned_and_survives_a_restart() {
     let root = std::env::temp_dir().join(format!("feint-store-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let mut store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), 3);
     store.issue_ticket(100, "t1", 42).unwrap();
     drop(store);
     let store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), 3);
     assert_eq!(
         store.ticket_seed(200, "t1").unwrap(),
         42,
@@ -50,7 +50,7 @@ fn a_version_one_database_is_migrated_in_place() {
     .unwrap();
     drop(conn);
     let mut store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), 3);
     for _ in 0..3 {
         assert_eq!(store.try_ticket(10, "old").unwrap(), 5);
     }
@@ -58,5 +58,43 @@ fn a_version_one_database_is_migrated_in_place() {
         store.try_ticket(10, "old"),
         Err(StoreError::Ticket),
         "three tries per ticket"
+    );
+}
+
+#[test]
+fn a_version_two_database_keeps_its_rows_as_hockey() {
+    let root = std::env::temp_dir().join(format!("feint-store-v2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("matches")).unwrap();
+    let conn = rusqlite::Connection::open(root.join("feint.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE players (id INTEGER PRIMARY KEY, nick TEXT NOT NULL UNIQUE);
+         CREATE TABLE tickets (token TEXT PRIMARY KEY, seed INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0);
+         CREATE TABLE matches (id INTEGER PRIMARY KEY, player_id INTEGER NOT NULL, level INTEGER NOT NULL, seed INTEGER NOT NULL, score_human INTEGER NOT NULL, score_bot INTEGER NOT NULL, ticks INTEGER NOT NULL, finished INTEGER NOT NULL, digest TEXT NOT NULL, profile_used INTEGER, record_path TEXT, parquet_path TEXT, created INTEGER NOT NULL);
+         CREATE TABLE profiles (player_id INTEGER NOT NULL, version INTEGER NOT NULL, parent INTEGER, blob BLOB NOT NULL, PRIMARY KEY (player_id, version));
+         INSERT INTO players (id, nick) VALUES (1, 'ann');
+         INSERT INTO matches (player_id, level, seed, score_human, score_bot, ticks, finished, digest, created) VALUES (1, 5, 3, 2, 7, 900, 1, 'ab', 10);
+         INSERT INTO profiles (player_id, version, parent, blob) VALUES (1, 1, NULL, x'0102');
+         PRAGMA user_version = 2;",
+    )
+    .unwrap();
+    drop(conn);
+    let store = Store::open(&root).unwrap();
+    assert_eq!(store.schema_version().unwrap(), 3);
+    let game: String = store
+        .connection()
+        .query_row("SELECT game FROM matches", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(game, "airhockey");
+    assert_eq!(
+        store.latest_profile("ann", "airhockey").unwrap(),
+        Some((1, vec![1, 2]))
+    );
+    assert_eq!(store.latest_profile("ann", "penalty").unwrap(), None);
+    drop(store);
+    assert_eq!(
+        Store::open(&root).unwrap().schema_version().unwrap(),
+        3,
+        "a second open migrates nothing"
     );
 }

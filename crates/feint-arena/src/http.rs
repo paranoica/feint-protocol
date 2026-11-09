@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
+use airhockey::AirHockey;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -11,12 +12,14 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use feint_ai::decode_profile;
+use feint_web::HubGame;
+use penalty::Penalty;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use tokio::sync::Semaphore;
 
 use crate::store::{Saved, Store, StoreError, Upload, clean_nick, stage};
-use crate::verify::verify;
+use crate::verify::{VerifyError, verify};
 
 pub const MAX_BODY: usize = 32 << 20;
 pub const VERIFY_SLOTS: usize = 2;
@@ -208,8 +211,12 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
     let Some(nick) = query(&uri, "nick").and_then(|n| clean_nick(&n).ok()) else {
         return error(StatusCode::BAD_REQUEST, "nick");
     };
+    let game = query(&uri, "game").unwrap_or_else(|| AirHockey::ID.to_owned());
+    if game != AirHockey::ID && game != Penalty::ID {
+        return error(StatusCode::BAD_REQUEST, "game");
+    }
     let work = arena.clone();
-    match blocking(move || work.with_store(|store| store.latest_profile(&nick))).await {
+    match blocking(move || work.with_store(|store| store.latest_profile(&nick, &game))).await {
         Some(Ok(Some((version, blob)))) => {
             let mut response = (StatusCode::OK, blob).into_response();
             let headers = response.headers_mut();
@@ -359,7 +366,10 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
     if claimed != claim.seed {
         return Err(Refusal::Conflict);
     }
-    let verified = verify(body, profile.as_ref()).map_err(|_| Refusal::Bad("record"))?;
+    let verified = verify(body, profile.as_ref()).map_err(|e| match e {
+        VerifyError::Profile => Refusal::Bad("profile"),
+        _ => Refusal::Bad("record"),
+    })?;
     if verified.record.header.seed != claim.seed {
         return Err(Refusal::Bad("seed"));
     }

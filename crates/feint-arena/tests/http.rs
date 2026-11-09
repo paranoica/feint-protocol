@@ -9,6 +9,8 @@ use feint_ai::decode_profile;
 use feint_arena::{Arena, Store, router};
 use feint_web::Session;
 
+mod common;
+
 struct Server {
     arena: Arc<Arena>,
     addr: SocketAddr,
@@ -180,10 +182,14 @@ fn a_genuine_upload_is_stored_once() {
         count(&s, "SELECT COUNT(*) FROM players WHERE nick = 'ann b'"),
         1
     );
-    assert!(s.data.join(format!("matches/{id}.rec")).exists());
-    assert!(s.data.join(format!("matches/{id}.parquet")).exists());
+    assert!(s.data.join(format!("matches/airhockey/{id}.rec")).exists());
+    assert!(
+        s.data
+            .join(format!("matches/airhockey/{id}.parquet"))
+            .exists()
+    );
     assert_eq!(
-        std::fs::read(s.data.join(format!("matches/{id}.rec"))).unwrap(),
+        std::fs::read(s.data.join(format!("matches/airhockey/{id}.rec"))).unwrap(),
         game.record()
     );
     assert_eq!(
@@ -444,10 +450,18 @@ fn two_uploads_racing_on_one_ticket_store_one_match() {
     statuses.sort_unstable();
     assert_eq!(statuses, vec![201, 409]);
     assert_eq!(count(&s, "SELECT COUNT(*) FROM matches"), 1);
-    let left: Vec<String> = std::fs::read_dir(s.data.join("matches"))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
+    let names = |dir: PathBuf| -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    assert_eq!(
+        names(s.data.join("matches")),
+        vec!["airhockey".to_owned()],
+        "no staged leftovers"
+    );
+    let left = names(s.data.join("matches/airhockey"));
     assert_eq!(left.len(), 2, "only the winner's files: {left:?}");
     assert!(left.iter().all(|f| !f.ends_with(".tmp")), "{left:?}");
 }
@@ -776,4 +790,112 @@ fn a_ticket_that_expires_while_its_upload_waits_is_refused() {
     drop(paused);
     assert_eq!(upload.join().unwrap(), 409);
     assert_eq!(count(&s, "SELECT COUNT(*) FROM matches"), 0);
+}
+
+#[test]
+fn penalty_matches_are_stored_and_profiles_stay_with_their_game() {
+    let s = start("games");
+    let post = |q: String, b: &[u8]| call(s.addr, "POST", &format!("/api/matches?{q}"), b);
+    let profile = |q: &str| call(s.addr, "GET", &format!("/api/profile?nick=ann{q}"), &[]);
+
+    let (t, seed) = ticket(&s);
+    let r = post(
+        format!("nick=ann&ticket={t}"),
+        &finished(5, seed, None).record(),
+    );
+    assert_eq!(
+        (r.status, json_field(&r.body, "profile")),
+        (201, "1".to_owned())
+    );
+    assert_eq!(
+        profile("&game=penalty").status,
+        204,
+        "no penalty profile yet"
+    );
+
+    let (t, seed) = ticket(&s);
+    let (shot, _) = common::shootout(5, seed, None);
+    let r = post(format!("nick=ann&ticket={t}"), &shot.record());
+    assert_eq!(
+        (r.status, json_field(&r.body, "profile")),
+        (201, "2".to_owned()),
+        "{}",
+        String::from_utf8_lossy(&r.body)
+    );
+    let id: i64 = json_field(&r.body, "id").parse().unwrap();
+    assert!(
+        s.data
+            .join(format!("matches/penalty/{id}.parquet"))
+            .exists()
+    );
+    assert!(s.data.join(format!("matches/penalty/{id}.rec")).exists());
+    assert_eq!(
+        count(
+            &s,
+            &format!("SELECT COUNT(*) FROM matches WHERE id = {id} AND game = 'penalty'")
+        ),
+        1
+    );
+
+    let got = profile("&game=penalty");
+    assert!(got.head.contains("x-profile-version: 2"));
+    let penalty_profile = decode_profile(&got.body).unwrap();
+    assert_eq!(penalty_profile.game_id, "penalty");
+    let hockey = profile("");
+    assert!(
+        hockey.head.contains("x-profile-version: 1"),
+        "hockey stays the default"
+    );
+    assert_eq!(decode_profile(&hockey.body).unwrap().game_id, "airhockey");
+    assert_eq!(profile("&game=chess").status, 400);
+
+    let (t, seed) = ticket(&s);
+    let r = post(
+        format!("nick=ann&ticket={t}&profile=2"),
+        &common::shootout(5, seed, Some(&penalty_profile)).0.record(),
+    );
+    assert_eq!(
+        (r.status, json_field(&r.body, "profile")),
+        (201, "3".to_owned()),
+        "a penalty profile advances from the latest penalty version"
+    );
+    let (t, seed) = ticket(&s);
+    let r = post(
+        format!("nick=ann&ticket={t}&profile=1"),
+        &common::shootout(5, seed, Some(&penalty_profile)).0.record(),
+    );
+    assert_eq!(
+        (r.status, json_field(&r.body, "error")),
+        (400, "profile".to_owned()),
+        "a hockey version named for a penalty match"
+    );
+    let v1 = decode_profile(&hockey.body).unwrap();
+    let (t, seed) = ticket(&s);
+    let r = post(
+        format!("nick=ann&ticket={t}&profile=1"),
+        &finished(5, seed, Some(&v1)).record(),
+    );
+    assert_eq!(
+        (r.status, json_field(&r.body, "profile")),
+        (201, "4".to_owned()),
+        "hockey advances from its own latest past the penalty versions"
+    );
+    assert_eq!(
+        count(
+            &s,
+            "SELECT parent FROM profiles WHERE version = 4 AND game = 'airhockey'"
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &s,
+            "SELECT parent FROM profiles WHERE version = 3 AND game = 'penalty'"
+        ),
+        2
+    );
+    assert_eq!(
+        count(&s, "SELECT COUNT(*) FROM profiles WHERE game = 'penalty'"),
+        2
+    );
 }
