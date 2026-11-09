@@ -29,3 +29,8 @@ test("the bot's classes are named from the human's side of the table", () => {
   const lines = describe({ intent: 2, memory: false, likelyShot: -1, likelyCover: [], shown: 2, real: 2 });
   assert.deepEqual(lines, ["bot: strike", "showing right, playing right", "model: none at this level"]);
 });
+
+test("a strike that shows nothing says so", () => {
+  const lines = describe({ intent: 2, memory: false, likelyShot: -1, likelyCover: [], shown: -1, real: 1 });
+  assert.equal(lines[1], "showing nothing, playing centre");
+});

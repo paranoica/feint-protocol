@@ -28,7 +28,8 @@ function named(names: string[], c: number): string {
 export function describe(insight: Insight): string[] {
   const lines = [`bot: ${intentName(insight.intent)}`];
   if (insight.shown >= 0 || insight.real >= 0) {
-    lines.push(`showing ${named(THEIRS, insight.shown)}, playing ${named(THEIRS, insight.real)}`);
+    const shown = insight.shown < 0 ? "nothing" : named(THEIRS, insight.shown);
+    lines.push(`showing ${shown}, playing ${named(THEIRS, insight.real)}`);
   }
   if (!insight.memory) {
     lines.push("model: none at this level");
