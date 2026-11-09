@@ -15,5 +15,8 @@ airhockey = { path = "../games/airhockey" }
 feint-ai.workspace = true
 feint-protocol.workspace = true
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.128"
+
 [lints]
 workspace = true
