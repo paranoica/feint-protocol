@@ -15,6 +15,7 @@ let height = 1;
 let scale = 40;
 let cursor = 0;
 let fire = false;
+let kickRange = 0.65;
 let colors = { you: "#22d3ee", bot: "#fb7185", ink: "#e7eef8", line: "rgba(130,175,255,0.35)", grass: "#0d2a1f" };
 
 function css(name: string): string {
@@ -100,8 +101,9 @@ export const penaltyView: GameView = {
   inputTicks: 2,
 
   setup(match) {
-    const [halfGoal, reach, runUp, wide] = Array.from(match.layout());
+    const [halfGoal, reach, runUp, wide, range] = Array.from(match.layout());
     layout = { halfGoal, reach, runUp, wide };
+    kickRange = range;
     cursor = 0;
     fire = false;
     colors = {
@@ -255,11 +257,16 @@ export const penaltyView: GameView = {
 
   send(match) {
     const v = match.view();
-    const shooting = v[0] === 0;
+    const [shooter, phase, dist] = v;
+    const shooting = shooter === 0;
     const lean = Math.max(-1, Math.min(1, cursor / layout.halfGoal));
     const first = shooting ? lean : cursor;
     match.set_input(new Float32Array([first, 1, 0, cursor]));
-    if (fire) {
+    const legal = shooting ? phase === 1 || (phase === 0 && dist <= kickRange) : phase !== 3 && phase !== 4;
+    if (fire && phase === 3) {
+      fire = false;
+    }
+    if (fire && legal) {
       fire = false;
       match.push_input(new Float32Array([first, 1, 1, cursor]));
     }

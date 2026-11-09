@@ -451,7 +451,10 @@ fn a_penalty_shootout_plays_through_the_hub_with_one_shot_inputs() {
     }
     let score = game.score();
     assert!(score[0] > 0, "the human's kicks scored nothing: {score:?}");
-    assert!(score[0] != score[1] || game.tick() > 0);
+    assert!(
+        score[0] != score[1] || game.view()[9] >= 20.0,
+        "a finished shootout is decided or hit its cap: {score:?}"
+    );
     assert!(game.record().len() > 50);
     let mut watched = Play::<penalty::Penalty>::spectate(5, 2, 1).unwrap();
     while !watched.finished() {

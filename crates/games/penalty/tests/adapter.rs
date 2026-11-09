@@ -46,37 +46,67 @@ fn bodies_beyond_the_declared_maxima_or_malformed_actions_are_refused() {
 fn observations_rebuild_a_state_that_simulates_like_the_live_game() {
     let mut game = fresh();
     let mut events = Vec::new();
-    let script = |t: u64| {
-        let lean = if t < 200 { -0.8 } else { 0.6 };
-        [
-            act(t, 0, [lean, 1.0, f32::from(u8::from(t == 250)), 2.6]),
-            act(t, 1, [0.4, 0.0, f32::from(u8::from(t == 230)), -2.0]),
-        ]
+    let script = |s: &penalty::Shootout, t: u64| {
+        let near = s.dist < 0.6 && s.phase == Phase::RunUp;
+        let shooter = s.shooter();
+        let lean = if t % 600 < 200 { -0.8 } else { 0.6 };
+        let shot = act(t, shooter, [lean, 1.0, f32::from(u8::from(near)), 2.6]);
+        let dive = s.phase == Phase::RunUp && s.dist < 1.0;
+        let keep = act(t, 1 - shooter, [0.4, 0.0, f32::from(u8::from(dive)), -2.0]);
+        [shot, keep]
     };
     let mut rng = ChaCha8Rng::seed_from_u64(3);
-    for t in 0..300u64 {
-        for a in script(t) {
+    let mut roles = std::collections::BTreeSet::new();
+    let mut phases = std::collections::BTreeSet::new();
+    while game.live().kicks < 3 {
+        let t = game.live().tick;
+        for a in script(game.live(), t) {
             game.apply(&a).unwrap();
         }
         game.advance(&mut events);
-        if t % 37 == 0 {
-            for player in [0u8, 1] {
-                let mut obs = ObservationT::default();
-                game.observe(game.live(), player, &mut obs);
-                assert_eq!(obs.state.as_ref().map(Vec::len), Some(OBSERVATION_LEN));
-                let rebuilt = game.state_from_observation(&obs, &mut rng);
-                assert_eq!(rebuilt.shooter(), game.live().shooter());
-                assert_eq!(rebuilt.phase, game.live().phase);
-                assert!((rebuilt.keeper_y - game.live().keeper_y).abs() < 1e-5);
-                assert!((rebuilt.dist - game.live().dist).abs() < 1e-5);
+        let live = game.live().clone();
+        if !t.is_multiple_of(13) || live.phase == Phase::Strike {
+            continue;
+        }
+        roles.insert(live.shooter());
+        phases.insert(live.phase.code() as i64);
+        for player in [0u8, 1] {
+            let mut obs = ObservationT::default();
+            game.observe(&live, player, &mut obs);
+            assert_eq!(obs.state.as_ref().map(Vec::len), Some(OBSERVATION_LEN));
+            let r = game.state_from_observation(&obs, &mut rng);
+            let close = |a: f64, b: f64| (a - b).abs() < 1e-5;
+            assert_eq!(
+                (r.shooter(), r.phase, r.kicks, r.score),
+                (live.shooter(), live.phase, live.kicks, live.score)
+            );
+            assert!(r.t.abs_diff(live.t) <= 1, "{} vs {}", r.t, live.t);
+            assert!(
+                close(r.dist, live.dist)
+                    && close(r.lean, live.lean)
+                    && close(r.ball_y, live.ball_y)
+            );
+            assert!(close(r.keeper_y, live.keeper_y) && close(r.keeper_target, live.keeper_target));
+            assert_eq!(r.dived, live.dived);
+            assert_eq!(r.dive.map(|d| d.left > 0), live.dive.map(|d| d.left > 0));
+            if live.phase == Phase::Flight && live.t > 0 {
+                assert!(
+                    close(r.aim.unwrap(), live.aim.unwrap()),
+                    "the aim is recovered from the ball in flight"
+                );
+            }
+            if live.phase == Phase::RunUp && close(live.lean, live.lean_target) && live.running {
+                let held = script(&live, live.tick);
+                let ahead = game.simulate(&r, &held, 12);
+                let truth = game.simulate(&live, &held, 12);
+                assert!(close(ahead.dist, truth.dist) && close(ahead.keeper_y, truth.keeper_y));
             }
         }
     }
-    assert_eq!(game.live().phase, Phase::Flight);
-    assert_eq!(
-        game.live().aim,
-        Some(f64::from(2.6f32)),
-        "the kick was taken"
+    assert_eq!(roles.len(), 2, "both seats shot during the check");
+    assert!(
+        phases.contains(&0) && phases.contains(&2) && phases.contains(&3),
+        "{phases:?}"
     );
 }
 
@@ -145,4 +175,51 @@ fn two_bots_play_a_shootout_to_its_end() {
             "{a} vs {b}: nobody scored"
         );
     }
+}
+
+struct LeftFooter {
+    me: u8,
+}
+
+impl feint_ai::Controller<Penalty> for LeftFooter {
+    fn new_match(&mut self, _spec: &feint_protocol::GameSpecT, me: u8, _seed: u64) {
+        self.me = me;
+    }
+
+    fn on_tick(&mut self, game: &Penalty, obs: &ObservationT) -> Option<ActionT> {
+        let s = game.live();
+        let shooting = s.shooter() == self.me;
+        let fire = shooting && s.dist < 0.6;
+        Some(act(
+            obs.tick,
+            self.me,
+            [0.0, 1.0, f32::from(u8::from(fire)), -2.8],
+        ))
+    }
+}
+
+#[test]
+fn a_keeper_bot_learns_where_its_opponent_shoots() {
+    let mut game = Penalty::new(Params::default(), 3);
+    let spec = game.spec();
+    let mut keeper = Bot::new(
+        Difficulty::preset(3).unwrap(),
+        PenaltyPlaybook::new(Params::default()),
+        &spec,
+    )
+    .unwrap();
+    let mut shooter = LeftFooter { me: 0 };
+    let header = RunHeader {
+        game_id: "penalty".into(),
+        game_version: penalty::GAME_VERSION,
+        seed: 2,
+        bodies: vec![body(9.0, 4.0), Difficulty::preset(3).unwrap().body(&spec)],
+        levels: [0, 3],
+    };
+    run_match(&mut game, [&mut shooter, &mut keeper], header, 240 * 900).unwrap();
+    assert_eq!(
+        keeper.insight().likely_shot,
+        Some(0),
+        "five kicks to the left should teach the keeper"
+    );
 }

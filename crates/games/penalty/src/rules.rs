@@ -74,7 +74,10 @@ impl Params {
         if self.decision_hz == 0 || self.decision_hz > self.tick_hz {
             return Err("decisions must be positive and no faster than ticks");
         }
-        if self.kicks_each == 0 || self.max_kicks < 2 * self.kicks_each {
+        if self.kicks_each == 0
+            || self.max_kicks < 2 * self.kicks_each
+            || !self.max_kicks.is_multiple_of(2)
+        {
             return Err("a shootout needs kicks for both sides");
         }
         Ok(())
@@ -328,7 +331,9 @@ impl Shootout {
         match self.phase {
             Phase::RunUp => {
                 self.lean_towards();
-                if self.running {
+                let patience = 2.0 * self.params.run_up / self.params.run_speed
+                    * f64::from(self.params.tick_hz);
+                if self.running || f64::from(self.t) >= patience {
                     self.dist -= self.params.run_speed * self.params.dt();
                 }
                 if self.dist <= 0.0 {

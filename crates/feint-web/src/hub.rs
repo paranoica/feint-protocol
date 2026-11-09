@@ -240,7 +240,11 @@ impl HubGame for penalty::Penalty {
             f64::from(u8::from(diving)),
             f64::from(s.kicks),
             s.last_goal.map_or(-1.0, |g| f64::from(u8::from(g))),
-            s.aim.unwrap_or(0.0),
+            if matches!(s.phase, penalty::Phase::Flight | penalty::Phase::Settle) {
+                s.aim.unwrap_or(0.0)
+            } else {
+                0.0
+            },
         ]
         .map(|v| v as f32)
         .to_vec()

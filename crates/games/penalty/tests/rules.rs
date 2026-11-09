@@ -147,3 +147,25 @@ fn the_aim_is_locked_from_the_plant_so_a_dive_during_the_wind_up_cannot_be_answe
     assert_eq!(s.aim, Some(2.8));
     assert_eq!(finish_kick(&mut s), vec![KickEvent::Saved { shooter: 0 }]);
 }
+
+#[test]
+fn a_shooter_who_never_runs_is_walked_to_the_ball_and_an_odd_cap_is_refused() {
+    let mut s = shootout();
+    let mut events = Vec::new();
+    let mut ticks = 0;
+    while s.phase == Phase::RunUp {
+        s.steer(0.0, false);
+        s.step(&mut events);
+        ticks += 1;
+        assert!(ticks < 240 * 10, "a stalled run-up never ends");
+    }
+    assert_eq!(s.phase, Phase::AtBall);
+    let odd = Params {
+        max_kicks: 21,
+        ..Params::default()
+    };
+    assert!(
+        odd.validate().is_err(),
+        "an odd cap gives one side an extra kick"
+    );
+}
