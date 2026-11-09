@@ -13,6 +13,12 @@ struct Attempt {
     won: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Seen {
+    pub(crate) started: bool,
+    pub(crate) rally: bool,
+}
+
 pub(crate) struct Insight<S> {
     memory: Memory,
     model: Option<OpponentModel>,
@@ -65,14 +71,19 @@ impl<S: Clone> Insight<S> {
         score: &[i64],
         me: PlayerId,
         them: PlayerId,
-    ) -> bool
+    ) -> Seen
     where
         A: GameAdapter<State = S>,
         P: Playbook<A>,
     {
         let possession = playbook.possession(state, me);
         let mut started = possession.is_some() && possession != self.possession;
+        let mut rally = false;
         if let Some(prev) = &self.prev {
+            rally = score
+                .iter()
+                .zip(&self.prev_score)
+                .any(|(now, before)| now > before);
             let read = playbook.read(prev, state, them);
             if let (Some(model), Some(shot)) = (&mut self.model, read.shot) {
                 model.record_shot(shot);
@@ -98,7 +109,7 @@ impl<S: Clone> Insight<S> {
         self.prev_score.clear();
         self.prev_score.extend_from_slice(score);
         self.possession = possession;
-        started
+        Seen { started, rally }
     }
 
     pub(crate) fn start_attempt(&mut self, choice: &Choice) {

@@ -169,6 +169,7 @@ impl GameAdapter for Penalty {
             state.score[0] as f32,
             state.score[1] as f32,
         ]);
+        out.score = Some(state.score.iter().map(|&s| i64::from(s)).collect());
         let mine = !state.over() && state.to_act() == player;
         let n = if player == STRIKER { 4 } else { 2 };
         out.legal = Some(vec![u8::from(mine); n]);
@@ -238,7 +239,10 @@ impl GameAdapter for Penalty {
     }
 }
 
-pub struct PenaltyPlaybook;
+#[derive(Default)]
+pub struct PenaltyPlaybook {
+    pub paces: std::cell::RefCell<Vec<f32>>,
+}
 
 pub const COVER_IDS: u16 = 10;
 
@@ -255,16 +259,10 @@ fn choice(id: u16, shown: Option<u8>, real: Option<u8>, deceptive: bool) -> Choi
 }
 
 impl Playbook<Penalty> for PenaltyPlaybook {
-    fn options(
-        &self,
-        _s: &PenaltyState,
-        me: PlayerId,
-        _rep: u8,
-        _cue: &Cue,
-        out: &mut Vec<Choice>,
-    ) {
+    fn options(&self, _s: &PenaltyState, me: PlayerId, _rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
         if me == STRIKER {
+            self.paces.borrow_mut().push(cue.pace);
             for side in 0..2u8 {
                 out.push(choice(u16::from(side), Some(side), Some(side), false));
             }

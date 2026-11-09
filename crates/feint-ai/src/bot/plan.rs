@@ -85,13 +85,18 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
     pub(super) fn replan(&mut self, adapter: &A, state: &A::State, now: u64) {
         let mut options = std::mem::take(&mut self.options);
         options.clear();
+        let cue = Cue {
+            pace: self.plan.pace(),
+            twitch: None,
+        };
         self.playbook.options(
             state,
             self.me,
             self.difficulty.repertoire,
-            &Cue::default(),
+            &cue,
             &mut options,
         );
+        let importance = self.playbook.importance(state, self.me);
         let current = self.current;
         let depth = self.difficulty.depth;
         let held = current.map(|c| c.choice.id);
@@ -100,13 +105,16 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             if !fakes.is_empty() {
                 self.insight.fake_pending = false;
                 let pick = ((self.unit() * fakes.len() as f64) as usize).min(fakes.len() - 1);
-                self.commit(fakes[pick], now);
+                self.commit(fakes[pick], now, importance);
                 self.options = options;
                 return;
             }
         }
         let gate_open = self.insight.gate_open && depth >= 2;
-        options.retain(|c| !c.deceptive || gate_open || held == Some(c.id));
+        let plan = &self.plan;
+        options.retain(|c| {
+            !c.deceptive || gate_open || held == Some(c.id) || plan.allows(c, importance)
+        });
         let offered = |id: u16| options.iter().any(|c| c.id == id);
         if let Some(cur) = current
             && offered(cur.choice.id)
@@ -126,7 +134,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             let elapsed = current
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
-            scored.push((*choice, self.rollout(adapter, state, choice, cap, elapsed)));
+            let score = self.rollout(adapter, state, choice, cap, elapsed);
+            scored.push((*choice, score + self.plan.bonus(choice, importance)));
         }
         self.options = options;
         let best = scored
@@ -141,7 +150,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         {
             let attempt = u64::from(cur.choice.horizon_ticks.max(1));
             if now.saturating_sub(cur.since) >= attempt {
-                self.commit(offer, now);
+                self.commit(offer, now, importance);
             }
             return;
         }
@@ -161,7 +170,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             near.get(i).copied()
         };
         if let Some(choice) = pick {
-            self.commit(choice, now);
+            self.commit(choice, now, importance);
         }
     }
 }

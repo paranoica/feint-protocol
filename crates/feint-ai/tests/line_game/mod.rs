@@ -205,6 +205,8 @@ impl GameAdapter for Line {
 pub struct LinePlaybook {
     pub targets: Vec<f32>,
     pub fakes: Vec<f32>,
+    pub shown: bool,
+    pub flat: bool,
     pub horizon: u32,
     pub margin: f64,
     pub replies: std::cell::Cell<u32>,
@@ -215,6 +217,8 @@ impl LinePlaybook {
         Self {
             targets: targets.to_vec(),
             fakes: Vec::new(),
+            shown: false,
+            flat: false,
             horizon,
             margin: 0.0,
             replies: std::cell::Cell::new(0),
@@ -231,8 +235,8 @@ impl Playbook<Line> for LinePlaybook {
             deceptive: false,
             horizon_ticks: self.horizon,
             param: [x, 0.0],
-            shown: None,
-            real: None,
+            shown: self.shown.then_some(i as u8),
+            real: self.shown.then_some(i as u8),
         }));
         let first = self.targets.len();
         out.extend(self.fakes.iter().enumerate().map(|(i, &x)| Choice {
@@ -269,6 +273,9 @@ impl Playbook<Line> for LinePlaybook {
     }
 
     fn evaluate(&self, s: &LineState, me: PlayerId) -> f64 {
+        if self.flat {
+            return 0.0;
+        }
         -(s.pos[usize::from(me.min(1))] - s.ball).abs()
     }
 

@@ -32,7 +32,7 @@ fn header(seed: u64) -> RunHeader {
 }
 
 fn penalty_bot(d: Difficulty) -> Bot<Penalty, PenaltyPlaybook> {
-    Bot::new(d, PenaltyPlaybook, &penalty_spec()).unwrap()
+    Bot::new(d, PenaltyPlaybook::default(), &penalty_spec()).unwrap()
 }
 
 fn shootout(d: Difficulty, rule: KeeperRule, rounds: u32, seed: u64) -> RunReport {

@@ -8,6 +8,7 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
 use crate::insight::Insight;
+use crate::long_game::Plan;
 use crate::model::{Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
@@ -54,6 +55,7 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     history: VecDeque<ActionT>,
     options: Vec<Choice>,
     insight: Insight<A::State>,
+    plan: Plan,
     _game: PhantomData<fn() -> A>,
 }
 
@@ -99,6 +101,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             history: VecDeque::new(),
             options: Vec::new(),
             insight,
+            plan: Plan::new(difficulty.long_game),
             _game: PhantomData,
         })
     }
@@ -140,8 +143,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    fn commit(&mut self, choice: Choice, now: u64) {
+    fn commit(&mut self, choice: Choice, now: u64, importance: f64) {
         self.insight.start_attempt(&choice);
+        self.plan.committed(&choice, importance);
         let spread = self.difficulty.spread;
         let aim = [
             (self.unit() + self.unit() - 1.0) * spread,
@@ -204,6 +208,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         self.newest = None;
         self.history.clear();
         self.insight.new_match();
+        self.plan.reset();
     }
 
     fn end_match(&mut self, adapter: &A, obs: &ObservationT) {
@@ -239,10 +244,13 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         let mut state = adapter.state_from_observation(&seen, &mut self.rng);
         let them = self.opponent();
         let score = seen.score.as_deref().unwrap_or(&[]);
-        if self
+        let fresh = self
             .insight
-            .observe::<A, P>(&self.playbook, &state, score, self.me, them)
-        {
+            .observe::<A, P>(&self.playbook, &state, score, self.me, them);
+        if fresh.rally {
+            self.plan.rally();
+        }
+        if fresh.started {
             let open = self.unit() < self.difficulty.deception;
             self.insight.gate_open = open;
             self.insight.fake_pending = open && self.difficulty.depth < 2;
