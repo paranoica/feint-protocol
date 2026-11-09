@@ -1,13 +1,141 @@
-use airhockey::Params;
-use feint_ai::{decode_profile, encode_profile};
+use airhockey::AirHockey;
+use feint_ai::{InsightView, Profile, decode_profile, encode_profile};
 use feint_protocol::EventKind;
 use wasm_bindgen::prelude::*;
 
-use crate::session::Session;
+use crate::hub::HubGame;
+use crate::session::{Play, Session};
+
+trait Live {
+    fn advance(&mut self, ticks: u32) -> u32;
+    fn set_input(&mut self, values: &[f32]);
+    fn push_input(&mut self, values: &[f32]);
+    fn view(&self) -> Vec<f32>;
+    fn layout(&self) -> Vec<f32>;
+    fn score(&self) -> [u32; 2];
+    fn tick(&self) -> u64;
+    fn tick_hz(&self) -> u32;
+    fn finished(&self) -> bool;
+    fn pause(&self) -> f32;
+    fn insight_of(&self, seat: u8) -> InsightView;
+    fn class_point(&self, attacker: u8, class: u8) -> [f32; 2];
+    fn record(&self) -> Vec<u8>;
+    fn digest(&self) -> u64;
+    fn spectating(&self) -> bool;
+    fn profile(&self) -> Option<Profile>;
+    fn game_id(&self) -> &'static str;
+    fn arena(&self) -> bool;
+}
+
+impl<G: HubGame> Live for Play<G> {
+    fn advance(&mut self, ticks: u32) -> u32 {
+        let goals = Play::advance(self, ticks)
+            .iter()
+            .filter(|e| e.kind == EventKind::Score)
+            .count();
+        u32::try_from(goals).unwrap_or(u32::MAX)
+    }
+
+    fn set_input(&mut self, values: &[f32]) {
+        Play::set_input(self, values);
+    }
+
+    fn push_input(&mut self, values: &[f32]) {
+        Play::push_input(self, values);
+    }
+
+    fn view(&self) -> Vec<f32> {
+        Play::view(self)
+    }
+
+    fn layout(&self) -> Vec<f32> {
+        Play::layout(self)
+    }
+
+    fn score(&self) -> [u32; 2] {
+        Play::score(self)
+    }
+
+    fn tick(&self) -> u64 {
+        Play::tick(self)
+    }
+
+    fn tick_hz(&self) -> u32 {
+        Play::tick_hz(self)
+    }
+
+    fn finished(&self) -> bool {
+        Play::finished(self)
+    }
+
+    fn pause(&self) -> f32 {
+        Play::serve_pause(self)
+    }
+
+    fn insight_of(&self, seat: u8) -> InsightView {
+        Play::insight_of(self, seat)
+    }
+
+    fn class_point(&self, attacker: u8, class: u8) -> [f32; 2] {
+        Play::class_point(self, attacker, class)
+    }
+
+    fn record(&self) -> Vec<u8> {
+        Play::record(self)
+    }
+
+    fn digest(&self) -> u64 {
+        Play::digest(self)
+    }
+
+    fn spectating(&self) -> bool {
+        Play::spectating(self)
+    }
+
+    fn profile(&self) -> Option<Profile> {
+        Play::profile(self)
+    }
+
+    fn game_id(&self) -> &'static str {
+        G::ID
+    }
+
+    fn arena(&self) -> bool {
+        G::ARENA
+    }
+}
+
+fn unknown(_: impl std::fmt::Debug) -> JsValue {
+    JsValue::from_str("unknown game or level")
+}
+
+fn start(game: &str, level: u8, seed: u32) -> Result<Box<dyn Live>, JsValue> {
+    let seed = u64::from(seed);
+    match game {
+        <AirHockey as HubGame>::ID => Ok(Box::new(Session::new(level, seed).map_err(unknown)?)),
+        _ => Err(unknown(game)),
+    }
+}
+
+fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>, JsValue> {
+    let seed = u64::from(seed);
+    match game {
+        <AirHockey as HubGame>::ID => Ok(Box::new(
+            Session::spectate(left, right, seed).map_err(unknown)?,
+        )),
+        _ => Err(unknown(game)),
+    }
+}
+
+#[must_use]
+#[wasm_bindgen]
+pub fn games() -> Vec<String> {
+    vec![<AirHockey as HubGame>::ID.to_string()]
+}
 
 #[wasm_bindgen]
 pub struct WebMatch {
-    session: Session,
+    session: Box<dyn Live>,
 }
 
 #[wasm_bindgen]
@@ -15,21 +143,57 @@ impl WebMatch {
     #[wasm_bindgen(constructor)]
     pub fn new(level: u8, seed: u32) -> Result<WebMatch, JsValue> {
         Session::new(level, u64::from(seed))
-            .map(|session| WebMatch { session })
+            .map(|session| WebMatch {
+                session: Box::new(session),
+            })
             .map_err(|_| JsValue::from_str("level must be 1 to 5"))
     }
 
     pub fn new_with_profile(level: u8, seed: u32, profile: &[u8]) -> Result<WebMatch, JsValue> {
         let profile = decode_profile(profile).map_err(|_| JsValue::from_str("bad profile"))?;
         Session::with_profile(level, u64::from(seed), Some(&profile))
-            .map(|session| WebMatch { session })
+            .map(|session| WebMatch {
+                session: Box::new(session),
+            })
             .map_err(|_| JsValue::from_str("this level takes no profile"))
     }
 
+    pub fn create_with_profile(
+        game: &str,
+        level: u8,
+        seed: u32,
+        profile: &[u8],
+    ) -> Result<WebMatch, JsValue> {
+        let profile = decode_profile(profile).map_err(|_| JsValue::from_str("bad profile"))?;
+        let seed = u64::from(seed);
+        let session: Box<dyn Live> = match game {
+            <AirHockey as HubGame>::ID => Box::new(
+                Session::with_profile(level, seed, Some(&profile))
+                    .map_err(|_| JsValue::from_str("this level takes no profile"))?,
+            ),
+            _ => return Err(unknown(game)),
+        };
+        Ok(WebMatch { session })
+    }
+
     pub fn spectate(left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
-        Session::spectate(left, right, u64::from(seed))
-            .map(|session| WebMatch { session })
-            .map_err(|_| JsValue::from_str("unknown level"))
+        spectate(<AirHockey as HubGame>::ID, left, right, seed).map(|session| WebMatch { session })
+    }
+
+    pub fn create(game: &str, level: u8, seed: u32) -> Result<WebMatch, JsValue> {
+        start(game, level, seed).map(|session| WebMatch { session })
+    }
+
+    pub fn watch(game: &str, left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {
+        spectate(game, left, right, seed).map(|session| WebMatch { session })
+    }
+
+    pub fn game_id(&self) -> String {
+        self.session.game_id().to_string()
+    }
+
+    pub fn arena(&self) -> bool {
+        self.session.arena()
     }
 
     pub fn spectating(&self) -> bool {
@@ -89,25 +253,31 @@ impl WebMatch {
     }
 
     pub fn set_pointer(&mut self, x: f32, y: f32) {
-        self.session.set_pointer(x, y);
+        self.session.set_input(&[x, y]);
+    }
+
+    pub fn set_input(&mut self, values: &[f32]) {
+        self.session.set_input(values);
+    }
+
+    pub fn push_input(&mut self, values: &[f32]) {
+        self.session.push_input(values);
     }
 
     pub fn advance(&mut self, ticks: u32) -> u32 {
-        let goals = self
-            .session
-            .advance(ticks)
-            .iter()
-            .filter(|e| e.kind == EventKind::Score)
-            .count();
-        u32::try_from(goals).unwrap_or(u32::MAX)
+        self.session.advance(ticks)
     }
 
     pub fn positions(&self) -> Vec<f32> {
-        self.session.positions().to_vec()
+        self.session.view()
+    }
+
+    pub fn view(&self) -> Vec<f32> {
+        self.session.view()
     }
 
     pub fn serve_pause(&self) -> f32 {
-        self.session.serve_pause()
+        self.session.pause()
     }
 
     pub fn score(&self) -> Vec<u32> {
@@ -119,7 +289,7 @@ impl WebMatch {
     }
 
     pub fn tick_hz(&self) -> u32 {
-        Params::default().tick_hz
+        self.session.tick_hz()
     }
 
     pub fn finished(&self) -> bool {
@@ -151,21 +321,15 @@ impl WebMatch {
     }
 
     pub fn table(&self) -> Vec<f32> {
-        let p = Params::default();
-        [
-            p.half_length,
-            p.half_width,
-            p.mouth_half_width,
-            p.puck_radius,
-            p.mallet_radius,
-        ]
-        .map(|v| v as f32)
-        .to_vec()
+        self.session.layout()
+    }
+
+    pub fn layout(&self) -> Vec<f32> {
+        self.session.layout()
     }
 
     pub fn class_point(&self, attacker: u8, class: u8) -> Vec<f32> {
-        let p = self.session.playbook().class_point(attacker, class);
-        vec![p.x as f32, p.y as f32]
+        self.session.class_point(attacker, class).to_vec()
     }
 
     pub fn record(&self) -> Vec<u8> {
