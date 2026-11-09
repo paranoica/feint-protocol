@@ -59,6 +59,13 @@
       "run": "scripts/web-build.sh --wasm-only && cd web && npm test --silent && npm run typecheck --silent",
       "heavy": true
     },
+    "arena": {
+      "run": "scripts/web-build.sh && cargo run --locked --release -p feint-arena -- --dist web/dist --data data"
+    },
+    "arena-check": {
+      "run": "scripts/arena-check.sh",
+      "heavy": true
+    },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
       "heavy": true
