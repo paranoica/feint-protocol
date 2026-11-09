@@ -1,6 +1,6 @@
 import init, { WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
-import { fit, pixels, toCanvas, toTable, TABLE, type Fit } from "./geometry.ts";
+import { fit, pixels, toCanvas, toTable, TABLE, type Fit, type Table } from "./geometry.ts";
 import { describe } from "./overlay.ts";
 import { again, finish, first, start, type Screen } from "./screens.ts";
 
@@ -20,6 +20,8 @@ let clock = makeClock();
 let view = fit({ width: 1, height: 1, dpr: 1 });
 let pointer: [number, number] = [-0.8, 0];
 let showDebug = false;
+let table: Table = TABLE;
+let sizes = { mouth: 0.125, puck: 0.04, mallet: 0.05 };
 let lastRecord: Uint8Array | null = null;
 
 function readNick(): string {
@@ -60,16 +62,16 @@ function resize() {
   canvas.width = size.width;
   canvas.height = size.height;
   ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
-  view = fit(v);
+  view = fit(v, table);
 }
 
 function aim(event: PointerEvent) {
   const rect = canvas.getBoundingClientRect();
-  pointer = toTable(view, event.clientX - rect.left, event.clientY - rect.top);
+  pointer = toTable(view, event.clientX - rect.left, event.clientY - rect.top, table);
 }
 
 function circle(f: Fit, x: number, y: number, r: number, color: string) {
-  const [cx, cy] = toCanvas(f, x, y);
+  const [cx, cy] = toCanvas(f, x, y, table);
   ctx.beginPath();
   ctx.arc(cx, cy, r * f.scale, 0, Math.PI * 2);
   ctx.fillStyle = color;
@@ -84,21 +86,21 @@ function draw(match: WebMatch) {
   const f = view;
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
-  const [x0, y0] = toCanvas(f, TABLE.halfLength, TABLE.halfWidth);
-  const [x1, y1] = toCanvas(f, -TABLE.halfLength, -TABLE.halfWidth);
+  const [x0, y0] = toCanvas(f, table.halfLength, table.halfWidth, table);
+  const [x1, y1] = toCanvas(f, -table.halfLength, -table.halfWidth, table);
   ctx.fillStyle = css("--table");
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
   ctx.strokeStyle = css("--line");
   ctx.lineWidth = 2;
   ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-  const [, midY] = toCanvas(f, 0, 0);
+  const [, midY] = toCanvas(f, 0, 0, table);
   ctx.beginPath();
   ctx.moveTo(x0, midY);
   ctx.lineTo(x1, midY);
   ctx.stroke();
-  const mouth = 0.125 * f.scale;
-  const [gx, top] = toCanvas(f, TABLE.halfLength, 0);
-  const [, bottom] = toCanvas(f, -TABLE.halfLength, 0);
+  const mouth = sizes.mouth * f.scale;
+  const [gx, top] = toCanvas(f, table.halfLength, 0, table);
+  const [, bottom] = toCanvas(f, -table.halfLength, 0, table);
   ctx.lineWidth = 6;
   ctx.strokeStyle = css("--bot");
   ctx.beginPath();
@@ -111,9 +113,9 @@ function draw(match: WebMatch) {
   ctx.lineTo(gx + mouth, bottom);
   ctx.stroke();
   const p = match.positions();
-  circle(f, p[4], p[5], 0.05, css("--you"));
-  circle(f, p[8], p[9], 0.05, css("--bot"));
-  circle(f, p[0], p[1], 0.04, css("--puck"));
+  circle(f, p[4], p[5], sizes.mallet, css("--you"));
+  circle(f, p[8], p[9], sizes.mallet, css("--bot"));
+  circle(f, p[0], p[1], sizes.puck, css("--puck"));
   if (showDebug) {
     drawDebug(match, f);
   }
@@ -125,15 +127,28 @@ function drawDebug(match: WebMatch, f: Fit) {
     memory: match.memory(),
     likelyShot: match.likely_shot(),
     likelyCover: Array.from(match.likely_cover()),
+    shown: match.current_shown(),
+    real: match.current_real(),
   };
   debugBox.textContent = describe(insight).join("\n");
-  if (insight.likelyShot >= 0) {
-    const [x, y] = Array.from(match.class_point(0, insight.likelyShot));
-    const [cx, cy] = toCanvas(f, x, y);
-    ctx.strokeStyle = css("--you");
+  const mark = (attacker: number, cls: number, color: string, filled: boolean) => {
+    if (cls < 0) {
+      return;
+    }
+    const [x, y] = Array.from(match.class_point(attacker, cls));
+    const [cx, cy] = toCanvas(f, x, y, table);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
     ctx.lineWidth = 2;
-    ctx.strokeRect(cx - 8, cy - 8, 16, 16);
-  }
+    if (filled) {
+      ctx.fillRect(cx - 6, cy - 6, 12, 12);
+    } else {
+      ctx.strokeRect(cx - 8, cy - 8, 16, 16);
+    }
+  };
+  mark(0, insight.likelyShot, css("--you"), false);
+  mark(1, insight.shown, css("--bot"), false);
+  mark(1, insight.real, css("--bot"), true);
 }
 
 function frame(now: number) {
@@ -162,6 +177,9 @@ function begin(level: number) {
   }
   saveNick(next.nick);
   game = new WebMatch(level, (Math.random() * 2 ** 32) >>> 0);
+  const [halfLength, halfWidth, mouth, puck, mallet] = Array.from(game.table());
+  table = { halfLength, halfWidth };
+  sizes = { mouth, puck, mallet };
   clock = makeClock();
   pointer = [-0.8, 0];
   $("who").textContent = `${next.nick} vs level ${level}`;
@@ -178,6 +196,9 @@ async function main() {
   canvas.addEventListener("pointerdown", (e) => canvas.setPointerCapture(e.pointerId));
   window.addEventListener("pointermove", aim);
   window.addEventListener("resize", resize);
+  document.addEventListener("visibilitychange", () => {
+    clock = makeClock();
+  });
   window.addEventListener("keydown", (e) => {
     if (e.key === "d" || e.key === "D") {
       showDebug = !showDebug;

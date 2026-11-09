@@ -36,6 +36,9 @@ test("the debug readings have their shapes", () => {
   assert.ok(hard.intent() >= 2, `intent ${hard.intent()}`);
   assert.equal(hard.likely_shot(), -1, "no shots seen yet");
   assert.deepEqual(Array.from(hard.class_point(0, 2)).map((v) => Math.round(v * 100) / 100), [1, 0.07]);
+  assert.deepEqual(Array.from(hard.table()).map((v) => Math.round(v * 1000) / 1000), [1, 0.5, 0.125, 0.04, 0.05]);
+  assert.ok(hard.current_real() >= -1 && hard.current_real() <= 2);
+  assert.ok(hard.current_shown() >= -1 && hard.current_shown() <= 2);
   assert.throws(() => new WebMatch(0, 1));
   assert.throws(() => new WebMatch(6, 1));
 });

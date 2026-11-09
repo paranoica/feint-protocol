@@ -219,6 +219,7 @@ pub struct LinePlaybook {
     pub reads: bool,
     pub fake_real: Option<u8>,
     pub shoots: bool,
+    pub shots_at: Option<u8>,
     pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
 }
 
@@ -235,6 +236,7 @@ impl LinePlaybook {
             reads: false,
             fake_real: Some(1),
             shoots: false,
+            shots_at: None,
             twitches: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -310,7 +312,9 @@ impl Playbook<Line> for LinePlaybook {
         });
         Read {
             covered,
-            shot: (self.shoots && before.ball_v == 0.0 && after.ball_v != 0.0).then_some(1),
+            shot: (before.ball_v == 0.0 && after.ball_v != 0.0)
+                .then_some(self.shots_at.or(self.shoots.then_some(1)))
+                .flatten(),
         }
     }
 

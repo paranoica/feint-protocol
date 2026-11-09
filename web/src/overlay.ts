@@ -3,9 +3,12 @@ export interface Insight {
   memory: boolean;
   likelyShot: number;
   likelyCover: number[];
+  shown: number;
+  real: number;
 }
 
-const CLASSES = ["right", "centre", "left"];
+const YOURS = ["right", "centre", "left"];
+const THEIRS = ["left", "centre", "right"];
 
 export function intentName(intent: number): string {
   if (intent < 0) {
@@ -18,16 +21,22 @@ export function intentName(intent: number): string {
   return kind === 2 ? "defend" : "move";
 }
 
+function named(names: string[], c: number): string {
+  return c >= 0 && c < names.length ? names[c] : "unsure";
+}
+
 export function describe(insight: Insight): string[] {
   const lines = [`bot: ${intentName(insight.intent)}`];
+  if (insight.shown >= 0 || insight.real >= 0) {
+    lines.push(`showing ${named(THEIRS, insight.shown)}, playing ${named(THEIRS, insight.real)}`);
+  }
   if (!insight.memory) {
     lines.push("model: none at this level");
     return lines;
   }
-  const name = (c: number) => (c >= 0 && c < CLASSES.length ? CLASSES[c] : "unsure");
-  lines.push(`your next shot: ${name(insight.likelyShot)}`);
+  lines.push(`your next shot: ${named(YOURS, insight.likelyShot)}`);
   insight.likelyCover.forEach((cover, shown) => {
-    lines.push(`shown ${CLASSES[shown] ?? shown} → you cover ${name(cover)}`);
+    lines.push(`bot shows ${named(THEIRS, shown)} → you cover ${named(THEIRS, cover)}`);
   });
   return lines;
 }

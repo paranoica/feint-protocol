@@ -172,11 +172,20 @@ pub fn replay_record<A: GameAdapter>(
     let mut pending = record.actions.iter().peekable();
     let mut events = Vec::new();
     for tick in 0..record.ticks {
+        if adapter.result().is_some() {
+            return Err(AdapterError::MatchOver);
+        }
         while let Some(action) = pending.next_if(|a| a.tick <= tick) {
             adapter.apply(action)?;
         }
         events.clear();
         adapter.advance(&mut events);
+    }
+    if let Some(late) = pending.next() {
+        return Err(AdapterError::WrongTick {
+            expected: record.ticks,
+            got: late.tick,
+        });
     }
     Ok(adapter.digest(adapter.live()))
 }

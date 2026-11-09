@@ -387,3 +387,20 @@ fn watching_the_insight_view_does_not_change_the_match() {
     };
     assert_eq!(play(true), play(false));
 }
+
+#[test]
+fn the_insight_view_predicts_a_habitual_shot() {
+    let mut d = difficulty(1, 0.0);
+    d.reaction_ms = 0;
+    let mut game = Line::new(0.5, 0.0);
+    let mut p = reading();
+    p.shots_at = Some(2);
+    let mut b = bot(d, p);
+    for _ in 0..4 {
+        drive(&mut game, &mut b, 8);
+        game.state.ball_v = 1e-9;
+        drive(&mut game, &mut b, 8);
+        game.state.ball_v = 0.0;
+    }
+    assert_eq!(b.insight().likely_shot, Some(2));
+}

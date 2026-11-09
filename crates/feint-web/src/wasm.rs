@@ -78,6 +78,35 @@ impl WebMatch {
             .collect()
     }
 
+    pub fn current_shown(&self) -> i32 {
+        self.session
+            .insight()
+            .current
+            .and_then(|c| c.shown)
+            .map_or(-1, i32::from)
+    }
+
+    pub fn current_real(&self) -> i32 {
+        self.session
+            .insight()
+            .current
+            .and_then(|c| c.real)
+            .map_or(-1, i32::from)
+    }
+
+    pub fn table(&self) -> Vec<f32> {
+        let p = Params::default();
+        [
+            p.half_length,
+            p.half_width,
+            p.mouth_half_width,
+            p.puck_radius,
+            p.mallet_radius,
+        ]
+        .map(|v| v as f32)
+        .to_vec()
+    }
+
     pub fn class_point(&self, attacker: u8, class: u8) -> Vec<f32> {
         let p = self.session.playbook().class_point(attacker, class);
         vec![p.x as f32, p.y as f32]

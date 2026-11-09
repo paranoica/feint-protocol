@@ -111,3 +111,44 @@ fn last_len(bytes: &[u8]) -> usize {
     }
     last
 }
+
+#[test]
+fn a_replay_stops_where_the_match_ended_and_refuses_longer_claims() {
+    let mut game = Line::new(0.0, 0.3);
+    game.end_at = Some(120);
+    let spec = game.spec();
+    let d = |l| Difficulty::preset(l).unwrap();
+    let mut a = Bot::new(d(2), LinePlaybook::new(&[-0.6, 0.6], 60), &spec).unwrap();
+    let mut b = Bot::new(d(4), LinePlaybook::new(&[-0.6, 0.6], 60), &spec).unwrap();
+    let report = run_match(&mut game, [&mut a, &mut b], header(), 1_000).unwrap();
+    assert!(report.finished && report.ticks == 120);
+    let fresh = || {
+        let mut g = Line::new(0.0, 0.3);
+        g.end_at = Some(120);
+        g
+    };
+    let record = report.record();
+    assert_eq!(replay_record(&mut fresh(), &record).unwrap(), report.digest);
+
+    let mut longer = record.clone();
+    longer.ticks = 10_000;
+    assert!(
+        replay_record(&mut fresh(), &longer).is_err(),
+        "more ticks than the match had"
+    );
+    let mut endless = record.clone();
+    endless.ticks = u64::MAX;
+    assert!(
+        replay_record(&mut fresh(), &endless).is_err(),
+        "more ticks than the match had"
+    );
+
+    let mut leftover = record.clone();
+    let mut late = leftover.actions.last().unwrap().clone();
+    late.tick = 500;
+    leftover.actions.push(late);
+    assert!(
+        replay_record(&mut fresh(), &leftover).is_err(),
+        "actions after the end"
+    );
+}
