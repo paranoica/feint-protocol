@@ -45,7 +45,19 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: scripts/gen-protocol.sh --check
+      - name: Install wasm-bindgen CLI 0.2.128 (must match the wasm-bindgen crate)
+        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
       - run: scripts/wasm-check.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - name: Front tests and types
+        run: |
+          (cd web && npm test --silent && npm run typecheck --silent)
+      - run: scripts/arena-check.sh
       - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored
       - name: Install cbindgen 0.29.4 (the header is checked against it)
         run: cargo install cbindgen --version 0.29.4 --locked
