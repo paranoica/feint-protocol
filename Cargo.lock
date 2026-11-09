@@ -457,6 +457,7 @@ dependencies = [
  "airhockey",
  "feint-ai",
  "feint-protocol",
+ "penalty",
  "wasm-bindgen",
 ]
 
@@ -861,6 +862,15 @@ dependencies = [
  "num-traits",
  "seq-macro",
  "twox-hash",
+]
+
+[[package]]
+name = "penalty"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "rand_chacha",
 ]
 
 [[package]]

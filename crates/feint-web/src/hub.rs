@@ -174,3 +174,87 @@ impl HubGame for AirHockey {
         [p.x as f32, p.y as f32]
     }
 }
+
+impl HubGame for penalty::Penalty {
+    type Book = penalty::PenaltyPlaybook;
+    type Human = Pad;
+    const ID: &'static str = "penalty";
+    const VERSION: u32 = penalty::GAME_VERSION;
+    const ARENA: bool = false;
+
+    fn build(level: u8) -> Self {
+        penalty::Penalty::new(penalty::Params::default(), level)
+    }
+
+    fn book() -> Self::Book {
+        penalty::PenaltyPlaybook::new(penalty::Params::default())
+    }
+
+    fn human_body() -> BodyParamsT {
+        let p = penalty::Params::default();
+        body([p.max_dive_speed, p.max_lean_rate])
+    }
+
+    fn score(&self) -> [u32; 2] {
+        self.live().score
+    }
+
+    fn tick(&self) -> u64 {
+        self.live().tick
+    }
+
+    fn tick_hz(&self) -> u32 {
+        self.live().params.tick_hz
+    }
+
+    fn pause(&self) -> f32 {
+        let s = self.live();
+        if s.phase == penalty::Phase::Settle {
+            let left = s.params.settle_ticks.saturating_sub(s.t);
+            (f64::from(left) / f64::from(s.params.tick_hz)) as f32
+        } else {
+            0.0
+        }
+    }
+
+    fn view(&self) -> Vec<f32> {
+        let s = self.live();
+        let flight = if s.phase == penalty::Phase::Flight {
+            f64::from(s.t) / f64::from(s.params.flight_ticks)
+        } else if s.phase == penalty::Phase::Settle {
+            1.0
+        } else {
+            0.0
+        };
+        let dive = s.dive.map_or(s.keeper_y, |d| d.target);
+        let diving = s.dive.is_some_and(|d| d.left > 0);
+        [
+            f64::from(s.shooter()),
+            s.phase.code(),
+            s.dist,
+            s.lean,
+            s.ball_y,
+            flight,
+            s.keeper_y,
+            dive,
+            f64::from(u8::from(diving)),
+            f64::from(s.kicks),
+            s.last_goal.map_or(-1.0, |g| f64::from(u8::from(g))),
+            s.aim.unwrap_or(0.0),
+        ]
+        .map(|v| v as f32)
+        .to_vec()
+    }
+
+    fn layout(&self) -> Vec<f32> {
+        let p = &self.live().params;
+        [p.half_goal, p.keeper_reach, p.run_up, p.wide, p.kick_range]
+            .map(|v| v as f32)
+            .to_vec()
+    }
+
+    fn class_point(book: &Self::Book, _attacker: u8, class: u8) -> [f32; 2] {
+        let [x, y] = book.class_point(class);
+        [x as f32, y as f32]
+    }
+}

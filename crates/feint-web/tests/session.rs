@@ -428,3 +428,34 @@ fn a_pad_sends_every_one_shot_and_a_held_target_only_when_it_changes() {
     pad.push(&[f32::INFINITY]);
     assert_eq!(tick(&mut pad), None, "non-finite input is ignored");
 }
+
+#[test]
+fn a_penalty_shootout_plays_through_the_hub_with_one_shot_inputs() {
+    use feint_web::Play;
+    let mut game = Play::<penalty::Penalty>::new(3, 5).unwrap();
+    let mut guard = 0;
+    while !game.finished() {
+        let v = game.view();
+        let human_shoots = v[0] == 0.0;
+        if human_shoots {
+            game.set_input(&[0.8, 1.0, 0.0, 2.8]);
+            if v[1] == 0.0 && v[2] < 0.6 {
+                game.push_input(&[0.8, 1.0, 1.0, -2.8]);
+            }
+        } else {
+            game.set_input(&[0.0, 0.0, 0.0, 0.0]);
+        }
+        game.advance(4);
+        guard += 1;
+        assert!(guard < 240 * 60 * 5, "the shootout never ended");
+    }
+    let score = game.score();
+    assert!(score[0] > 0, "the human's kicks scored nothing: {score:?}");
+    assert!(score[0] != score[1] || game.tick() > 0);
+    assert!(game.record().len() > 50);
+    let mut watched = Play::<penalty::Penalty>::spectate(5, 2, 1).unwrap();
+    while !watched.finished() {
+        watched.advance(16);
+    }
+    assert!(watched.record().is_empty());
+}

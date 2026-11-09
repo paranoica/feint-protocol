@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 airhockey = { path = "../games/airhockey" }
+penalty.workspace = true
 feint-ai.workspace = true
 feint-protocol.workspace = true
 
