@@ -10,6 +10,7 @@ use feint_arena::{Arena, Store, router};
 use feint_web::Session;
 
 struct Server {
+    arena: Arc<Arena>,
     addr: SocketAddr,
     data: PathBuf,
     clock: Arc<AtomicU64>,
@@ -52,8 +53,10 @@ fn start_full(name: &str, workers: usize, body_timeout: Duration) -> Server {
         .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    rt.spawn(async move { axum::serve(listener, router(arena)).await });
+    let served = arena.clone();
+    rt.spawn(async move { axum::serve(listener, router(served)).await });
     Server {
+        arena,
         addr,
         data,
         clock,
@@ -678,16 +681,14 @@ fn a_stalled_body_times_out_and_frees_its_slot() {
 #[test]
 fn a_verification_keeps_its_slot_after_the_client_leaves() {
     let s = start("leave");
-    let long = |s: &Server| {
-        let (t, seed) = ticket(s);
-        let mut game = Session::new(5, seed).unwrap();
-        while !game.finished() && game.tick() < 240 * 60 * 6 {
-            game.set_pointer(-0.6, if game.tick() % 960 < 480 { 0.3 } else { -0.3 });
-            game.advance(8);
-        }
-        (t, game.record())
-    };
-    let runs: Vec<_> = (0..2).map(|_| long(&s)).collect();
+    let runs: Vec<_> = (0..2)
+        .map(|i| {
+            let (t, seed) = ticket(&s);
+            let _ = i;
+            (t, finished(1, seed, None).record())
+        })
+        .collect();
+    let paused = s.arena.pause().unwrap();
     for (t, bytes) in &runs {
         let mut c = TcpStream::connect(s.addr).unwrap();
         let head = format!(
@@ -697,9 +698,23 @@ fn a_verification_keeps_its_slot_after_the_client_leaves() {
         );
         c.write_all(head.as_bytes()).unwrap();
         c.write_all(bytes).unwrap();
-        std::thread::sleep(Duration::from_millis(100));
+        let k = runs.iter().position(|r| &r.0 == t).unwrap() + 1;
+        let began = Instant::now();
+        while s.arena.verifying() < k {
+            assert!(
+                began.elapsed() < Duration::from_secs(5),
+                "the upload never reached verification"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
         drop(c);
     }
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        s.arena.free_slots(),
+        0,
+        "the clients left; their verifications still hold both slots"
+    );
     let (t, seed) = ticket(&s);
     let quick = finished(1, seed, None).record();
     assert_eq!(
@@ -710,7 +725,47 @@ fn a_verification_keeps_its_slot_after_the_client_leaves() {
             &quick
         )
         .status,
-        503,
-        "both slots still verify the abandoned uploads"
+        503
     );
+    drop(paused);
+    let began = Instant::now();
+    while s.arena.free_slots() < 2 {
+        assert!(
+            began.elapsed() < Duration::from_secs(30),
+            "slots never came back"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        count(&s, "SELECT COUNT(*) FROM matches"),
+        2,
+        "the abandoned uploads were still stored"
+    );
+}
+
+#[test]
+fn a_ticket_that_expires_while_its_upload_waits_is_refused() {
+    let s = start("expiring");
+    let (t, seed) = ticket(&s);
+    let bytes = finished(1, seed, None).record();
+    let paused = s.arena.pause().unwrap();
+    let addr = s.addr;
+    let upload = std::thread::spawn(move || {
+        call(
+            addr,
+            "POST",
+            &format!("/api/matches?nick=a&ticket={t}"),
+            &bytes,
+        )
+        .status
+    });
+    let began = Instant::now();
+    while s.arena.verifying() < 1 {
+        assert!(began.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    s.clock.fetch_add(46 * 60, Ordering::SeqCst);
+    drop(paused);
+    assert_eq!(upload.join().unwrap(), 409);
+    assert_eq!(count(&s, "SELECT COUNT(*) FROM matches"), 0);
 }

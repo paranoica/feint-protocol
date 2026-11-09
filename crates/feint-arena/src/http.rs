@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
 use axum::Router;
@@ -28,6 +29,8 @@ pub struct Arena {
     matches: PathBuf,
     dist: PathBuf,
     gate: Arc<Semaphore>,
+    pause: Arc<RwLock<()>>,
+    verifying: AtomicUsize,
     body_timeout: Duration,
     clock: Clock,
     rng: Mutex<ChaCha8Rng>,
@@ -52,10 +55,26 @@ impl Arena {
             store: Mutex::new(store),
             dist,
             gate: Arc::new(Semaphore::new(VERIFY_SLOTS)),
+            pause: Arc::new(RwLock::new(())),
+            verifying: AtomicUsize::new(0),
             body_timeout,
             clock,
             rng: Mutex::new(ChaCha8Rng::from_seed(seed)),
         })
+    }
+
+    #[must_use]
+    pub fn free_slots(&self) -> usize {
+        self.gate.available_permits()
+    }
+
+    #[must_use]
+    pub fn verifying(&self) -> usize {
+        self.verifying.load(Ordering::SeqCst)
+    }
+
+    pub fn pause(&self) -> Option<RwLockWriteGuard<'_, ()>> {
+        self.pause.write().ok()
     }
 
     fn with_store<T>(
@@ -223,7 +242,6 @@ impl Refusal {
 }
 
 struct Claim {
-    now: u64,
     seed: u64,
     nick: String,
     ticket: String,
@@ -256,9 +274,6 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
         Some(n) if n > MAX_BODY => return error(StatusCode::PAYLOAD_TOO_LARGE, "size"),
         Some(_) => {}
     }
-    let Ok(permit) = arena.gate.clone().try_acquire_owned() else {
-        return error(StatusCode::SERVICE_UNAVAILABLE, "busy");
-    };
     let now = (arena.clock)();
     let work = arena.clone();
     let token = ticket.clone();
@@ -268,13 +283,15 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
         Some(Err(StoreError::Ticket)) => return Refusal::Conflict.response(),
         _ => return Refusal::Internal.response(),
     };
+    let Ok(permit) = arena.gate.clone().try_acquire_owned() else {
+        return error(StatusCode::SERVICE_UNAVAILABLE, "busy");
+    };
     let bytes = match tokio::time::timeout(arena.body_timeout, to_bytes(body, MAX_BODY)).await {
         Ok(Ok(bytes)) => bytes,
         Ok(Err(_)) => return error(StatusCode::BAD_REQUEST, "body"),
         Err(_) => return error(StatusCode::REQUEST_TIMEOUT, "body"),
     };
     let claim = Claim {
-        now,
         seed,
         nick,
         ticket,
@@ -283,7 +300,10 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
     let work = arena.clone();
     let verified = blocking(move || {
         let _slot = permit;
-        accept(&work, &claim, &bytes)
+        work.verifying.fetch_add(1, Ordering::SeqCst);
+        let result = accept(&work, &claim, &bytes);
+        work.verifying.fetch_sub(1, Ordering::SeqCst);
+        result
     });
     match verified.await {
         Some(Ok(saved)) => {
@@ -301,6 +321,8 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
 }
 
 fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
+    let _running = arena.pause.read().map_err(|_| Refusal::Internal)?;
+    let now = (arena.clock)();
     let blob = match claim.used {
         Some(v) => Some(
             arena
@@ -314,7 +336,7 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
         None => None,
     };
     let claimed = arena
-        .with_store(|store| store.try_ticket(claim.now, &claim.ticket))
+        .with_store(|store| store.try_ticket(now, &claim.ticket))
         .map_err(|e| match e {
             StoreError::Ticket => Refusal::Conflict,
             _ => Refusal::Internal,
@@ -330,7 +352,7 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
         return Err(Refusal::Bad("unfinished"));
     }
     let upload = Upload {
-        now: claim.now,
+        now,
         nick: &claim.nick,
         token: &claim.ticket,
         used: claim.used,
