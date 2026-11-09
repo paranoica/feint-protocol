@@ -35,8 +35,8 @@ test("the debug readings have their shapes", () => {
   assert.equal(hard.likely_cover().length, 3);
   assert.ok(hard.intent() >= 2, `intent ${hard.intent()}`);
   assert.equal(hard.likely_shot(), -1, "no shots seen yet");
-  assert.deepEqual(Array.from(hard.class_point(0, 2)).map((v) => Math.round(v * 100) / 100), [1, 0.07]);
-  assert.deepEqual(Array.from(hard.table()).map((v) => Math.round(v * 1000) / 1000), [1, 0.5, 0.125, 0.04, 0.05]);
+  assert.deepEqual(Array.from(hard.class_point(0, 2)).map((v) => Math.round(v * 100) / 100), [1, 0.08]);
+  assert.deepEqual(Array.from(hard.table()).map((v) => Math.round(v * 1000) / 1000), [1, 0.5, 0.15, 0.05, 0.07]);
   assert.ok(hard.current_real() >= -1 && hard.current_real() <= 2);
   assert.ok(hard.current_shown() >= -1 && hard.current_shown() <= 2);
   assert.throws(() => new WebMatch(0, 1));
@@ -57,4 +57,18 @@ test("a level-5 profile goes out and back in", () => {
   assert.throws(() => WebMatch.new_with_profile(4, 4, bytes));
   assert.throws(() => WebMatch.new_with_profile(5, 4, new Uint8Array([1, 2, 3])));
   assert.equal(new WebMatch(2, 1).profile().length, 0);
+});
+
+test("the serve pause is readable and starts at a goal", () => {
+  const game = new WebMatch(1, 7);
+  assert.equal(game.serve_pause(), 0);
+  let goals = 0;
+  for (let i = 0; i < 240 * 300 && goals === 0; i++) {
+    const p = game.positions();
+    game.set_pointer(p[0], p[1]);
+    goals = game.advance(1);
+  }
+  assert.equal(goals, 1);
+  assert.ok(Math.abs(game.serve_pause() - 1) < 1e-6, `${game.serve_pause()}`);
+  game.free();
 });

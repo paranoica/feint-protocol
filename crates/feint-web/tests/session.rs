@@ -326,3 +326,32 @@ fn a_replayer_reproduces_a_session_record_byte_for_byte() {
     .unwrap();
     assert_eq!(feint_ai::encode_record(&report.record()), bytes);
 }
+
+#[test]
+fn a_goal_starts_the_serve_pause_the_front_can_show() {
+    let mut session = Session::new(1, 7).unwrap();
+    assert_eq!(session.serve_pause(), 0.0);
+    let mut ticks = 0;
+    while session
+        .advance(1)
+        .iter()
+        .all(|e| e.kind != feint_protocol::EventKind::Score)
+    {
+        let p = session.positions();
+        session.set_pointer(p[0], p[1]);
+        ticks += 1;
+        assert!(ticks < 240 * 300, "no goal in five minutes");
+    }
+    let full = airhockey::Params::default().serve_pause_seconds as f32;
+    assert!(
+        (session.serve_pause() - full).abs() < 1e-6,
+        "{}",
+        session.serve_pause()
+    );
+    session.advance(120);
+    assert!(
+        (session.serve_pause() - full / 2.0).abs() < 1e-6,
+        "{}",
+        session.serve_pause()
+    );
+}
