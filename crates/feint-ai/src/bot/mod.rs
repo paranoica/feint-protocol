@@ -7,7 +7,7 @@ use feint_protocol::{
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
-use crate::insight::Insight;
+use crate::insight::{Insight, Seen};
 use crate::long_game::Plan;
 use crate::model::{Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
@@ -52,6 +52,7 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     current: Option<Committed>,
     last_replan: Option<u64>,
     newest: Option<u64>,
+    observed: Option<u64>,
     history: VecDeque<ActionT>,
     options: Vec<Choice>,
     insight: Insight<A::State>,
@@ -98,6 +99,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             current: None,
             last_replan: None,
             newest: None,
+            observed: None,
             history: VecDeque::new(),
             options: Vec::new(),
             insight,
@@ -206,6 +208,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         self.current = None;
         self.last_replan = None;
         self.newest = None;
+        self.observed = None;
         self.history.clear();
         self.insight.new_match();
         self.plan.reset();
@@ -227,6 +230,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             self.buffer.clear();
             self.last_replan = None;
             self.current = None;
+            self.observed = None;
             self.insight.forget_moment();
         }
         self.newest = Some(now);
@@ -244,9 +248,13 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         let mut state = adapter.state_from_observation(&seen, &mut self.rng);
         let them = self.opponent();
         let score = seen.score.as_deref().unwrap_or(&[]);
-        let fresh = self
-            .insight
-            .observe::<A, P>(&self.playbook, &state, score, self.me, them);
+        let fresh = if self.observed == Some(seen.tick) {
+            Seen::default()
+        } else {
+            self.observed = Some(seen.tick);
+            self.insight
+                .observe::<A, P>(&self.playbook, &state, score, self.me, them)
+        };
         if fresh.rally {
             self.plan.rally();
         }

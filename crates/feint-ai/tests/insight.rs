@@ -200,3 +200,28 @@ fn a_twitch_is_not_read_while_the_opponent_has_the_ball() {
     drive(&mut game, &mut b, 30);
     assert_eq!(*b.playbook().twitches.borrow().last().unwrap(), None);
 }
+
+#[test]
+fn a_frozen_tick_is_one_sample() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 3, [0, 0]);
+    assert_eq!(game.state.tick % 4, 0, "freeze on a decision tick");
+    let mut obs = ObservationT::default();
+    game.observe(&game.state, 0, &mut obs);
+    obs.score = Some(vec![0, 0]);
+    for _ in 0..100 {
+        b.on_tick(&game, &obs);
+    }
+    drive_score(&mut game, &mut b, 8, [1, 0]);
+    assert_eq!(
+        b.profile("line").unwrap().fake_wins,
+        1.0,
+        "a paused host closed the attempt"
+    );
+}
