@@ -1,0 +1,17 @@
+[package]
+name = "penalty"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+feint-ai.workspace = true
+feint-protocol.workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true
+
+[lints]
+workspace = true

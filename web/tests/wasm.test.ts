@@ -100,7 +100,7 @@ test("two bots play for a watcher and each shows its own mind", () => {
 });
 
 test("the hub builds a game by id and keeps the hockey entry points", () => {
-  assert.deepEqual(Array.from(games()), ["airhockey"]);
+  assert.deepEqual(Array.from(games()), ["airhockey", "penalty"]);
   const game = WebMatch.create("airhockey", 2, 5);
   assert.equal(game.game_id(), "airhockey");
   assert.equal(game.arena(), true);
@@ -117,4 +117,24 @@ test("the hub builds a game by id and keeps the hockey entry points", () => {
   assert.equal(WebMatch.watch("airhockey", 1, 5, 0).spectating(), true);
   game.free();
   same.free();
+});
+
+test("a penalty shootout runs in wasm with presses as one-shot inputs", () => {
+  const game = WebMatch.create("penalty", 2, 3);
+  assert.equal(game.arena(), false);
+  assert.equal(game.layout().length, 5);
+  let kicked = 0;
+  for (let i = 0; i < 240 * 600 && !game.finished(); i += 4) {
+    const v = game.view();
+    if (v[0] === 0 && v[1] === 0 && v[2] < 0.6 && kicked < 10) {
+      game.push_input(new Float32Array([0.8, 1, 1, 2.8]));
+      kicked += 1;
+    } else {
+      game.set_input(new Float32Array([0, 1, 0, 0]));
+    }
+    game.advance(4);
+  }
+  assert.ok(game.finished(), "the shootout finished");
+  assert.ok(Array.from(game.score()).some((g) => g > 0));
+  game.free();
 });

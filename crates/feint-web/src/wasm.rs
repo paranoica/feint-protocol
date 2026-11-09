@@ -1,6 +1,7 @@
 use airhockey::AirHockey;
 use feint_ai::{InsightView, Profile, decode_profile, encode_profile};
 use feint_protocol::EventKind;
+use penalty::Penalty;
 use wasm_bindgen::prelude::*;
 
 use crate::hub::HubGame;
@@ -113,6 +114,9 @@ fn start(game: &str, level: u8, seed: u32) -> Result<Box<dyn Live>, JsValue> {
     let seed = u64::from(seed);
     match game {
         <AirHockey as HubGame>::ID => Ok(Box::new(Session::new(level, seed).map_err(unknown)?)),
+        <Penalty as HubGame>::ID => Ok(Box::new(
+            Play::<Penalty>::new(level, seed).map_err(unknown)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -123,6 +127,9 @@ fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>,
         <AirHockey as HubGame>::ID => Ok(Box::new(
             Session::spectate(left, right, seed).map_err(unknown)?,
         )),
+        <Penalty as HubGame>::ID => Ok(Box::new(
+            Play::<Penalty>::spectate(left, right, seed).map_err(unknown)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -130,7 +137,10 @@ fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>,
 #[must_use]
 #[wasm_bindgen]
 pub fn games() -> Vec<String> {
-    vec![<AirHockey as HubGame>::ID.to_string()]
+    vec![
+        <AirHockey as HubGame>::ID.to_string(),
+        <Penalty as HubGame>::ID.to_string(),
+    ]
 }
 
 #[wasm_bindgen]

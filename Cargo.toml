@@ -5,6 +5,7 @@ members = [
     "crates/feint-ai",
     "crates/games/airhockey",
     "crates/games/airhockey-check",
+    "crates/games/penalty",
     "crates/feint-web",
     "crates/feint-arena",
     "crates/feint-ffi",
@@ -20,6 +21,7 @@ publish = false
 [workspace.dependencies]
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
+penalty = { path = "crates/games/penalty" }
 flatbuffers = "=25.12.19"
 rand_chacha = "0.9"
 

@@ -236,7 +236,7 @@ async function begin(view: GameView, level: number) {
   watching = null;
   enter(view, game, next);
   dragHint.textContent = view.hint;
-  dragHint.hidden = false;
+  dragHint.hidden = view.hint === "";
   $("who").textContent = next.nick;
   $("lvl").textContent = `level ${level}`;
 }
