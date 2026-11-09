@@ -13,11 +13,11 @@
         <h1>Feint</h1>
         <label>Nick <input id="nick" maxlength="64" autocomplete="nickname" /></label>
         <div class="levels">
-          <button data-level="1">1</button>
-          <button data-level="2">2</button>
-          <button data-level="3">3</button>
-          <button data-level="4">4</button>
-          <button data-level="5">5</button>
+          <button data-level="1" disabled>1</button>
+          <button data-level="2" disabled>2</button>
+          <button data-level="3" disabled>3</button>
+          <button data-level="4" disabled>4</button>
+          <button data-level="5" disabled>5</button>
         </div>
         <p class="hint">Move the mouse to play. First to 7. Press D for the debug view.</p>
       </section>
@@ -29,6 +29,7 @@
       <section id="result" class="screen" hidden>
         <h2 id="verdict"></h2>
         <p id="final"></p>
+        <p id="saved" class="hint"></p>
         <button id="again">Again</button>
       </section>
     </main>

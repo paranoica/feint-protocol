@@ -42,3 +42,19 @@ test("the debug readings have their shapes", () => {
   assert.throws(() => new WebMatch(0, 1));
   assert.throws(() => new WebMatch(6, 1));
 });
+
+test("a level-5 profile goes out and back in", () => {
+  const first = new WebMatch(5, 3);
+  for (let i = 0; i < 400; i++) {
+    const p = first.positions();
+    first.set_pointer(p[0], p[1]);
+    first.advance(8);
+  }
+  const bytes = first.profile();
+  assert.ok(bytes.length > 0);
+  const second = WebMatch.new_with_profile(5, 4, bytes);
+  assert.ok(second.profile().length > 0);
+  assert.throws(() => WebMatch.new_with_profile(4, 4, bytes));
+  assert.throws(() => WebMatch.new_with_profile(5, 4, new Uint8Array([1, 2, 3])));
+  assert.equal(new WebMatch(2, 1).profile().length, 0);
+});

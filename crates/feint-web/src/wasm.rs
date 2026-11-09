@@ -1,4 +1,5 @@
 use airhockey::Params;
+use feint_ai::{decode_profile, encode_profile};
 use feint_protocol::EventKind;
 use wasm_bindgen::prelude::*;
 
@@ -16,6 +17,20 @@ impl WebMatch {
         Session::new(level, u64::from(seed))
             .map(|session| WebMatch { session })
             .map_err(|_| JsValue::from_str("level must be 1 to 5"))
+    }
+
+    pub fn new_with_profile(level: u8, seed: u32, profile: &[u8]) -> Result<WebMatch, JsValue> {
+        let profile = decode_profile(profile).map_err(|_| JsValue::from_str("bad profile"))?;
+        Session::with_profile(level, u64::from(seed), Some(&profile))
+            .map(|session| WebMatch { session })
+            .map_err(|_| JsValue::from_str("this level takes no profile"))
+    }
+
+    pub fn profile(&self) -> Vec<u8> {
+        self.session
+            .profile()
+            .map(|p| encode_profile(&p))
+            .unwrap_or_default()
     }
 
     pub fn set_pointer(&mut self, x: f32, y: f32) {

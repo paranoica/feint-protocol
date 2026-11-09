@@ -76,7 +76,20 @@ table MatchResult {
   seed: ulong;
 }
 
-union Message { GameSpec, Observation, Action, Event, MatchHeader, MatchResult }
+table Profile {
+  game_id: string;
+  classes: ubyte;
+  bite: [double];
+  bite_events: [uint];
+  shots: [double];
+  shot_events: uint;
+  mine: [double];
+  mine_events: [uint];
+  fake_tries: double;
+  fake_wins: double;
+}
+
+union Message { GameSpec, Observation, Action, Event, MatchHeader, MatchResult, Profile }
 
 table Envelope {
   protocol_version: string;

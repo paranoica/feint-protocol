@@ -1,6 +1,7 @@
 import init, { WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { fit, pixels, toCanvas, toTable, TABLE, type Fit, type Table } from "./geometry.ts";
+import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { describe } from "./overlay.ts";
 import { again, finish, first, start, type Screen } from "./screens.ts";
 
@@ -23,6 +24,10 @@ let showDebug = false;
 let table: Table = TABLE;
 let sizes = { mouth: 0.125, puck: 0.04, mallet: 0.05 };
 let lastRecord: Uint8Array | null = null;
+let starting = false;
+let pointerTick = -Infinity;
+const POINTER_TICKS = 4;
+let playing: { ticket: Ticket | null; profile: number | null } = { ticket: null, profile: null };
 
 function readNick(): string {
   try {
@@ -154,8 +159,15 @@ function drawDebug(match: WebMatch, f: Fit) {
 function frame(now: number) {
   if (screen.name === "game" && game) {
     const ticks = due(clock, now, document.hidden, game.tick_hz(), TICK_CAP * speed, speed);
-    game.set_pointer(pointer[0], pointer[1]);
-    game.advance(ticks);
+    for (let done = 0; done < ticks; ) {
+      if (game.tick() >= pointerTick + POINTER_TICKS) {
+        game.set_pointer(pointer[0], pointer[1]);
+        pointerTick = game.tick();
+      }
+      const step = Math.min(ticks - done, POINTER_TICKS);
+      game.advance(step);
+      done += step;
+    }
     const [you, bot] = Array.from(game.score());
     $("score").textContent = `${you} : ${bot}`;
     draw(game);
@@ -164,19 +176,75 @@ function frame(now: number) {
       game.free();
       game = null;
       show(finish(screen, [you, bot]));
+      void upload(lastRecord);
     }
   }
   requestAnimationFrame(frame);
 }
 
-function begin(level: number) {
-  const nick = $<HTMLInputElement>("nick").value;
-  const next = start(screen, level, nick);
-  if (next.name !== "game") {
+async function fetchTicket(): Promise<Ticket | null> {
+  try {
+    const response = await fetch("/api/seed", seedRequest());
+    return response.ok ? ticketFrom(await response.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchProfile(nick: string): Promise<{ version: number; bytes: Uint8Array } | null> {
+  try {
+    const response = await fetch(profilePath(nick));
+    const version = profileVersion(response.headers.get("x-profile-version"));
+    if (response.status !== 200 || version === null) {
+      return null;
+    }
+    return { version, bytes: new Uint8Array(await response.arrayBuffer()) };
+  } catch {
+    return null;
+  }
+}
+
+async function upload(record: Uint8Array) {
+  const saved = $("saved");
+  const { ticket, profile } = playing;
+  if (ticket === null || screen.name !== "result") {
+    saved.textContent = "not saved: no arena";
     return;
   }
+  saved.textContent = "saving…";
+  try {
+    const response = await fetch(uploadPath(screen.nick, ticket.ticket, profile), {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-feint": "1" },
+      body: new Uint8Array(record),
+    });
+    saved.textContent = response.status === 201 ? "saved" : `not saved: ${response.status}`;
+  } catch {
+    saved.textContent = "not saved: arena unreachable";
+  }
+}
+
+async function begin(level: number) {
+  const nick = $<HTMLInputElement>("nick").value;
+  const next = start(screen, level, nick);
+  if (next.name !== "game" || starting) {
+    return;
+  }
+  starting = true;
   saveNick(next.nick);
-  game = new WebMatch(level, (Math.random() * 2 ** 32) >>> 0);
+  const ticket = await fetchTicket();
+  const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick) : null;
+  const seed = ticket?.seed ?? localSeed(Math.random);
+  playing = { ticket, profile: profile?.version ?? null };
+  try {
+    game = profile ? WebMatch.new_with_profile(level, seed, profile.bytes) : new WebMatch(level, seed);
+  } catch {
+    playing = { ticket, profile: null };
+    game = new WebMatch(level, seed);
+  }
+  pointerTick = -Infinity;
+  starting = false;
+  $("saved").textContent = "";
   const [halfLength, halfWidth, mouth, puck, mallet] = Array.from(game.table());
   table = { halfLength, halfWidth };
   sizes = { mouth, puck, mallet };
@@ -190,7 +258,8 @@ function begin(level: number) {
 async function main() {
   await init();
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-level]")) {
-    button.addEventListener("click", () => begin(Number(button.dataset.level)));
+    button.addEventListener("click", () => void begin(Number(button.dataset.level)));
+    button.disabled = false;
   }
   $("again").addEventListener("click", () => show(again(screen)));
   canvas.addEventListener("pointerdown", (e) => canvas.setPointerCapture(e.pointerId));

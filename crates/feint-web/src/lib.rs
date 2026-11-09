@@ -3,4 +3,4 @@ mod session;
 #[allow(unsafe_code)]
 mod wasm;
 
-pub use session::{Pointer, Session, SessionError};
+pub use session::{GAME_ID, Pointer, Replayer, Session, SessionError};

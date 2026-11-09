@@ -191,10 +191,10 @@ impl ::flatbuffers::SimpleToVerifyInSlice for EventKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE: u8 = 6;
+pub const ENUM_MAX_MESSAGE: u8 = 7;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE: [Message; 7] = [
+pub const ENUM_VALUES_MESSAGE: [Message; 8] = [
   Message::NONE,
   Message::GameSpec,
   Message::Observation,
@@ -202,6 +202,7 @@ pub const ENUM_VALUES_MESSAGE: [Message; 7] = [
   Message::Event,
   Message::MatchHeader,
   Message::MatchResult,
+  Message::Profile,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -216,9 +217,10 @@ impl Message {
   pub const Event: Self = Self(4);
   pub const MatchHeader: Self = Self(5);
   pub const MatchResult: Self = Self(6);
+  pub const Profile: Self = Self(7);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 6;
+  pub const ENUM_MAX: u8 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GameSpec,
@@ -227,6 +229,7 @@ impl Message {
     Self::Event,
     Self::MatchHeader,
     Self::MatchResult,
+    Self::Profile,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -238,6 +241,7 @@ impl Message {
       Self::Event => Some("Event"),
       Self::MatchHeader => Some("MatchHeader"),
       Self::MatchResult => Some("MatchResult"),
+      Self::Profile => Some("Profile"),
       _ => None,
     }
   }
@@ -305,6 +309,7 @@ pub enum MessageT {
   Event(alloc::boxed::Box<EventT>),
   MatchHeader(alloc::boxed::Box<MatchHeaderT>),
   MatchResult(alloc::boxed::Box<MatchResultT>),
+  Profile(alloc::boxed::Box<ProfileT>),
 }
 impl Default for MessageT {
   fn default() -> Self {
@@ -321,6 +326,7 @@ impl MessageT {
       Self::Event(_) => Message::Event,
       Self::MatchHeader(_) => Message::MatchHeader,
       Self::MatchResult(_) => Message::MatchResult,
+      Self::Profile(_) => Message::Profile,
     }
   }
   pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(&self, fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>) -> Option<::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>> {
@@ -332,6 +338,7 @@ impl MessageT {
       Self::Event(v) => Some(v.pack(fbb).as_union_value()),
       Self::MatchHeader(v) => Some(v.pack(fbb).as_union_value()),
       Self::MatchResult(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Profile(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned GameSpecT, setting the union to NONE.
@@ -459,6 +466,27 @@ impl MessageT {
   /// If the union variant matches, return a mutable reference to the MatchResultT.
   pub fn as_match_result_mut(&mut self) -> Option<&mut MatchResultT> {
     if let Self::MatchResult(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned ProfileT, setting the union to NONE.
+  pub fn take_profile(&mut self) -> Option<alloc::boxed::Box<ProfileT>> {
+    if let Self::Profile(_) = self {
+      let v = ::core::mem::replace(self, Self::NONE);
+      if let Self::Profile(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the ProfileT.
+  pub fn as_profile(&self) -> Option<&ProfileT> {
+    if let Self::Profile(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the ProfileT.
+  pub fn as_profile_mut(&mut self) -> Option<&mut ProfileT> {
+    if let Self::Profile(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 pub enum DimOffset {}
@@ -2440,6 +2468,362 @@ impl MatchResultT {
     })
   }
 }
+pub enum ProfileOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Profile<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for Profile<'a> {
+  type Inner = Profile<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> Profile<'a> {
+  pub const VT_GAME_ID: ::flatbuffers::VOffsetT = 4;
+  pub const VT_CLASSES: ::flatbuffers::VOffsetT = 6;
+  pub const VT_BITE: ::flatbuffers::VOffsetT = 8;
+  pub const VT_BITE_EVENTS: ::flatbuffers::VOffsetT = 10;
+  pub const VT_SHOTS: ::flatbuffers::VOffsetT = 12;
+  pub const VT_SHOT_EVENTS: ::flatbuffers::VOffsetT = 14;
+  pub const VT_MINE: ::flatbuffers::VOffsetT = 16;
+  pub const VT_MINE_EVENTS: ::flatbuffers::VOffsetT = 18;
+  pub const VT_FAKE_TRIES: ::flatbuffers::VOffsetT = 20;
+  pub const VT_FAKE_WINS: ::flatbuffers::VOffsetT = 22;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Profile { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ProfileArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<Profile<'bldr>> {
+    let mut builder = ProfileBuilder::new(_fbb);
+    builder.add_fake_wins(args.fake_wins);
+    builder.add_fake_tries(args.fake_tries);
+    if let Some(x) = args.mine_events { builder.add_mine_events(x); }
+    if let Some(x) = args.mine { builder.add_mine(x); }
+    builder.add_shot_events(args.shot_events);
+    if let Some(x) = args.shots { builder.add_shots(x); }
+    if let Some(x) = args.bite_events { builder.add_bite_events(x); }
+    if let Some(x) = args.bite { builder.add_bite(x); }
+    if let Some(x) = args.game_id { builder.add_game_id(x); }
+    builder.add_classes(args.classes);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ProfileT {
+    let game_id = self.game_id().map(|x| {
+      alloc::string::ToString::to_string(x)
+    });
+    let classes = self.classes();
+    let bite = self.bite().map(|x| {
+      x.into_iter().collect()
+    });
+    let bite_events = self.bite_events().map(|x| {
+      x.into_iter().collect()
+    });
+    let shots = self.shots().map(|x| {
+      x.into_iter().collect()
+    });
+    let shot_events = self.shot_events();
+    let mine = self.mine().map(|x| {
+      x.into_iter().collect()
+    });
+    let mine_events = self.mine_events().map(|x| {
+      x.into_iter().collect()
+    });
+    let fake_tries = self.fake_tries();
+    let fake_wins = self.fake_wins();
+    ProfileT {
+      game_id,
+      classes,
+      bite,
+      bite_events,
+      shots,
+      shot_events,
+      mine,
+      mine_events,
+      fake_tries,
+      fake_wins,
+    }
+  }
+
+  #[inline]
+  pub fn game_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Profile::VT_GAME_ID, None)}
+  }
+  #[inline]
+  pub fn classes(&self) -> u8 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u8>(Profile::VT_CLASSES, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn bite(&self) -> Option<::flatbuffers::Vector<'a, f64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_BITE, None)}
+  }
+  #[inline]
+  pub fn bite_events(&self) -> Option<::flatbuffers::Vector<'a, u32>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u32>>>(Profile::VT_BITE_EVENTS, None)}
+  }
+  #[inline]
+  pub fn shots(&self) -> Option<::flatbuffers::Vector<'a, f64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_SHOTS, None)}
+  }
+  #[inline]
+  pub fn shot_events(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(Profile::VT_SHOT_EVENTS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn mine(&self) -> Option<::flatbuffers::Vector<'a, f64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_MINE, None)}
+  }
+  #[inline]
+  pub fn mine_events(&self) -> Option<::flatbuffers::Vector<'a, u32>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u32>>>(Profile::VT_MINE_EVENTS, None)}
+  }
+  #[inline]
+  pub fn fake_tries(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Profile::VT_FAKE_TRIES, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn fake_wins(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Profile::VT_FAKE_WINS, Some(0.0)).unwrap()}
+  }
+}
+
+impl ::flatbuffers::Verifiable for Profile<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("game_id", Self::VT_GAME_ID, false)?
+     .visit_field::<u8>("classes", Self::VT_CLASSES, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("bite", Self::VT_BITE, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("bite_events", Self::VT_BITE_EVENTS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("shots", Self::VT_SHOTS, false)?
+     .visit_field::<u32>("shot_events", Self::VT_SHOT_EVENTS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("mine", Self::VT_MINE, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("mine_events", Self::VT_MINE_EVENTS, false)?
+     .visit_field::<f64>("fake_tries", Self::VT_FAKE_TRIES, false)?
+     .visit_field::<f64>("fake_wins", Self::VT_FAKE_WINS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ProfileArgs<'a> {
+    pub game_id: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub classes: u8,
+    pub bite: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
+    pub bite_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
+    pub shots: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
+    pub shot_events: u32,
+    pub mine: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
+    pub mine_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
+    pub fake_tries: f64,
+    pub fake_wins: f64,
+}
+impl<'a> Default for ProfileArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ProfileArgs {
+      game_id: None,
+      classes: 0,
+      bite: None,
+      bite_events: None,
+      shots: None,
+      shot_events: 0,
+      mine: None,
+      mine_events: None,
+      fake_tries: 0.0,
+      fake_wins: 0.0,
+    }
+  }
+}
+
+pub struct ProfileBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ProfileBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_game_id(&mut self, game_id: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_GAME_ID, game_id);
+  }
+  #[inline]
+  pub fn add_classes(&mut self, classes: u8) {
+    self.fbb_.push_slot::<u8>(Profile::VT_CLASSES, classes, 0);
+  }
+  #[inline]
+  pub fn add_bite(&mut self, bite: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_BITE, bite);
+  }
+  #[inline]
+  pub fn add_bite_events(&mut self, bite_events: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u32>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_BITE_EVENTS, bite_events);
+  }
+  #[inline]
+  pub fn add_shots(&mut self, shots: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_SHOTS, shots);
+  }
+  #[inline]
+  pub fn add_shot_events(&mut self, shot_events: u32) {
+    self.fbb_.push_slot::<u32>(Profile::VT_SHOT_EVENTS, shot_events, 0);
+  }
+  #[inline]
+  pub fn add_mine(&mut self, mine: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_MINE, mine);
+  }
+  #[inline]
+  pub fn add_mine_events(&mut self, mine_events: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u32>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_MINE_EVENTS, mine_events);
+  }
+  #[inline]
+  pub fn add_fake_tries(&mut self, fake_tries: f64) {
+    self.fbb_.push_slot::<f64>(Profile::VT_FAKE_TRIES, fake_tries, 0.0);
+  }
+  #[inline]
+  pub fn add_fake_wins(&mut self, fake_wins: f64) {
+    self.fbb_.push_slot::<f64>(Profile::VT_FAKE_WINS, fake_wins, 0.0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ProfileBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ProfileBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Profile<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for Profile<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Profile");
+      ds.field("game_id", &self.game_id());
+      ds.field("classes", &self.classes());
+      ds.field("bite", &self.bite());
+      ds.field("bite_events", &self.bite_events());
+      ds.field("shots", &self.shots());
+      ds.field("shot_events", &self.shot_events());
+      ds.field("mine", &self.mine());
+      ds.field("mine_events", &self.mine_events());
+      ds.field("fake_tries", &self.fake_tries());
+      ds.field("fake_wins", &self.fake_wins());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileT {
+  pub game_id: Option<alloc::string::String>,
+  pub classes: u8,
+  pub bite: Option<alloc::vec::Vec<f64>>,
+  pub bite_events: Option<alloc::vec::Vec<u32>>,
+  pub shots: Option<alloc::vec::Vec<f64>>,
+  pub shot_events: u32,
+  pub mine: Option<alloc::vec::Vec<f64>>,
+  pub mine_events: Option<alloc::vec::Vec<u32>>,
+  pub fake_tries: f64,
+  pub fake_wins: f64,
+}
+impl Default for ProfileT {
+  fn default() -> Self {
+    Self {
+      game_id: None,
+      classes: 0,
+      bite: None,
+      bite_events: None,
+      shots: None,
+      shot_events: 0,
+      mine: None,
+      mine_events: None,
+      fake_tries: 0.0,
+      fake_wins: 0.0,
+    }
+  }
+}
+impl ProfileT {
+  pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> ::flatbuffers::WIPOffset<Profile<'b>> {
+    let game_id = self.game_id.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let classes = self.classes;
+    let bite = self.bite.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let bite_events = self.bite_events.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let shots = self.shots.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let shot_events = self.shot_events;
+    let mine = self.mine.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let mine_events = self.mine_events.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let fake_tries = self.fake_tries;
+    let fake_wins = self.fake_wins;
+    Profile::create(_fbb, &ProfileArgs{
+      game_id,
+      classes,
+      bite,
+      bite_events,
+      shots,
+      shot_events,
+      mine,
+      mine_events,
+      fake_tries,
+      fake_wins,
+    })
+  }
+}
 pub enum EnvelopeOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -2510,6 +2894,11 @@ impl<'a> Envelope<'a> {
       Message::MatchResult => MessageT::MatchResult(alloc::boxed::Box::new(
         self.message_as_match_result()
             .expect("Invalid union table, expected `Message::MatchResult`.")
+            .unpack()
+      )),
+      Message::Profile => MessageT::Profile(alloc::boxed::Box::new(
+        self.message_as_profile()
+            .expect("Invalid union table, expected `Message::Profile`.")
             .unpack()
       )),
       _ => MessageT::NONE,
@@ -2631,6 +3020,21 @@ impl<'a> Envelope<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn message_as_profile(&self) -> Option<Profile<'a>> {
+    if self.message_type() == Message::Profile {
+      self.message().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Profile::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl ::flatbuffers::Verifiable for Envelope<'_> {
@@ -2648,6 +3052,7 @@ impl ::flatbuffers::Verifiable for Envelope<'_> {
           Message::Event => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Event>>("Message::Event", pos),
           Message::MatchHeader => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<MatchHeader>>("Message::MatchHeader", pos),
           Message::MatchResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<MatchResult>>("Message::MatchResult", pos),
+          Message::Profile => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Profile>>("Message::Profile", pos),
           _ => Ok(()),
         }
      })?
@@ -2746,6 +3151,13 @@ impl ::core::fmt::Debug for Envelope<'_> {
         },
         Message::MatchResult => {
           if let Some(x) = self.message_as_match_result() {
+            ds.field("message", &x)
+          } else {
+            ds.field("message", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Message::Profile => {
+          if let Some(x) = self.message_as_profile() {
             ds.field("message", &x)
           } else {
             ds.field("message", &"InvalidFlatbuffer: Union discriminant does not match value.")

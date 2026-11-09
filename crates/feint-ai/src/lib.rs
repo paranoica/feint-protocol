@@ -14,5 +14,7 @@ pub use long_game::{DECISIVE, PATTERN_BONUS, Plan};
 pub use model::{COUNT_CAP, MIN_EVIDENCE, OpponentModel, Profile, ProfileError};
 pub use playbook::{Choice, Controller, Cue, Playbook, Read, Stance};
 pub use reaction::{BadCadence, Cadence, ReactionBuffer, delay_ticks};
-pub use record::{MAX_RECORD_BYTES, RecordError, decode_record, encode_record};
+pub use record::{
+    MAX_RECORD_BYTES, RecordError, decode_profile, decode_record, encode_profile, encode_record,
+};
 pub use runner::{Record, RunHeader, RunReport, Runner, replay, replay_record, run_match};

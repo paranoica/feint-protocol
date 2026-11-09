@@ -30,3 +30,9 @@ test("nicks are trimmed, capped at 24 characters and never empty", () => {
   assert.equal(cleanNick("ё".repeat(30)), "ё".repeat(24));
   assert.equal(cleanNick("🙂".repeat(25)).length, 48, "24 emoji, counted by code point");
 });
+
+test("control and direction characters are dropped from nicks", () => {
+  assert.equal(cleanNick("a\u0007b"), "ab");
+  assert.equal(cleanNick("a\u202eb\u2067c"), "abc");
+  assert.equal(cleanNick("\u200f"), "player");
+});

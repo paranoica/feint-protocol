@@ -6,7 +6,8 @@ export type Screen =
 export const MAX_NICK = 24;
 
 export function cleanNick(raw: string): string {
-  const nick = Array.from(raw.trim()).slice(0, MAX_NICK).join("").trim();
+  const visible = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  const nick = Array.from(visible.trim()).slice(0, MAX_NICK).join("").trim();
   return nick === "" ? "player" : nick;
 }
 
