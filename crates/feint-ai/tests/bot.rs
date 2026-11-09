@@ -1,9 +1,9 @@
 mod line_game;
 mod pick_game;
 
-use feint_ai::{Bot, BotError, Controller, Difficulty};
+use feint_ai::{Bot, BotError, Choice, Controller, Difficulty, Playbook};
 use feint_protocol::{ActionT, GameAdapter, ObservationT};
-use line_game::{Line, LinePlaybook, line_spec};
+use line_game::{Line, LinePlaybook, LineState, line_spec};
 use pick_game::{LEGAL, Pick, PickPlaybook, PickState, pick_spec};
 
 fn difficulty(reaction_ms: u32, anticipate: bool, spread: f64) -> Difficulty {
@@ -448,5 +448,63 @@ fn after_time_goes_back_the_old_timeline_is_never_seen() {
         bot.current().map(|c| c.id),
         Some(0),
         "planned from the abandoned timeline"
+    );
+}
+
+struct OfferOnce {
+    inner: LinePlaybook,
+    offered: std::cell::Cell<bool>,
+}
+
+impl Playbook<Line> for OfferOnce {
+    fn options(&self, s: &LineState, me: u8, rep: u8, out: &mut Vec<Choice>) {
+        if !self.offered.replace(true) {
+            let mut fresh = Vec::new();
+            self.inner.options(s, me, rep, &mut fresh);
+            out.extend(fresh);
+        }
+    }
+
+    fn act(&self, s: &LineState, me: u8, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
+        self.inner.act(s, me, c, elapsed, aim)
+    }
+
+    fn reply(&self, s: &LineState, them: u8) -> ActionT {
+        self.inner.reply(s, them)
+    }
+
+    fn evaluate(&self, s: &LineState, me: u8) -> f64 {
+        self.inner.evaluate(s, me)
+    }
+
+    fn margin(&self) -> f64 {
+        0.0
+    }
+}
+
+#[test]
+fn options_from_an_earlier_replan_never_linger() {
+    let mut game = Line::new(0.5, 0.0);
+    let playbook = OfferOnce {
+        inner: LinePlaybook::new(&[0.5], 1),
+        offered: std::cell::Cell::new(false),
+    };
+    let mut bot = Bot::new(difficulty(0, false, 0.0), playbook, &line_spec(60)).unwrap();
+    bot.new_match(&line_spec(60), 0, 1);
+    let mut events = Vec::new();
+    let mut acted = 0;
+    for _ in 0..60 {
+        let obs = observe(&game, 0);
+        if let Some(action) = bot.on_tick(&game, &obs) {
+            game.apply(&action).unwrap();
+            acted += 1;
+        }
+        game.advance(&mut events);
+    }
+    assert!(acted >= 1, "never acted on the one offer");
+    assert_eq!(
+        bot.current(),
+        None,
+        "kept an option the playbook no longer offers"
     );
 }

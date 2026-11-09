@@ -98,7 +98,7 @@ fn delay_is_measured_in_ticks_not_in_calls() {
 }
 
 #[test]
-fn a_repeated_tick_keeps_its_newest_copy_and_evicts_nothing() {
+fn repeated_ticks_resolve_to_their_newest_copy() {
     let tagged = |tick: u64, tag: f32| {
         let mut o = obs(tick);
         o.state = Some(vec![tag]);

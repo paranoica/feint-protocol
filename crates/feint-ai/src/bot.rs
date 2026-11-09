@@ -226,6 +226,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
 
     fn replan(&mut self, adapter: &A, state: &A::State, now: u64) {
         let mut options = std::mem::take(&mut self.options);
+        options.clear();
         self.playbook
             .options(state, self.me, self.difficulty.repertoire, &mut options);
         let current = self.current;
