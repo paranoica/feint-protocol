@@ -1,0 +1,19 @@
+[package]
+name = "feint-web"
+description = "The browser match: physics, the bot through the core, the record"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+airhockey = { path = "../games/airhockey" }
+feint-ai.workspace = true
+feint-protocol.workspace = true
+
+[lints]
+workspace = true

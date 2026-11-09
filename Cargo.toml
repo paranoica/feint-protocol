@@ -5,6 +5,7 @@ members = [
     "crates/feint-ai",
     "crates/games/airhockey",
     "crates/games/airhockey-check",
+    "crates/feint-web",
 ]
 
 [workspace.package]

@@ -47,6 +47,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "feint-web"
+version = "0.1.0"
+dependencies = [
+ "airhockey",
+ "feint-ai",
+ "feint-protocol",
+]
+
+[[package]]
 name = "flatbuffers"
 version = "25.12.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
