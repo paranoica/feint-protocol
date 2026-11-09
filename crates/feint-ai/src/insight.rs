@@ -216,12 +216,12 @@ impl<S: Clone> Insight<S> {
     }
 
     pub(crate) fn stance(&self, depth: u8, choice: &Choice) -> Stance {
+        if depth == 0 {
+            return Stance::Still;
+        }
         let Some(model) = &self.model else {
             return Stance::Naive;
         };
-        if depth == 0 {
-            return Stance::Naive;
-        }
         let habit = model.likely_shot().map_or(Stance::Naive, Stance::Shoot);
         let read_me = choice.shown.and_then(|s| model.likely_cover(s));
         let know_me = choice.shown.and_then(|s| model.likely_real(s));

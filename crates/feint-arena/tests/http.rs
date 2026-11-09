@@ -200,7 +200,11 @@ fn bad_uploads_are_refused_without_a_trace() {
     let (t, seed) = ticket(&s);
     let game = finished(1, seed, None);
     let mut forged = feint_ai::decode_record(&game.record()).unwrap();
-    forged.score = vec![7, 0];
+    forged.score.reverse();
+    assert_ne!(
+        forged.score[0], forged.score[1],
+        "a forged score must differ"
+    );
     let forged = feint_ai::encode_record(&forged);
     let post = |q: &str, b: &[u8]| call(s.addr, "POST", &format!("/api/matches?{q}"), b).status;
     assert_eq!(post(&format!("nick=ann&ticket={t}"), &forged), 400);
@@ -500,7 +504,11 @@ fn unfinished_matches_and_repeated_forgeries_are_refused() {
     let (t, seed) = ticket(&s);
     let genuine = finished(1, seed, None).record();
     let mut forged = feint_ai::decode_record(&genuine).unwrap();
-    forged.score = vec![7, 0];
+    forged.score.reverse();
+    assert_ne!(
+        forged.score[0], forged.score[1],
+        "a forged score must differ"
+    );
     let forged = feint_ai::encode_record(&forged);
     for _ in 0..3 {
         assert_eq!(

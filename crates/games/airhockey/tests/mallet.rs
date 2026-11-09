@@ -15,13 +15,15 @@ fn inside(region: &Region, p: Vec2) -> bool {
 #[test]
 fn regions_are_own_half_inside_the_rails() {
     let params = Params::default();
+    let r = params.mallet_radius;
+    let (x, y) = (params.half_length - r, params.half_width - r);
     let low = Region::of(Side::Low, &params);
-    assert_eq!(low.min, Vec2::new(-0.95, -0.45));
-    assert_eq!(low.max, Vec2::new(-0.05, 0.45));
+    assert_eq!(low.min, Vec2::new(-x, -y));
+    assert_eq!(low.max, Vec2::new(-r, y));
     let high = Region::of(Side::High, &params);
-    assert_eq!(high.min, Vec2::new(0.05, -0.45));
-    assert_eq!(high.max, Vec2::new(0.95, 0.45));
-    assert_eq!(low.clamp(Vec2::new(0.3, 9.0)), Vec2::new(-0.05, 0.45));
+    assert_eq!(high.min, Vec2::new(r, -y));
+    assert_eq!(high.max, Vec2::new(x, y));
+    assert_eq!(low.clamp(Vec2::new(0.3, 9.0)), Vec2::new(-r, y));
     assert_eq!(low.clamp(Vec2::new(-0.5, 0.1)), Vec2::new(-0.5, 0.1));
 }
 
@@ -86,7 +88,7 @@ fn mallet_reaches_target_without_overshoot_in_near_minimal_time() {
     let region = Region::of(Side::Low, &params);
     let body = Body::default();
     let start = Vec2::new(-0.8, 0.0);
-    let target = Vec2::new(-0.2, 0.3);
+    let target = Vec2::new(-0.5, 0.15);
     let distance = (target - start).length();
     let dir = (target - start) * (1.0 / distance);
     let mut mallet = Mallet::at_rest(start);
@@ -119,13 +121,15 @@ fn mallet_cannot_leave_own_half_or_table() {
     let params = Params::default();
     let dt = params.substep_dt();
     let body = Body::default();
+    let r = params.mallet_radius;
+    let (x, y) = (params.half_length - r, params.half_width - r);
     let cases = [
-        (Side::Low, Vec2::new(0.5, 0.0), Vec2::new(-0.05, 0.0)),
-        (Side::Low, Vec2::new(-0.05, 0.0), Vec2::new(-0.05, 0.0)),
-        (Side::Low, Vec2::new(-2.0, 2.0), Vec2::new(-0.95, 0.45)),
-        (Side::Low, Vec2::new(-0.95, -0.45), Vec2::new(-0.95, -0.45)),
-        (Side::High, Vec2::new(-0.5, 0.0), Vec2::new(0.05, 0.0)),
-        (Side::High, Vec2::new(3.0, -3.0), Vec2::new(0.95, -0.45)),
+        (Side::Low, Vec2::new(0.5, 0.0), Vec2::new(-r, 0.0)),
+        (Side::Low, Vec2::new(-r, 0.0), Vec2::new(-r, 0.0)),
+        (Side::Low, Vec2::new(-2.0, 2.0), Vec2::new(-x, y)),
+        (Side::Low, Vec2::new(-x, -y), Vec2::new(-x, -y)),
+        (Side::High, Vec2::new(-0.5, 0.0), Vec2::new(r, 0.0)),
+        (Side::High, Vec2::new(3.0, -3.0), Vec2::new(x, -y)),
     ];
     for (side, aim, expected) in cases {
         let region = Region::of(side, &params);

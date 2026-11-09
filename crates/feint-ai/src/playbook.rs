@@ -28,6 +28,7 @@ impl Default for Cue {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stance {
+    Still,
     Naive,
     Cover(u8),
     Shoot(u8),

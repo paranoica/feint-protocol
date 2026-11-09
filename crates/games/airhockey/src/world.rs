@@ -22,6 +22,20 @@ impl World {
         }
     }
 
+    pub fn hold(&mut self, params: &Params, bodies: &[Body; 2]) {
+        let dt = params.substep_dt();
+        let regions = regions(params);
+        let reach = params.puck_radius + params.mallet_radius;
+        for _ in 0..params.substeps {
+            for (((mallet, region), body), side) in
+                self.mallets.iter_mut().zip(&regions).zip(bodies).zip(SIDES)
+            {
+                mallet.step(region, body, dt);
+                mallet.push_off(self.puck.pos, reach, -away_from_goal(side), region);
+            }
+        }
+    }
+
     pub fn tick(&mut self, params: &Params, bodies: &[Body; 2]) -> Option<Side> {
         let dt = params.substep_dt();
         let regions = regions(params);
@@ -180,7 +194,7 @@ mod tests {
     #[test]
     fn real_overlap_in_the_mouth_is_resolved_without_pulling_the_puck_out() {
         let params = Params::default();
-        let mallet = Mallet::at_rest(Vec2::new(-0.9, 0.0));
+        let mallet = Mallet::at_rest(Vec2::new(-0.989 + reach(&params) - 0.006, 0.0));
         let mut puck = Puck {
             pos: Vec2::new(-0.989, 0.0),
             vel: Vec2::new(-2.0, 0.0),

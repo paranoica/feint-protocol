@@ -16,7 +16,7 @@ fn body(speed: f32, accel: f32) -> BodyParamsT {
 
 fn fresh() -> AirHockey {
     let mut game = AirHockey::new(Params::default(), 3);
-    game.reset(0, &[body(8.0, 60.0), body(8.0, 60.0)])
+    game.reset(0, &[body(5.0, 40.0), body(5.0, 40.0)])
         .expect("valid bodies");
     game
 }
@@ -91,12 +91,13 @@ fn spec_describes_air_hockey_v0_1() {
 fn observation_is_rotated_for_player_one() {
     let mut game = fresh();
     set_scene(&mut game);
-    let stall = 0.0;
+    let (stall, pause) = (0.0, 0.0);
     let p0 = observe(&game, 0);
     assert_eq!(
         p0.state,
         Some(f32s(&[
-            0.3, -0.1, 1.0, 2.0, -0.6, 0.2, 0.5, -0.5, -0.4, 0.1, 0.7, -0.3, -1.0, 0.25, stall
+            0.3, -0.1, 1.0, 2.0, -0.6, 0.2, 0.5, -0.5, -0.4, 0.1, 0.7, -0.3, -1.0, 0.25, stall,
+            pause
         ]))
     );
     assert_eq!(p0.opponent_signals, Some(f32s(&[0.7, -0.3, -1.0, 0.25])));
@@ -104,7 +105,8 @@ fn observation_is_rotated_for_player_one() {
     assert_eq!(
         p1.state,
         Some(f32s(&[
-            -0.3, 0.1, -1.0, -2.0, -0.7, 0.3, 1.0, -0.25, -0.6, -0.0, 0.6, -0.2, -0.5, 0.5, stall
+            -0.3, 0.1, -1.0, -2.0, -0.7, 0.3, 1.0, -0.25, -0.6, -0.0, 0.6, -0.2, -0.5, 0.5, stall,
+            pause
         ]))
     );
     assert_eq!(p1.opponent_signals, Some(f32s(&[0.6, -0.2, -0.5, 0.5])));
@@ -238,14 +240,14 @@ fn bad_action_is_refused_and_target_kept() {
 fn reset_checks_bodies_and_applies_them() {
     let mut game = AirHockey::new(Params::default(), 1);
     for bodies in [
-        vec![body(8.0, 60.0)],
-        vec![body(8.0, 60.0), body(0.0, 60.0)],
-        vec![body(f32::NAN, 60.0), body(8.0, 60.0)],
-        vec![body(12.01, 60.0), body(8.0, 60.0)],
-        vec![body(8.0, 60.0), body(8.0, 200.5)],
-        vec![body(1e4, 1e4), body(8.0, 60.0)],
+        vec![body(5.0, 40.0)],
+        vec![body(5.0, 40.0), body(0.0, 40.0)],
+        vec![body(f32::NAN, 40.0), body(5.0, 40.0)],
+        vec![body(7.01, 40.0), body(5.0, 40.0)],
+        vec![body(5.0, 40.0), body(5.0, 120.5)],
+        vec![body(1e4, 1e4), body(5.0, 40.0)],
         vec![
-            body(8.0, 60.0),
+            body(5.0, 40.0),
             make!(BodyParamsT {
                 values: Some(vec![8.0])
             }),
@@ -259,11 +261,11 @@ fn reset_checks_bodies_and_applies_them() {
             "{bodies:?}"
         );
     }
-    game.reset(1, &[body(12.0, 200.0), body(12.0, 200.0)])
+    game.reset(1, &[body(7.0, 120.0), body(7.0, 120.0)])
         .expect("the declared limits themselves are legal");
     let declared = game.spec().body_params.unwrap();
-    assert_eq!((declared[0].max, declared[1].max), (12.0, 200.0));
-    game.reset(1, &[body(3.0, 25.0), body(8.0, 60.0)])
+    assert_eq!((declared[0].max, declared[1].max), (7.0, 120.0));
+    game.reset(1, &[body(3.0, 25.0), body(5.0, 40.0)])
         .expect("valid bodies");
     assert_eq!(game.live().seed(), 1);
     game.apply(&action(0, 0, -0.1, 0.4)).unwrap();
@@ -370,6 +372,14 @@ fn signals_ignore_intent_and_deceptive_flag() {
 }
 
 fn park_and_shoot_at_high(game: &mut AirHockey) {
+    let mut events = Vec::new();
+    while game.live().pause_ticks() > 0 {
+        game.advance(&mut events);
+    }
+    assert!(
+        events.is_empty(),
+        "an event during the serve pause: {events:?}"
+    );
     let world = &mut game.game_mut().world;
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.95, 0.45));
     world.mallets[1] = Mallet::at_rest(Vec2::new(0.95, 0.45));
@@ -568,9 +578,42 @@ fn infinite_body_values_are_refused_even_with_huge_limits() {
     };
     let mut game = AirHockey::new(params, 1);
     assert_eq!(
-        game.reset(1, &[body(8.0, f32::INFINITY), body(8.0, 60.0)]),
+        game.reset(1, &[body(5.0, f32::INFINITY), body(5.0, 40.0)]),
         Err(AdapterError::BadBody(
             "two positive finite values per player"
         ))
     );
+}
+
+#[test]
+fn the_serve_pause_is_observed_and_rebuilt() {
+    let mut game = fresh();
+    park_and_shoot_at_high(&mut game);
+    let mut events = Vec::new();
+    while events.is_empty() {
+        game.advance(&mut events);
+    }
+    let params = Params::default();
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
+    for _ in 0..3 {
+        game.advance(&mut events);
+    }
+    let left = game.live().pause_ticks();
+    assert_eq!(left, params.serve_pause_ticks() - 3);
+    for player in [0u8, 1] {
+        let obs = observe(&game, player);
+        let state = obs.state.as_deref().unwrap();
+        assert_eq!(state.len(), OBSERVATION_LEN);
+        let seen = f64::from(state[OBSERVATION_LEN - 1]);
+        let expected = f64::from(left) / f64::from(params.tick_hz);
+        assert!((seen - expected).abs() < 1e-6, "{seen} vs {expected}");
+        let rebuilt = game.state_from_observation(&obs, &mut rng);
+        assert_eq!(rebuilt.pause_ticks(), left, "player {player}");
+        let after = game.simulate(&rebuilt, &[], 10);
+        assert_eq!(after.world.puck, rebuilt.world.puck, "the held puck moved");
+    }
+    let spec = game.spec();
+    let last = spec.observation.unwrap().last().cloned().unwrap();
+    assert_eq!(last.name.as_deref(), Some("serve_pause"));
+    assert_eq!(last.max, params.serve_pause_seconds as f32);
 }

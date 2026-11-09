@@ -246,7 +246,7 @@ fn play_script(session: &mut Session, ticks: u64) {
 #[test]
 fn a_profile_changes_the_bot_and_carries_forward() {
     let mut first = Session::new(5, 77).unwrap();
-    play_script(&mut first, 4_000);
+    play_script(&mut first, 16_000);
     let v1 = first.profile().expect("level 5 keeps a profile");
     assert!(
         v1.shot_events + v1.bite_events.iter().sum::<u32>() > 0,
@@ -255,8 +255,8 @@ fn a_profile_changes_the_bot_and_carries_forward() {
 
     let mut fresh = Session::new(5, 78).unwrap();
     let mut primed = Session::with_profile(5, 78, Some(&v1)).unwrap();
-    play_script(&mut fresh, 3_000);
-    play_script(&mut primed, 3_000);
+    play_script(&mut fresh, 6_000);
+    play_script(&mut primed, 6_000);
     let bot = |s: &Session| {
         decode_record(&s.record())
             .unwrap()

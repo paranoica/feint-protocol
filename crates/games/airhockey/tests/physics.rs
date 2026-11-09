@@ -7,10 +7,22 @@ use airhockey::{
 
 const EPS: f64 = 1e-9;
 
+fn geometry() -> Params {
+    Params {
+        mouth_half_width: 0.125,
+        puck_radius: 0.04,
+        mallet_radius: 0.05,
+        puck_speed_cap: 20.0,
+        max_body_speed: 12.0,
+        max_body_accel: 200.0,
+        ..Params::default()
+    }
+}
+
 fn no_damping() -> Params {
     Params {
         damping: 0.0,
-        ..Params::default()
+        ..geometry()
     }
 }
 
@@ -59,7 +71,7 @@ fn comes_back(from: Vec2, speed: f64, params: &Params) -> Option<World> {
 
 #[test]
 fn free_puck_follows_discrete_damping() {
-    let params = Params::default();
+    let params = geometry();
     let dt = params.tick_dt();
     let mut world = parked(&params);
     let v0 = Vec2::new(0.5, 0.1);
@@ -109,7 +121,7 @@ fn puck_energy_never_grows_without_mallets_in_play() {
     let params = Params {
         damping: 0.0,
         mouth_half_width: 0.0,
-        ..Params::default()
+        ..geometry()
     };
     let mut world = parked(&params);
     world.puck = Puck {
@@ -197,7 +209,7 @@ fn post_grazed_at_cap_speed_deflects() {
 
 #[test]
 fn goal_is_decided_by_the_crossing_point() {
-    let params = Params::default();
+    let params = geometry();
     let at = |x0, y0, x1, y1| goal_crossing(Vec2::new(x0, y0), Vec2::new(x1, y1), &params);
     assert_eq!(at(0.99, 0.10, 1.01, 0.14), Some(Side::Low));
     assert_eq!(at(0.99, 0.06, 1.01, 0.20), None);
@@ -341,7 +353,7 @@ fn assert_no_overlap(world: &World, params: &Params) {
 
 #[test]
 fn puck_pinned_against_rail_stays_on_table_and_finite() {
-    let params = Params::default();
+    let params = geometry();
     let mut world = parked(&params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.5, 0.2));
     world.mallets[0].target = Vec2::new(-0.5, 0.45);
@@ -360,7 +372,7 @@ fn puck_pinned_against_rail_stays_on_table_and_finite() {
 
 #[test]
 fn puck_squeezed_at_centre_line_is_finite() {
-    let params = Params::default();
+    let params = geometry();
     let mut world = World::new(&params);
     world.mallets[0].target = Vec2::new(-0.05, 0.0);
     world.mallets[1].target = Vec2::new(0.05, 0.0);
@@ -380,7 +392,7 @@ fn puck_squeezed_at_centre_line_is_finite() {
 
 #[test]
 fn random_play_keeps_state_finite_and_puck_in_bounds() {
-    let params = Params::default();
+    let params = geometry();
     let mut world = World::new(&params);
     let mut rng = Lcg(2026);
     let mut goals = 0;
@@ -404,7 +416,7 @@ fn random_play_keeps_state_finite_and_puck_in_bounds() {
 
 #[test]
 fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
-    let params = Params::default();
+    let params = geometry();
     let mut world = World::new(&params);
     world.mallets[0] = Mallet::at_rest(Vec2::new(-0.9, -0.4));
     world.mallets[1] = Mallet::at_rest(Vec2::new(0.05, 0.42));
@@ -420,7 +432,7 @@ fn puck_wedged_between_rail_and_centre_line_mallet_slides_out() {
 
 #[test]
 fn no_overlap_anywhere_near_the_centre_line_corners() {
-    let params = Params::default();
+    let params = geometry();
     let mut ticks = 0;
     for my in [0.30, 0.36, 0.42, 0.45] {
         for side in [-1.0, 1.0] {
@@ -456,7 +468,7 @@ fn no_overlap_anywhere_near_the_centre_line_corners() {
 
 #[test]
 fn fastest_declared_body_never_passes_through_a_resting_puck() {
-    let params = Params::default();
+    let params = geometry();
     let fastest = params
         .body(params.max_body_speed, params.max_body_accel)
         .unwrap();
@@ -478,7 +490,7 @@ fn fastest_declared_body_never_passes_through_a_resting_puck() {
 
 #[test]
 fn puck_speed_never_exceeds_cap_under_repeated_hits() {
-    let params = Params::default();
+    let params = geometry();
     let fastest = params
         .body(params.max_body_speed, params.max_body_accel)
         .unwrap();

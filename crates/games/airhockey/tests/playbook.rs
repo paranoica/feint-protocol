@@ -139,15 +139,13 @@ fn level_two_strikes_away_from_the_covering_mallet() {
 fn bots_keep_their_level_body() {
     let mut game = game(0, [1, 5]);
     let bodies = game.live().bodies;
-    let low_speed = f64::from(4.8f32);
+    let limits = Params::default();
+    let low_speed = f64::from((0.4 * limits.max_body_speed) as f32);
     assert_eq!(
         (bodies[0].max_speed(), bodies[0].max_accel()),
-        (low_speed, 80.0)
+        (low_speed, 0.4 * limits.max_body_accel)
     );
-    assert_eq!(
-        (bodies[1].max_speed(), bodies[1].max_accel()),
-        (12.0, 200.0)
-    );
+    assert_eq!((bodies[1].max_speed(), bodies[1].max_accel()), (7.0, 120.0));
     let mut low = bot(1, &game, 0, 1);
     let mut high = bot(5, &game, 1, 1);
     let mut obs = [ObservationT::default(), ObservationT::default()];
@@ -188,7 +186,7 @@ fn bots_keep_their_level_body() {
         "level 1 mallet at {} m/s",
         top[0]
     );
-    assert!(top[1] <= 12.0 + 1e-9, "level 5 mallet at {} m/s", top[1]);
+    assert!(top[1] <= 7.0 + 1e-9, "level 5 mallet at {} m/s", top[1]);
     assert!(
         top[0] > 1.0 && top[1] > 1.0,
         "the bots barely moved: {top:?}"
@@ -199,7 +197,7 @@ fn bots_keep_their_level_body() {
 fn the_human_gets_the_declared_maxima_by_default() {
     let game = AirHockey::new(Params::default(), 1);
     let human = game.live().bodies[0];
-    assert_eq!((human.max_speed(), human.max_accel()), (12.0, 200.0));
+    assert_eq!((human.max_speed(), human.max_accel()), (7.0, 120.0));
 }
 
 #[test]

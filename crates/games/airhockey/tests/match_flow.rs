@@ -16,6 +16,7 @@ fn park(m: &mut Match) {
 }
 
 fn score_against(m: &mut Match, conceding: Side) -> Vec<MatchEvent> {
+    run_out_pause(m);
     park(m);
     let (x, vx) = match conceding {
         Side::High => (0.8, 5.0),
@@ -67,6 +68,7 @@ fn serve_onto_a_mallet_pushes_the_mallet_off_without_nan() {
     let mut m = new_match(1);
     score_against(&mut m, Side::Low);
     score_against(&mut m, Side::Low);
+    run_out_pause(&mut m);
     m.world.mallets[0] = Mallet::at_rest(Vec2::new(-0.5, 0.0));
     m.world.puck = Puck {
         pos: Vec2::new(-0.85, 0.05),
@@ -90,7 +92,8 @@ fn serve_onto_a_mallet_pushes_the_mallet_off_without_nan() {
     assert_eq!(m.world.puck, Puck::at_rest(Vec2::new(-0.5, 0.0)));
     let mallet = m.world.mallets[0];
     assert!(
-        (mallet.pos.x - -0.59).abs() < 1e-12 && mallet.pos.y == 0.0,
+        (mallet.pos.x + 0.5 + m.params.puck_radius + m.params.mallet_radius).abs() < 1e-12
+            && mallet.pos.y == 0.0,
         "{mallet:?}"
     );
 }
@@ -221,4 +224,89 @@ fn stall_clock_does_not_run_while_the_puck_is_on_the_centre_line() {
         assert!(step(&mut m).is_empty());
     }
     assert_eq!(m.stall_ticks(), 0);
+}
+
+fn run_out_pause(m: &mut Match) {
+    while m.pause_ticks() > 0 {
+        step(m);
+    }
+}
+
+#[test]
+fn the_first_serve_has_no_pause() {
+    assert_eq!(new_match(0).pause_ticks(), 0);
+}
+
+#[test]
+fn a_goal_holds_the_puck_at_the_serve_spot_while_mallets_move() {
+    let mut m = new_match(0);
+    score_against(&mut m, Side::High);
+    let pause = Params::default().serve_pause_ticks();
+    assert_eq!(pause, 240, "a second at 240 Hz");
+    assert_eq!(m.pause_ticks(), pause);
+    let spot = Puck::at_rest(Vec2::new(0.5, 0.0));
+    let start = m.world.mallets[1].pos;
+    for t in 0..pause {
+        m.apply(Input {
+            tick: m.tick(),
+            player: 1,
+            target: [0.5, 0.0],
+        })
+        .unwrap();
+        assert!(step(&mut m).is_empty(), "an event during the pause at {t}");
+        assert_eq!(m.world.puck, spot, "the puck moved during the pause at {t}");
+        assert_eq!(m.stall_ticks(), 0, "the stall clock ran during the pause");
+        let reach = m.params.puck_radius + m.params.mallet_radius;
+        assert!(
+            (m.world.mallets[1].pos - spot.pos).length() >= reach - 1e-9,
+            "a mallet sank into the held puck at {t}"
+        );
+    }
+    assert_ne!(
+        m.world.mallets[1].pos, start,
+        "mallets froze during the pause"
+    );
+    assert_eq!(m.pause_ticks(), 0);
+    step(&mut m);
+    assert_eq!(m.stall_ticks(), 1, "the stall clock starts after the pause");
+}
+
+#[test]
+fn a_stall_round_end_also_pauses() {
+    let mut m = new_match(0);
+    for _ in 0..7 * 240 {
+        step(&mut m);
+    }
+    assert_eq!(m.world.puck, Puck::at_rest(Vec2::new(0.5, 0.0)));
+    assert_eq!(m.pause_ticks(), Params::default().serve_pause_ticks());
+}
+
+#[test]
+fn the_pause_is_part_of_the_digest() {
+    let m = new_match(0);
+    let held = Match::from_observed(
+        Params::default(),
+        [Body::default(); 2],
+        m.world,
+        0,
+        [0, 0],
+        0,
+    );
+    assert_ne!(held.clone().with_pause(10).digest(), held.digest());
+    assert_eq!(held.clone().with_pause(10).pause_ticks(), 10);
+}
+
+#[test]
+fn a_pause_longer_than_the_rule_is_cut_to_the_rule() {
+    let m = new_match(0);
+    let held = Match::from_observed(
+        Params::default(),
+        [Body::default(); 2],
+        m.world,
+        0,
+        [0, 0],
+        0,
+    )
+    .with_pause(u32::MAX);
+    assert_eq!(held.pause_ticks(), Params::default().serve_pause_ticks());
 }
