@@ -375,6 +375,10 @@ function main() {
     clock = makeClock();
   });
   window.addEventListener("keydown", (e) => {
+    if (game && !watching && current.key?.(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === "d" || e.key === "D") {
       showDebug = !showDebug;
       debugBox.hidden = !showDebug;

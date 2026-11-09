@@ -355,3 +355,136 @@ impl HubGame for penalty::Penalty {
         ]
     }
 }
+
+impl HubGame for duel::QuickDraw {
+    type Book = duel::DuelPlaybook;
+    type Human = Pad;
+    const ID: &'static str = "duel";
+    const VERSION: u32 = duel::GAME_VERSION;
+    const ARENA: bool = true;
+    const COLUMNS: &'static [Column] = &[
+        kept("phase"),
+        kept("t"),
+        kept("round"),
+        kept("x0"),
+        kept("hand0"),
+        kept("committed0"),
+        kept("loaded0"),
+        optional("aim0"),
+        kept("recovery0"),
+        kept("x1"),
+        kept("hand1"),
+        kept("committed1"),
+        kept("loaded1"),
+        optional("aim1"),
+        kept("recovery1"),
+        optional("bullet0_x"),
+        optional("bullet1_x"),
+        kept("score0"),
+        kept("score1"),
+    ];
+
+    fn build(level: u8) -> Self {
+        duel::QuickDraw::new(duel::Params::default(), level)
+    }
+
+    fn book() -> Self::Book {
+        duel::DuelPlaybook::new(duel::Params::default())
+    }
+
+    fn human_body() -> BodyParamsT {
+        let p = duel::Params::default();
+        body([p.max_draw_rate, p.max_step_rate])
+    }
+
+    fn score(&self) -> [u32; 2] {
+        self.live().score
+    }
+
+    fn tick(&self) -> u64 {
+        self.live().tick
+    }
+
+    fn tick_hz(&self) -> u32 {
+        self.live().params.tick_hz
+    }
+
+    fn pause(&self) -> f32 {
+        let s = self.live();
+        let left = match s.phase {
+            duel::Phase::Ready => s.params.ready_ticks.saturating_sub(s.t),
+            duel::Phase::Settle => s.params.settle_ticks.saturating_sub(s.t),
+            _ => 0,
+        };
+        (f64::from(left) / f64::from(s.params.tick_hz)) as f32
+    }
+
+    fn view(&self) -> Vec<f32> {
+        let s = self.live();
+        let hz = f64::from(s.params.tick_hz);
+        let flag = |b: bool| f64::from(u8::from(b));
+        let mut v = vec![s.phase.code(), f64::from(s.t) / hz];
+        for g in &s.gunners {
+            v.extend([
+                g.x,
+                g.hand,
+                flag(g.committed),
+                flag(g.loaded),
+                f64::from(g.recovery) / hz,
+            ]);
+        }
+        for b in &s.bullets {
+            v.extend(b.map_or([0.0, 0.0, 0.0], |b| {
+                [1.0, b.x, f64::from(b.t) / f64::from(s.params.flight_ticks)]
+            }));
+        }
+        let last = match s.last {
+            Some(duel::RoundEvent::Hit { shooter }) => f64::from(shooter),
+            Some(duel::RoundEvent::Void) => 2.0,
+            _ => -1.0,
+        };
+        v.extend([last, f64::from(s.round)]);
+        v.into_iter().map(|x| x as f32).collect()
+    }
+
+    fn layout(&self) -> Vec<f32> {
+        let p = &self.live().params;
+        [
+            p.half_width,
+            p.hit_radius,
+            p.roll_dist,
+            p.commit_at,
+            f64::from(p.flight_ticks) / f64::from(p.tick_hz),
+        ]
+        .map(|v| v as f32)
+        .to_vec()
+    }
+
+    fn class_point(book: &Self::Book, _attacker: u8, class: u8) -> [f32; 2] {
+        let [x, y] = book.class_point(class);
+        [x as f32, y as f32]
+    }
+
+    fn frame(&self) -> Vec<Option<f64>> {
+        let s = self.live();
+        let flag = |b: bool| Some(f64::from(u8::from(b)));
+        let mut v = vec![
+            Some(s.phase.code()),
+            Some(f64::from(s.t)),
+            Some(f64::from(s.round)),
+        ];
+        for g in &s.gunners {
+            v.extend([
+                Some(g.x),
+                Some(g.hand),
+                flag(g.committed),
+                flag(g.loaded),
+                g.aim,
+                Some(f64::from(g.recovery)),
+            ]);
+        }
+        v.extend(s.bullets.iter().map(|b| b.map(|b| b.x)));
+        v.extend([Some(f64::from(s.score[0])), Some(f64::from(s.score[1]))]);
+        v
+    }
+}

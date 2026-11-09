@@ -6,6 +6,7 @@ members = [
     "crates/games/airhockey",
     "crates/games/airhockey-check",
     "crates/games/penalty",
+    "crates/games/duel",
     "crates/feint-web",
     "crates/feint-arena",
     "crates/feint-ffi",
@@ -22,6 +23,7 @@ publish = false
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
 penalty = { path = "crates/games/penalty" }
+duel = { path = "crates/games/duel" }
 flatbuffers = "=25.12.19"
 rand_chacha = "0.9"
 

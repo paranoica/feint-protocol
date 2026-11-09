@@ -264,3 +264,34 @@ fn penalty_records_verify_with_their_own_columns_and_profiles() {
         "a hockey profile cannot drive a penalty keeper"
     );
 }
+
+#[test]
+fn duel_records_verify_with_their_own_columns() {
+    use feint_web::Play;
+    let mut s = Play::<duel::QuickDraw>::new(2, 3).unwrap();
+    while !s.finished() {
+        let v = s.view();
+        s.set_input(&[v[7], 1.0, 0.0]);
+        s.advance(4);
+    }
+    let bytes = s.record();
+    let v = verify(&bytes, None).unwrap();
+    assert_eq!((v.game, v.columns), ("duel", duel::QuickDraw::COLUMNS));
+    assert!(v.finished);
+    assert_eq!(v.digest, s.digest());
+    assert_eq!(v.frames.len() as u64, v.record.ticks);
+    let last = &v.frames.last().unwrap().values;
+    let at = |name: &str| {
+        last[duel::QuickDraw::COLUMNS
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap()]
+        .unwrap()
+    };
+    assert_eq!([at("score0"), at("score1")], s.score().map(f64::from));
+    let edited = forge(&bytes, |r| {
+        let i = r.actions.iter().position(|a| a.player == 1).unwrap();
+        r.actions[i].values = Some(vec![2.0, 1.0, 1.0]);
+    });
+    assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
+}

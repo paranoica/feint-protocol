@@ -387,6 +387,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "duel"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "rand_chacha",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -423,6 +432,7 @@ dependencies = [
  "airhockey",
  "arrow",
  "axum",
+ "duel",
  "feint-ai",
  "feint-protocol",
  "feint-web",
@@ -456,6 +466,7 @@ name = "feint-web"
 version = "0.1.0"
 dependencies = [
  "airhockey",
+ "duel",
  "feint-ai",
  "feint-protocol",
  "penalty",

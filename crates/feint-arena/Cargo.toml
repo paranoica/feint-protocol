@@ -13,6 +13,7 @@ feint-ai.workspace = true
 feint-protocol.workspace = true
 feint-web = { path = "../feint-web" }
 penalty.workspace = true
+duel.workspace = true
 arrow = { version = "60", default-features = false }
 parquet = { version = "60", default-features = false, features = ["arrow"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
