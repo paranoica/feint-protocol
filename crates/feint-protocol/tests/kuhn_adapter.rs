@@ -1,20 +1,14 @@
 //! A minimal Kuhn-poker adapter: shows that `GameAdapter` carries a turn-based game with
 //! hidden information and no body, as stage 3 needs, without changing the trait.
 
+#[macro_use]
+mod builders;
+
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, EventT, GameAdapter, GameSpecT,
     MatchResultT, ObservationT, PlayerId, TimeMode,
 };
 use rand_chacha::rand_core::{RngCore, SeedableRng};
-
-/// Build a generated `#[non_exhaustive]` protocol type: its default with the given fields.
-macro_rules! make {
-    ($t:ident { $($field:ident : $value:expr),* $(,)? }) => {{
-        let mut built = $t::default();
-        $(built.$field = $value;)*
-        built
-    }};
-}
 
 const PASS: i32 = 0;
 const BET: i32 = 1;

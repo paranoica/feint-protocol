@@ -95,7 +95,11 @@ pub fn decode(bytes: &[u8]) -> Result<MessageT, DecodeError> {
         .map_err(|error| DecodeError::Invalid(error.to_string()))?;
     match envelope.protocol_version() {
         Some(PROTOCOL_VERSION) => {}
-        other => return Err(DecodeError::Version(other.unwrap_or_default().to_owned())),
+        other => {
+            // Only a short prefix: the string is the client's and may be a megabyte long.
+            let seen = other.unwrap_or_default().chars().take(16).collect();
+            return Err(DecodeError::Version(seen));
+        }
     }
     match envelope.unpack().message {
         MessageT::NONE => Err(DecodeError::Empty),

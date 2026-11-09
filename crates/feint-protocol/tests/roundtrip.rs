@@ -1,17 +1,11 @@
+#[macro_use]
+mod builders;
+
 use feint_protocol::{
     ActionSpaceT, ActionT, BodyParamsT, DecodeError, DimT, EnvelopeT, EventKind, EventT, GameSpecT,
     MAX_MESSAGE_BYTES, MatchHeaderT, MatchResultT, MessageT, ObservationT, PROTOCOL_VERSION,
     TimeMode, decode, encode, finish_envelope_buffer, root_as_envelope,
 };
-
-/// Build a generated `#[non_exhaustive]` protocol type: its default with the given fields.
-macro_rules! make {
-    ($t:ident { $($field:ident : $value:expr),* $(,)? }) => {{
-        let mut built = $t::default();
-        $(built.$field = $value;)*
-        built
-    }};
-}
 
 fn dim(name: &str, min: f32, max: f32, unit: &str) -> DimT {
     make!(DimT {
@@ -233,7 +227,11 @@ fn hostile_buffers_never_panic_or_decode_to_another_message() {
         (s >> 56) as u8
     };
     for len in 0..512 {
-        let buf: Vec<u8> = (0..len).map(|_| next_byte()).collect();
+        let mut buf: Vec<u8> = (0..len).map(|_| next_byte()).collect();
+        if len >= 8 && len % 2 == 0 {
+            // Half of them carry the identifier, so the verifier itself gets the noise.
+            buf[4..8].copy_from_slice(b"FNT0");
+        }
         assert!(
             decode(&buf).is_err(),
             "random bytes of length {len} decoded"
@@ -259,4 +257,16 @@ fn hostile_buffers_never_panic_or_decode_to_another_message() {
             }
         }
     }
+}
+
+#[test]
+fn version_error_keeps_only_a_short_prefix_of_the_client_string() {
+    let long = "9".repeat(10_000);
+    let bytes = raw_envelope(Some(&long), all_messages().remove(3), true);
+    match decode(&bytes) {
+        Err(DecodeError::Version(seen)) => assert_eq!(seen, "9".repeat(16)),
+        other => panic!("expected a version error, got {other:?}"),
+    }
+    let bytes = raw_envelope(Some("0.2"), all_messages().remove(3), true);
+    assert_eq!(decode(&bytes), Err(DecodeError::Version("0.2".into())));
 }
