@@ -1,7 +1,7 @@
 use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, decode_record, replay_record, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use feint_web::{Pointer, Session, SessionError};
+use feint_web::{Pointer, Replayer, Session, SessionError};
 
 fn script(tick: u64) -> (f32, f32) {
     let points = [(-0.6, 0.3), (-0.2, -0.4), (-0.8, 0.0), (-0.4, 0.45)];
@@ -233,4 +233,96 @@ fn advance_reports_the_goals_it_played() {
         }
     }
     assert!(goals >= 2, "no goals in five minutes");
+}
+
+fn play_script(session: &mut Session, ticks: u64) {
+    for _ in 0..ticks {
+        let (x, y) = script(session.tick());
+        session.set_pointer(x, y);
+        session.advance(1);
+    }
+}
+
+#[test]
+fn a_profile_changes_the_bot_and_carries_forward() {
+    let mut first = Session::new(5, 77).unwrap();
+    play_script(&mut first, 4_000);
+    let v1 = first.profile().expect("level 5 keeps a profile");
+    assert!(
+        v1.shot_events + v1.bite_events.iter().sum::<u32>() > 0,
+        "nothing learned: {v1:?}"
+    );
+
+    let mut fresh = Session::new(5, 78).unwrap();
+    let mut primed = Session::with_profile(5, 78, Some(&v1)).unwrap();
+    play_script(&mut fresh, 3_000);
+    play_script(&mut primed, 3_000);
+    let bot = |s: &Session| {
+        decode_record(&s.record())
+            .unwrap()
+            .actions
+            .into_iter()
+            .filter(|a| a.player == 1)
+            .collect::<Vec<_>>()
+    };
+    assert_ne!(
+        bot(&fresh),
+        bot(&primed),
+        "the loaded profile did not change the bot"
+    );
+    let v2 = primed.profile().unwrap();
+    assert!(v2.shot_events >= v1.shot_events);
+    assert!(
+        v2.bite_events
+            .iter()
+            .zip(&v1.bite_events)
+            .all(|(b, a)| b >= a)
+    );
+
+    assert_eq!(
+        Session::with_profile(4, 1, Some(&v1)).err(),
+        Some(SessionError::Profile)
+    );
+    assert!(Session::with_profile(4, 1, None).is_ok());
+    assert!(
+        Session::new(3, 1).unwrap().profile().is_some(),
+        "levels 3-4 keep a match model"
+    );
+    assert!(Session::new(2, 1).unwrap().profile().is_none());
+}
+
+#[test]
+fn a_replayer_reproduces_a_session_record_byte_for_byte() {
+    let mut first = Session::new(5, 90).unwrap();
+    play_script(&mut first, 2_000);
+    let profile = first.profile();
+    let mut session = Session::with_profile(5, 91, profile.as_ref()).unwrap();
+    play_script(&mut session, 2_500);
+    let bytes = session.record();
+    let record = decode_record(&bytes).unwrap();
+    let human: Vec<_> = record
+        .actions
+        .iter()
+        .filter(|a| a.player == 0)
+        .cloned()
+        .collect();
+
+    let mut game = AirHockey::new(Params::default(), 5);
+    let mut replayer = Replayer::new(human);
+    let mut bot = Bot::new(
+        Difficulty::preset(5).unwrap(),
+        HockeyPlaybook::new(Params::default()),
+        &game.spec(),
+    )
+    .unwrap();
+    bot.load_profile(profile.as_ref().unwrap(), "airhockey")
+        .unwrap();
+    let report = run_match(
+        &mut game,
+        [&mut replayer, &mut bot],
+        record.header.clone(),
+        record.ticks,
+    )
+    .unwrap();
+    assert_eq!(feint_ai::encode_record(&report.record()), bytes);
 }

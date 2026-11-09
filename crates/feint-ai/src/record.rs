@@ -1,5 +1,6 @@
-use feint_protocol::{DecodeError, MatchHeaderT, MatchResultT, MessageT, decode, encode};
+use feint_protocol::{DecodeError, MatchHeaderT, MatchResultT, MessageT, ProfileT, decode, encode};
 
+use crate::model::Profile;
 use crate::runner::{Record, RunHeader};
 
 pub const MAX_RECORD_BYTES: usize = 64 << 20;
@@ -89,4 +90,38 @@ pub fn decode_record(bytes: &[u8]) -> Result<Record, RecordError> {
         ticks: result.duration_ticks,
         score: result.score.unwrap_or_default(),
     })
+}
+
+#[must_use]
+pub fn encode_profile(profile: &Profile) -> Vec<u8> {
+    let mut p = ProfileT::default();
+    p.game_id = Some(profile.game_id.clone());
+    p.classes = profile.classes;
+    p.bite = Some(profile.bite.clone());
+    p.bite_events = Some(profile.bite_events.clone());
+    p.shots = Some(profile.shots.clone());
+    p.shot_events = profile.shot_events;
+    p.mine = Some(profile.mine.clone());
+    p.mine_events = Some(profile.mine_events.clone());
+    p.fake_tries = profile.fake_tries;
+    p.fake_wins = profile.fake_wins;
+    encode(&MessageT::Profile(Box::new(p)))
+}
+
+pub fn decode_profile(bytes: &[u8]) -> Result<Profile, RecordError> {
+    match decode(bytes).map_err(RecordError::Message)? {
+        MessageT::Profile(p) => Ok(Profile {
+            game_id: p.game_id.unwrap_or_default(),
+            classes: p.classes,
+            bite: p.bite.unwrap_or_default(),
+            bite_events: p.bite_events.unwrap_or_default(),
+            shots: p.shots.unwrap_or_default(),
+            shot_events: p.shot_events,
+            mine: p.mine.unwrap_or_default(),
+            mine_events: p.mine_events.unwrap_or_default(),
+            fake_tries: p.fake_tries,
+            fake_wins: p.fake_wins,
+        }),
+        _ => Err(RecordError::Order),
+    }
 }

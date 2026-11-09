@@ -152,3 +152,30 @@ fn a_replay_stops_where_the_match_ended_and_refuses_longer_claims() {
         "actions after the end"
     );
 }
+
+#[test]
+fn a_profile_round_trips_exactly_through_bytes() {
+    let mut m = feint_ai::OpponentModel::new(3, 0.7);
+    for i in 0..10u8 {
+        m.record_attempt(
+            Some(i % 3),
+            Some((i + 1) % 3),
+            Some(i % 2),
+            i % 2 == 0,
+            i % 3 == 0,
+        );
+        m.record_shot(i % 3);
+    }
+    let profile = m.export("airhockey");
+    assert!(
+        profile.bite.iter().any(|v| v.fract() != 0.0),
+        "decayed counts are not whole"
+    );
+    let back = feint_ai::decode_profile(&feint_ai::encode_profile(&profile)).unwrap();
+    assert_eq!(back, profile);
+    assert!(
+        feint_ai::decode_profile(&encode_record(&played().0)).is_err(),
+        "a record is not a profile"
+    );
+    assert!(feint_ai::decode_profile(&[1, 2, 3]).is_err());
+}

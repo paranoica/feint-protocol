@@ -1,14 +1,18 @@
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
 use feint_ai::{
-    Bot, Controller, Difficulty, InsightView, RunHeader, RunReport, Runner, encode_record,
+    Bot, Controller, Difficulty, InsightView, Memory, Profile, RunHeader, RunReport, Runner,
+    encode_record,
 };
 use feint_protocol::{
     ActionT, BodyParamsT, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId,
 };
 
+pub const GAME_ID: &str = "airhockey";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionError {
     Level,
+    Profile,
 }
 
 pub struct Pointer {
@@ -82,14 +86,68 @@ fn body(values: [f64; 2]) -> BodyParamsT {
     b
 }
 
+pub struct Replayer {
+    actions: Vec<ActionT>,
+    next: usize,
+    me: PlayerId,
+}
+
+impl Replayer {
+    #[must_use]
+    pub fn new(actions: Vec<ActionT>) -> Self {
+        Self {
+            actions,
+            next: 0,
+            me: 0,
+        }
+    }
+}
+
+impl Controller<AirHockey> for Replayer {
+    fn new_match(&mut self, _spec: &GameSpecT, me: PlayerId, _seed: u64) {
+        self.next = 0;
+        self.me = me;
+    }
+
+    fn on_tick(&mut self, _game: &AirHockey, obs: &ObservationT) -> Option<ActionT> {
+        while self
+            .actions
+            .get(self.next)
+            .is_some_and(|a| a.tick < obs.tick)
+        {
+            self.next += 1;
+        }
+        let action = self.actions.get(self.next).filter(|a| a.tick == obs.tick)?;
+        let mut action = action.clone();
+        action.player = self.me;
+        self.next += 1;
+        Some(action)
+    }
+}
+
 impl Session {
     pub fn new(level: u8, seed: u64) -> Result<Self, SessionError> {
+        Self::with_profile(level, seed, None)
+    }
+
+    pub fn with_profile(
+        level: u8,
+        seed: u64,
+        profile: Option<&Profile>,
+    ) -> Result<Self, SessionError> {
         let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
+        if profile.is_some() && difficulty.memory != Memory::MatchAndProfile {
+            return Err(SessionError::Profile);
+        }
         let params = Params::default();
         let mut game = AirHockey::new(params.clone(), level);
         let header = Self::header(level, seed, &game).ok_or(SessionError::Level)?;
         let mut bot = Bot::new(difficulty, HockeyPlaybook::new(params), &game.spec())
             .map_err(|_| SessionError::Level)?;
+        if let Some(profile) = profile {
+            bot.load_profile(profile, GAME_ID)
+                .map_err(|_| SessionError::Profile)?;
+        }
         let mut human = Pointer::new();
         let runner = Runner::start(&mut game, [&mut human, &mut bot], header)
             .map_err(|_| SessionError::Level)?;
@@ -104,12 +162,17 @@ impl Session {
     }
 
     #[must_use]
+    pub fn profile(&self) -> Option<Profile> {
+        self.bot.profile(GAME_ID)
+    }
+
+    #[must_use]
     pub fn header(level: u8, seed: u64, game: &AirHockey) -> Option<RunHeader> {
         let difficulty = Difficulty::preset(level)?;
         let spec = game.spec();
         let params = Params::default();
         Some(RunHeader {
-            game_id: "airhockey".into(),
+            game_id: GAME_ID.into(),
             game_version: GAME_VERSION,
             seed,
             bodies: vec![
