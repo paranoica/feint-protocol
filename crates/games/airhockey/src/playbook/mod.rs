@@ -120,7 +120,7 @@ impl Playbook<AirHockey> for HockeyPlaybook {
         if repertoire < 2 {
             return;
         }
-        let banks = self.params.rail_restitution > 0.0;
+        let banks = (1.0 / self.params.rail_restitution).is_finite();
         if banks {
             out.push(Choice {
                 shown: None,

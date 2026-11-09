@@ -5,6 +5,7 @@ use crate::model::{OpponentModel, Profile, ProfileError};
 use crate::playbook::{Choice, Playbook, Stance};
 
 const MIN_AWAY_SAMPLES: u32 = 6;
+const ATTEMPT_AWAY_SAMPLES: u32 = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Attempt {
@@ -88,9 +89,13 @@ impl<S: Clone> Insight<S> {
         P: Playbook<A>,
     {
         let possession = playbook.possession(state, me);
+        let had = self.away == 0 && self.possession.is_some();
         let returned = self.away >= MIN_AWAY_SAMPLES;
         let mut started = possession.is_some() && (possession != self.possession || returned);
         let mut rally = false;
+        if possession.is_some() && self.away > 0 {
+            self.since = Some(state.clone());
+        }
         if let Some(prev) = &self.prev {
             rally = score
                 .iter()
@@ -102,7 +107,10 @@ impl<S: Clone> Insight<S> {
                 model.record_shot(shot);
             }
             let reference = self.since.as_ref().unwrap_or(prev);
-            if let Some(covered) = playbook.read(reference, state, them).covered {
+            let covered = (had || possession.is_some())
+                .then(|| playbook.read(reference, state, them).covered)
+                .flatten();
+            if let Some(covered) = covered {
                 self.twitch = Some(covered);
                 if let Some(attempt) = &mut self.attempt {
                     attempt.covered = Some(covered);
@@ -131,7 +139,9 @@ impl<S: Clone> Insight<S> {
             self.possession = possession;
         } else {
             self.away = self.away.saturating_add(1);
-            self.end_attempt();
+            if self.away == ATTEMPT_AWAY_SAMPLES {
+                self.end_attempt();
+            }
         }
         self.prev = Some(state.clone());
         self.prev_score.clear();

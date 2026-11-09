@@ -308,3 +308,15 @@ fn touches_are_episodes_owned_by_the_toucher() {
         late[0]
     );
 }
+
+#[test]
+fn the_last_attempt_in_a_log_looks_for_contact_to_the_end() {
+    let frames: Vec<Frame> = (0..=200)
+        .map(|t| {
+            let m0 = if t == 50 { v(-0.49, 0.0) } else { v(-0.8, 0.0) };
+            quiet(t, v(-0.4, 0.0), m0, v(0.9, 0.0), [0, 0])
+        })
+        .collect();
+    let found = attempts(&Params::default(), &frames, &run(0, 0..=0, 1, false));
+    assert_eq!(found[0].contact, Some(50));
+}

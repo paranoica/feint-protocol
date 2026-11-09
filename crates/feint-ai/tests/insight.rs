@@ -71,7 +71,7 @@ fn a_bait_without_a_real_class_does_not_win_by_a_cover() {
     game.state.target[1] = 0.5;
     drive(&mut game, &mut b, 20);
     game.state.ball = -0.5;
-    drive(&mut game, &mut b, 40);
+    drive(&mut game, &mut b, 300);
     let profile = b.profile("line").unwrap();
     assert_eq!(profile.fake_tries, 1.0);
     assert_eq!(
@@ -129,7 +129,7 @@ fn an_attempt_ends_when_the_possession_ends() {
     drive_scored(&mut game, &mut b, 4, 0);
     game.state.pos[1] = 0.5;
     game.state.target[1] = 0.5;
-    drive_scored(&mut game, &mut b, 40, 0);
+    drive_scored(&mut game, &mut b, 300, 0);
     let bites: u32 = b.profile("line").unwrap().bite_events.iter().sum();
     assert_eq!(
         bites, 0,
@@ -151,4 +151,52 @@ fn an_attempt_ends_on_the_opponents_goal() {
         bites, 0,
         "a cover after the opponent scored was charged to the attempt"
     );
+}
+
+fn drive_score(game: &mut Line, bot: &mut Bot<Line, LinePlaybook>, ticks: u64, score: [i64; 2]) {
+    let mut events = Vec::new();
+    for _ in 0..ticks {
+        let mut obs = ObservationT::default();
+        game.observe(&game.state, 0, &mut obs);
+        obs.score = Some(score.to_vec());
+        if let Some(action) = bot.on_tick(game, &obs) {
+            game.apply(&action).unwrap();
+        }
+        game.advance(&mut events);
+    }
+}
+
+#[test]
+fn a_goal_scored_after_the_puck_left_still_wins_the_attempt() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive));
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 20, [0, 0]);
+    drive_score(&mut game, &mut b, 4, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        (profile.fake_tries, profile.fake_wins),
+        (1.0, 1.0),
+        "the bait's goal came while the puck was away"
+    );
+}
+
+#[test]
+fn a_twitch_is_not_read_while_the_opponent_has_the_ball() {
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 0.0), reading());
+    drive(&mut game, &mut b, 1);
+    game.state.ball = -0.5;
+    drive(&mut game, &mut b, 4);
+    game.state.pos[1] = -0.5;
+    game.state.target[1] = -0.5;
+    drive(&mut game, &mut b, 8);
+    game.state.ball = 0.5;
+    drive(&mut game, &mut b, 30);
+    assert_eq!(*b.playbook().twitches.borrow().last().unwrap(), None);
 }

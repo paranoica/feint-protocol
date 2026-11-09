@@ -81,6 +81,9 @@ fn runs(actions: &[ActionT], player: PlayerId) -> Vec<Run> {
             }
         }
     }
+    if let Some(run) = &mut open {
+        run.until = u64::MAX;
+    }
     out.extend(open);
     out
 }
@@ -175,10 +178,14 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
                 continue;
             }
             let touched = frames[last].tick;
-            let credited = found.iter().zip(&mut out[first..]).find(|(run, a)| {
-                a.contact == Some(touched) && run.start < touched && touched <= run.until
-            });
-            if let Some((_, a)) = credited {
+            let owner = found
+                .partition_point(|run| run.start < touched)
+                .checked_sub(1);
+            let credited = owner.filter(|&r| touched <= found[r].until);
+            if let Some(a) = credited
+                .map(|r| &mut out[first + r])
+                .filter(|a| a.contact == Some(touched))
+            {
                 a.scored = true;
             }
         }

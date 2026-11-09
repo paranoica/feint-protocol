@@ -81,8 +81,12 @@ impl OpponentModel {
         deceptive: bool,
         won: bool,
     ) {
-        self.decay();
         let (shown, real, covered) = (self.class(shown), self.class(real), self.class(covered));
+        let counted = shown.is_some() && (real.is_some() || covered.is_some());
+        if !counted && !deceptive {
+            return;
+        }
+        self.decay();
         if let (Some(s), Some(c)) = (shown, covered) {
             Self::bump(&mut self.bite[s * self.classes + c]);
             self.bite_events[s] = self.bite_events[s].saturating_add(1);

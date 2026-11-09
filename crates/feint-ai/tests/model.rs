@@ -176,3 +176,11 @@ fn a_model_full_to_the_cap_still_imports_its_own_export() {
     let p = m.export("g");
     assert_eq!(OpponentModel::new(3, 0.0).import(&p, "g"), Ok(()));
 }
+
+#[test]
+fn an_attempt_with_nothing_to_record_does_not_decay() {
+    let mut m = OpponentModel::new(3, 1.0);
+    m.record_shot(0);
+    m.record_attempt(None, None, Some(9), false, false);
+    assert_eq!(m.export("g").shots[0], 1.0);
+}

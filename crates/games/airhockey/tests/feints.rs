@@ -696,3 +696,47 @@ fn a_shot_is_read_once_even_when_the_mallet_follows_the_puck() {
         "the same shot a second time"
     );
 }
+
+#[test]
+fn a_tiny_rail_restitution_offers_no_bank_and_a_restrike_is_read() {
+    let tiny = Params {
+        rail_restitution: 1e-310,
+        ..Params::default()
+    };
+    let p = HockeyPlaybook::new(tiny.clone());
+    let state = Match::from_observed(
+        tiny,
+        [Body::default(); 2],
+        World {
+            puck: Puck::at_rest(Vec2::new(-0.4, 0.0)),
+            mallets: [
+                Mallet::at_rest(Vec2::new(-0.8, 0.0)),
+                Mallet::at_rest(Vec2::new(0.8, 0.3)),
+            ],
+        },
+        0,
+        [0, 0],
+        0,
+    );
+    let mut out = Vec::new();
+    p.options(&state, 0, 2, &Cue::default(), &mut out);
+    assert!(
+        out.iter()
+            .all(|c| c.id != HockeyPlaybook::BANK && c.id != HockeyPlaybook::FAKE_BANK)
+    );
+
+    let p = playbook();
+    let mut before = scene(
+        Vec2::new(0.4, 0.0),
+        [Vec2::new(-0.8, 0.0), Vec2::new(0.49, 0.0)],
+        [0, 0],
+    );
+    before.world.puck.vel = Vec2::new(-2.5, 0.0);
+    let mut after = before.clone();
+    after.world.puck.vel = Vec2::new(-6.0, 0.0);
+    assert_eq!(
+        p.read(&before, &after, 1).shot,
+        Some(1),
+        "a second strike on a moving puck"
+    );
+}

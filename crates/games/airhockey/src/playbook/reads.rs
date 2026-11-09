@@ -37,8 +37,8 @@ impl HockeyPlaybook {
         let near = close(before) || close(after);
         let puck = after.world.puck;
         let towards = attack(shooter) * puck.vel.x;
-        let already = attack(shooter) * before.world.puck.vel.x >= SHOT_SPEED;
-        if !near || already || towards < SHOT_SPEED {
+        let gained = towards - attack(shooter) * before.world.puck.vel.x;
+        if !near || gained < SHOT_SPEED || towards < SHOT_SPEED {
             return None;
         }
         let goal_x = attack(shooter) * self.params.half_length;
