@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -18,6 +19,7 @@ use crate::verify::verify;
 
 pub const MAX_BODY: usize = 32 << 20;
 pub const VERIFY_SLOTS: usize = 2;
+pub const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 
@@ -25,7 +27,8 @@ pub struct Arena {
     store: Mutex<Store>,
     matches: PathBuf,
     dist: PathBuf,
-    gate: Semaphore,
+    gate: Arc<Semaphore>,
+    body_timeout: Duration,
     clock: Clock,
     rng: Mutex<ChaCha8Rng>,
 }
@@ -33,11 +36,23 @@ pub struct Arena {
 impl Arena {
     #[must_use]
     pub fn new(store: Store, dist: PathBuf, clock: Clock, seed: [u8; 32]) -> Arc<Self> {
+        Self::with_limits(store, dist, clock, seed, BODY_TIMEOUT)
+    }
+
+    #[must_use]
+    pub fn with_limits(
+        store: Store,
+        dist: PathBuf,
+        clock: Clock,
+        seed: [u8; 32],
+        body_timeout: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             matches: store.matches_dir(),
             store: Mutex::new(store),
             dist,
-            gate: Semaphore::new(VERIFY_SLOTS),
+            gate: Arc::new(Semaphore::new(VERIFY_SLOTS)),
+            body_timeout,
             clock,
             rng: Mutex::new(ChaCha8Rng::from_seed(seed)),
         })
@@ -241,20 +256,22 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
         Some(n) if n > MAX_BODY => return error(StatusCode::PAYLOAD_TOO_LARGE, "size"),
         Some(_) => {}
     }
+    let Ok(permit) = arena.gate.clone().try_acquire_owned() else {
+        return error(StatusCode::SERVICE_UNAVAILABLE, "busy");
+    };
     let now = (arena.clock)();
     let work = arena.clone();
     let token = ticket.clone();
-    let seed = match blocking(move || work.with_store(|store| store.try_ticket(now, &token))).await
+    let seed = match blocking(move || work.with_store(|store| store.ticket_seed(now, &token))).await
     {
         Some(Ok(seed)) => seed,
         Some(Err(StoreError::Ticket)) => return Refusal::Conflict.response(),
         _ => return Refusal::Internal.response(),
     };
-    let Ok(_permit) = arena.gate.try_acquire() else {
-        return error(StatusCode::SERVICE_UNAVAILABLE, "busy");
-    };
-    let Ok(bytes) = to_bytes(body, MAX_BODY).await else {
-        return error(StatusCode::PAYLOAD_TOO_LARGE, "size");
+    let bytes = match tokio::time::timeout(arena.body_timeout, to_bytes(body, MAX_BODY)).await {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(_)) => return error(StatusCode::BAD_REQUEST, "body"),
+        Err(_) => return error(StatusCode::REQUEST_TIMEOUT, "body"),
     };
     let claim = Claim {
         now,
@@ -264,7 +281,11 @@ async fn upload(State(arena): State<Arc<Arena>>, request: Request) -> Response {
         used,
     };
     let work = arena.clone();
-    match blocking(move || accept(&work, &claim, &bytes)).await {
+    let verified = blocking(move || {
+        let _slot = permit;
+        accept(&work, &claim, &bytes)
+    });
+    match verified.await {
         Some(Ok(saved)) => {
             let version = saved
                 .profile_version
@@ -292,6 +313,15 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
         Some(b) => Some(decode_profile(b).map_err(|_| Refusal::Internal)?),
         None => None,
     };
+    let claimed = arena
+        .with_store(|store| store.try_ticket(claim.now, &claim.ticket))
+        .map_err(|e| match e {
+            StoreError::Ticket => Refusal::Conflict,
+            _ => Refusal::Internal,
+        })?;
+    if claimed != claim.seed {
+        return Err(Refusal::Conflict);
+    }
     let verified = verify(body, profile.as_ref()).map_err(|_| Refusal::Bad("record"))?;
     if verified.record.header.seed != claim.seed {
         return Err(Refusal::Bad("seed"));

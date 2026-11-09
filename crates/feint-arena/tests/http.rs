@@ -21,6 +21,10 @@ fn start(name: &str) -> Server {
 }
 
 fn start_with(name: &str, workers: usize) -> Server {
+    start_full(name, workers, Duration::from_secs(30))
+}
+
+fn start_full(name: &str, workers: usize, body_timeout: Duration) -> Server {
     let root = std::env::temp_dir().join(format!("feint-http-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dist = root.join("dist");
@@ -32,11 +36,12 @@ fn start_with(name: &str, workers: usize) -> Server {
     let store = Store::open(&data).unwrap();
     let clock = Arc::new(AtomicU64::new(1_000_000));
     let ticking = clock.clone();
-    let arena = Arena::new(
+    let arena = Arena::with_limits(
         store,
         dist,
         Arc::new(move || ticking.load(Ordering::SeqCst)),
         [7; 32],
+        body_timeout,
     );
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(workers)
@@ -589,5 +594,123 @@ fn an_oversized_upload_does_not_use_up_its_ticket() {
         )
         .status,
         201
+    );
+}
+
+#[test]
+fn failed_tries_that_never_reach_verification_keep_the_ticket() {
+    let s = start("tries");
+    let (t, seed) = ticket(&s);
+    let genuine = finished(1, seed, None).record();
+    for _ in 0..4 {
+        assert_eq!(
+            call(
+                s.addr,
+                "POST",
+                &format!("/api/matches?nick=a&ticket={t}&profile=7"),
+                &genuine
+            )
+            .status,
+            400,
+            "an unknown profile"
+        );
+    }
+    for _ in 0..4 {
+        let mut c = TcpStream::connect(s.addr).unwrap();
+        let head = format!(
+            "POST /api/matches?nick=a&ticket={t} HTTP/1.1\r\nHost: {}\r\nX-Feint: 1\r\nContent-Length: {}\r\n\r\n",
+            s.addr,
+            genuine.len()
+        );
+        c.write_all(head.as_bytes()).unwrap();
+        c.write_all(&genuine[..genuine.len() / 2]).unwrap();
+        drop(c);
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=a&ticket={t}"),
+            &genuine
+        )
+        .status,
+        201
+    );
+}
+
+#[test]
+fn a_stalled_body_times_out_and_frees_its_slot() {
+    let s = start_full("stall", 4, Duration::from_millis(500));
+    let (t1, _) = ticket(&s);
+    let (t2, _) = ticket(&s);
+    let stall = |t: &str| {
+        let mut c = TcpStream::connect(s.addr).unwrap();
+        let head = format!(
+            "POST /api/matches?nick=a&ticket={t} HTTP/1.1\r\nHost: {}\r\nX-Feint: 1\r\nConnection: close\r\nContent-Length: 1000\r\n\r\nab",
+            s.addr
+        );
+        c.write_all(head.as_bytes()).unwrap();
+        c
+    };
+    let (mut a, mut b) = (stall(&t1), stall(&t2));
+    let mut text = String::new();
+    a.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let _ = a.read_to_string(&mut text);
+    assert!(text.starts_with("HTTP/1.1 408"), "{text:?}");
+    b.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let _ = b.read_to_string(&mut String::new());
+    let (t, seed) = ticket(&s);
+    let genuine = finished(1, seed, None).record();
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=a&ticket={t}"),
+            &genuine
+        )
+        .status,
+        201,
+        "both slots are free again"
+    );
+}
+
+#[test]
+fn a_verification_keeps_its_slot_after_the_client_leaves() {
+    let s = start("leave");
+    let long = |s: &Server| {
+        let (t, seed) = ticket(s);
+        let mut game = Session::new(5, seed).unwrap();
+        while !game.finished() && game.tick() < 240 * 60 * 6 {
+            game.set_pointer(-0.6, if game.tick() % 960 < 480 { 0.3 } else { -0.3 });
+            game.advance(8);
+        }
+        (t, game.record())
+    };
+    let runs: Vec<_> = (0..2).map(|_| long(&s)).collect();
+    for (t, bytes) in &runs {
+        let mut c = TcpStream::connect(s.addr).unwrap();
+        let head = format!(
+            "POST /api/matches?nick=a&ticket={t} HTTP/1.1\r\nHost: {}\r\nX-Feint: 1\r\nContent-Length: {}\r\n\r\n",
+            s.addr,
+            bytes.len()
+        );
+        c.write_all(head.as_bytes()).unwrap();
+        c.write_all(bytes).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        drop(c);
+    }
+    let (t, seed) = ticket(&s);
+    let quick = finished(1, seed, None).record();
+    assert_eq!(
+        call(
+            s.addr,
+            "POST",
+            &format!("/api/matches?nick=a&ticket={t}"),
+            &quick
+        )
+        .status,
+        503,
+        "both slots still verify the abandoned uploads"
     );
 }
