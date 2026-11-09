@@ -135,11 +135,15 @@ pub fn attempts(params: &Params, frames: &[Frame], actions: &[ActionT]) -> Vec<A
         let found = runs(&actions, player);
         for run in &found {
             let window = span(frames, run.start.saturating_add(1), run.until);
+            let answered = window
+                .clone()
+                .find(|&k| starts[k][them])
+                .map_or(u64::MAX, |k| frames[k].tick);
             let tail = run.end.saturating_add(STRIKE_TAIL_TICKS);
             let contact = window
                 .clone()
                 .rev()
-                .find(|&k| starts[k][me] && frames[k].tick <= tail)
+                .find(|&k| starts[k][me] && frames[k].tick <= tail && frames[k].tick < answered)
                 .or_else(|| window.clone().find(|&k| starts[k][me]))
                 .map(|k| frames[k].tick);
             let mut shown = None;

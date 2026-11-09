@@ -139,7 +139,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .map_or(0, |c| now.saturating_sub(c.since));
             let score = self.rollout(adapter, state, choice, cap, elapsed);
             let read = choice.shown.zip(choice.real).is_some_and(|(shown, real)| {
-                self.insight.model().and_then(|m| m.likely_cover(shown)) == Some(real)
+                self.insight.model().is_some_and(|m| {
+                    m.likely_cover(shown) == Some(real) || m.likely_real(shown) == Some(real)
+                })
             });
             let style = if choice.deceptive && choice.real.is_some() && gate_open && !read {
                 STYLE_MARGINS * self.playbook.margin() * self.difficulty.deception

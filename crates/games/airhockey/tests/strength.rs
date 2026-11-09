@@ -18,9 +18,9 @@ fn params() -> Params {
     }
 }
 
-fn bot(level: u8, game: &AirHockey) -> Bot<AirHockey, HockeyPlaybook> {
+fn bot(level: u8, game: &AirHockey, p: &Params) -> Bot<AirHockey, HockeyPlaybook> {
     let d = Difficulty::preset(level).unwrap();
-    Bot::new(d, HockeyPlaybook::new(params()), &game.spec()).unwrap()
+    Bot::new(d, HockeyPlaybook::new(p.clone()), &game.spec()).unwrap()
 }
 
 struct Idle;
@@ -60,13 +60,13 @@ enum Side {
     Human,
 }
 
-fn controller(side: Side, game: &AirHockey) -> Box<dyn Controller<AirHockey>> {
+fn controller(side: Side, game: &AirHockey, p: &Params) -> Box<dyn Controller<AirHockey>> {
     match side {
         Side::Idle => Box::new(Idle),
-        Side::Level(l) => Box::new(bot(l, game)),
-        Side::Reader => Box::new(Reader::new(params(), false)),
-        Side::Anticipator => Box::new(Reader::new(params(), true)),
-        Side::Human => Box::new(Human::new(params(), HUMAN_NOISE)),
+        Side::Level(l) => Box::new(bot(l, game, p)),
+        Side::Reader => Box::new(Reader::new(p.clone(), false)),
+        Side::Anticipator => Box::new(Reader::new(p.clone(), true)),
+        Side::Human => Box::new(Human::new(p.clone(), HUMAN_NOISE)),
     }
 }
 
@@ -80,12 +80,16 @@ fn body(side: Side, game: &AirHockey) -> feint_protocol::BodyParamsT {
 }
 
 fn record(seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
+    record_with(&params(), seed, sides)
+}
+
+fn record_with(p: &Params, seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
     let level = |s: Side| match s {
         Side::Level(l) => l,
         _ => 0,
     };
     let levels = sides.map(level);
-    let mut game = AirHockey::new(params(), levels[0].max(1));
+    let mut game = AirHockey::new(p.clone(), levels[0].max(1));
     let header = RunHeader {
         game_id: "airhockey".into(),
         game_version: airhockey::GAME_VERSION,
@@ -93,8 +97,8 @@ fn record(seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame>) {
         bodies: sides.iter().map(|&s| body(s, &game)).collect(),
         levels,
     };
-    let mut first = controller(sides[0], &game);
-    let mut second = controller(sides[1], &game);
+    let mut first = controller(sides[0], &game, p);
+    let mut second = controller(sides[1], &game, p);
     let mut recorder = Recorder {
         inner: first.as_mut(),
         frames: Vec::new(),
@@ -210,6 +214,10 @@ fn wins(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> usize {
 }
 
 fn against_the_human(level: u8) -> (usize, u32, u32) {
+    let seven = Params {
+        goals_to_win: 7,
+        ..params()
+    };
     let (mut won_matches, mut goals, mut against) = (0, 0, 0);
     for seed in 0..40u64 {
         let me = (seed % 2) as usize;
@@ -218,7 +226,7 @@ fn against_the_human(level: u8) -> (usize, u32, u32) {
         } else {
             [Side::Human, Side::Level(level)]
         };
-        let report = record(seed, sides).0;
+        let report = record_with(&seven, seed, sides).0;
         won_matches += usize::from(won(&report, me));
         goals += report.score[me] as u32;
         against += report.score[1 - me] as u32;

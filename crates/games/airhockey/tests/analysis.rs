@@ -361,3 +361,23 @@ fn a_fake_that_nudges_first_is_read_at_its_strike() {
     );
     assert!(fake.scored, "{fake:?}");
 }
+
+#[test]
+fn a_rebound_after_the_opponent_blocks_is_not_the_strike() {
+    let frames: Vec<Frame> = (0..=200)
+        .map(|t| {
+            let puck = v(-0.4, 0.0);
+            let mut m0 = v(-0.8, 0.0);
+            let mut m1 = v(0.9, 0.0);
+            if t == 60 || t == 68 {
+                m0 = v(-0.53, 0.0);
+            }
+            if t == 64 {
+                m1 = v(-0.4, 0.13);
+            }
+            quiet(t, puck, m0, m1, [0, 0])
+        })
+        .collect();
+    let found = attempts(&Params::default(), &frames, &run(0, 0..=72, 1, false));
+    assert_eq!(found[0].contact, Some(60), "{:?}", found[0]);
+}

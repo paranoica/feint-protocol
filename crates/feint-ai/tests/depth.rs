@@ -406,4 +406,11 @@ fn the_style_bonus_does_not_push_a_fake_the_opponent_is_known_to_read() {
         !lean(Some(&read)),
         "the opponent covers the real target when shown 0: no style bonus for that fake"
     );
+    let mut known = probe.profile("line").expect("a model");
+    known.mine[1] = 50.0;
+    known.mine_events[0] = 50;
+    assert!(
+        !lean(Some(&known)),
+        "the opponent knows the real target behind a show of 0: no style bonus either"
+    );
 }
