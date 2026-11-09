@@ -46,3 +46,4 @@ jobs:
       - run: cargo test --workspace --locked
       - run: scripts/gen-protocol.sh --check
       - run: scripts/wasm-check.sh
+      - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored

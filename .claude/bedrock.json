@@ -47,6 +47,10 @@
       "run": "scripts/wasm-check.sh",
       "heavy": true
     },
+    "strength": {
+      "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored",
+      "heavy": true
+    },
     "test-bedrock": {
       "run": "uvx pytest -p no:cacheprovider -q -o addopts=",
       "heavy": true
@@ -66,7 +70,8 @@
     "crates/feint-protocol/src/adapter.rs",
     "crates/games/airhockey/src/**",
     "clippy.toml",
-    ".gitignore"
+    ".gitignore",
+    "crates/feint-ai/src/**"
   ],
   "kb": {
     "roots": [
