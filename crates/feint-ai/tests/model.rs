@@ -1,0 +1,124 @@
+use feint_ai::{OpponentModel, Profile, ProfileError};
+
+fn close(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-12
+}
+
+#[test]
+fn one_bite_is_laplace_smoothed_over_the_classes() {
+    let mut m = OpponentModel::new(3, 0.0);
+    m.record_attempt(Some(0), Some(2), Some(0), true, true);
+    assert!(close(m.bite_probability(0, 0), 2.0 / 4.0));
+    assert!(close(m.bite_probability(0, 1), 1.0 / 4.0));
+    assert!(
+        close(m.bite_probability(1, 1), 1.0 / 3.0),
+        "an unseen row is uniform"
+    );
+}
+
+#[test]
+fn every_event_decays_the_old_ones_by_adaptation() {
+    for (adaptation, older, newer) in [(0.0, 1.0, 1.0), (1.0, 0.9, 1.0)] {
+        let mut m = OpponentModel::new(3, adaptation);
+        m.record_attempt(Some(0), None, Some(0), false, false);
+        m.record_attempt(Some(0), None, Some(2), false, false);
+        let total = older + newer + 3.0;
+        assert!(
+            close(m.bite_probability(0, 0), (older + 1.0) / total),
+            "adaptation {adaptation}"
+        );
+        assert!(
+            close(m.bite_probability(0, 2), (newer + 1.0) / total),
+            "adaptation {adaptation}"
+        );
+    }
+}
+
+#[test]
+fn rows_abstain_below_three_events() {
+    let mut m = OpponentModel::new(3, 0.3);
+    for _ in 0..2 {
+        m.record_attempt(Some(1), Some(1), Some(2), false, false);
+    }
+    assert_eq!(m.likely_cover(1), None);
+    assert_eq!(m.likely_real(1), None);
+    m.record_attempt(Some(1), Some(1), Some(2), false, false);
+    assert_eq!(m.likely_cover(1), Some(2));
+    assert_eq!(m.likely_real(1), Some(1));
+    assert_eq!(m.likely_cover(0), None, "another row has no evidence");
+}
+
+#[test]
+fn shots_and_fakes_are_counted() {
+    let mut m = OpponentModel::new(3, 0.0);
+    assert_eq!(m.likely_shot(), None);
+    assert_eq!(m.fake_win_rate(), None);
+    for class in [2, 2, 0] {
+        m.record_shot(class);
+    }
+    assert_eq!(m.likely_shot(), Some(2));
+    m.record_attempt(Some(0), Some(2), Some(0), true, true);
+    m.record_attempt(Some(2), Some(0), Some(0), true, false);
+    m.record_attempt(Some(1), Some(1), Some(1), false, false);
+    assert!(close(m.fake_win_rate().unwrap(), 0.5));
+}
+
+#[test]
+fn reset_forgets_everything() {
+    let mut m = OpponentModel::new(3, 0.0);
+    for _ in 0..3 {
+        m.record_shot(1);
+        m.record_attempt(Some(0), Some(0), Some(0), true, true);
+    }
+    m.reset();
+    assert_eq!(m.likely_shot(), None);
+    assert_eq!(m.likely_cover(0), None);
+    assert_eq!(m.fake_win_rate(), None);
+}
+
+fn trained() -> OpponentModel {
+    let mut m = OpponentModel::new(3, 0.6);
+    for (s, r, c) in [(0, 2, 0), (0, 2, 0), (2, 2, 1), (0, 0, 2)] {
+        m.record_attempt(Some(s), Some(r), Some(c), s != r, c != r);
+    }
+    m.record_shot(1);
+    m
+}
+
+#[test]
+fn profile_round_trips() {
+    let m = trained();
+    let profile = m.export("airhockey");
+    assert_eq!(profile.game_id, "airhockey");
+    assert_eq!(profile.classes, 3);
+    let mut back = OpponentModel::new(3, 0.6);
+    back.import(&profile, "airhockey").expect("a valid profile");
+    assert_eq!(back, m);
+}
+
+#[test]
+fn profile_import_rejects_bad_data() {
+    let good = trained().export("airhockey");
+    let mut target = OpponentModel::new(3, 0.6);
+    let broken: [(fn(&mut Profile), ProfileError); 6] = [
+        (|p| p.game_id = "poker".into(), ProfileError::OtherGame),
+        (|p| p.classes = 4, ProfileError::WrongSize),
+        (
+            |p| p.bite.pop().map(drop).unwrap_or(()),
+            ProfileError::WrongSize,
+        ),
+        (|p| p.shots[0] = f64::NAN, ProfileError::BadCount),
+        (|p| p.mine[1] = -1.0, ProfileError::BadCount),
+        (|p| p.fake_tries = 1.0e9, ProfileError::BadCount),
+    ];
+    for (i, (breaks, why)) in broken.iter().enumerate() {
+        let mut p = good.clone();
+        breaks(&mut p);
+        assert_eq!(target.import(&p, "airhockey"), Err(*why), "case {i}");
+    }
+    assert_eq!(
+        target,
+        OpponentModel::new(3, 0.6),
+        "a refused profile changed the model"
+    );
+}
