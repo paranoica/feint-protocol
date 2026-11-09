@@ -15,5 +15,11 @@ airhockey = { path = "../games/airhockey" }
 feint-ai.workspace = true
 feint-protocol.workspace = true
 
+[features]
+test-panic = []
+
+[dev-dependencies]
+feint-ffi = { path = ".", features = ["test-panic"] }
+
 [lints]
 workspace = true

@@ -16,7 +16,8 @@ int main(void) {
   }
   static uint8_t obs[FEINT_OBSERVATION_MAX];
   static uint8_t out[FEINT_ACTION_MAX];
-  while (feint_game_finished(game) == 0 && feint_game_tick(game) < cap) {
+  uint64_t tick = 0;
+  while (feint_game_finished(game) == 0 && feint_game_tick(game, &tick) == 0 && tick < cap) {
     for (uint8_t seat = 0; seat < 2; seat++) {
       ptrdiff_t n = feint_game_observe(game, seat, obs, sizeof obs);
       if (n < 0) {
@@ -34,12 +35,15 @@ int main(void) {
       return 4;
     }
   }
-  int64_t score[2];
-  if (feint_game_score(game, score) != 0) {
+  int64_t first = 0;
+  int64_t second = 0;
+  uint64_t digest = 0;
+  if (feint_game_score(game, &first, &second) != 0 || feint_game_tick(game, &tick) != 0 ||
+      feint_game_digest(game, &digest) != 0) {
     return 5;
   }
-  printf("score %" PRId64 ":%" PRId64 " after %" PRIu64 " ticks digest %016" PRIx64 "\n", score[0], score[1],
-         feint_game_tick(game), feint_game_digest(game));
+  printf("score %" PRId64 ":%" PRId64 " after %" PRIu64 " ticks digest %016" PRIx64 "\n", first, second, tick,
+         digest);
   feint_bot_free(bots[0]);
   feint_bot_free(bots[1]);
   feint_game_free(game);

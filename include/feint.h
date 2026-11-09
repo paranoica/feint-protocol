@@ -35,11 +35,11 @@ ptrdiff_t feint_game_advance(struct FeintGame *game);
 
 ptrdiff_t feint_game_finished(const struct FeintGame *game);
 
-uint64_t feint_game_tick(const struct FeintGame *game);
+ptrdiff_t feint_game_tick(const struct FeintGame *game, uint64_t *out);
 
-ptrdiff_t feint_game_score(const struct FeintGame *game, int64_t *out);
+ptrdiff_t feint_game_score(const struct FeintGame *game, int64_t *first, int64_t *second);
 
-uint64_t feint_game_digest(const struct FeintGame *game);
+ptrdiff_t feint_game_digest(const struct FeintGame *game, uint64_t *out);
 
 struct FeintBot *feint_bot_new(uint8_t level,
                                uint64_t seed,

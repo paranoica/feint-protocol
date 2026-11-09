@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty};
-use feint_protocol::{BodyParamsT, GameAdapter, MessageT, ObservationT, decode, encode};
+use feint_protocol::{BodyParamsT, GameAdapter, MessageT, ObservationT, PlayerId, decode, encode};
 
 pub const FEINT_ERR_NULL: isize = -1;
 pub const FEINT_ERR_INPUT: isize = -2;
@@ -23,11 +23,12 @@ pub struct FeintGame {
 
 pub struct FeintBot {
     bot: Bot<AirHockey, HockeyPlaybook>,
+    player: PlayerId,
     last: Option<(u64, Vec<u8>)>,
     broken: bool,
 }
 
-static VERSION: &[u8] = b"0.1.0\0";
+static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
 
 #[must_use]
 pub fn body(level: u8, game: &AirHockey) -> Option<BodyParamsT> {
@@ -40,17 +41,20 @@ pub fn body(level: u8, game: &AirHockey) -> Option<BodyParamsT> {
     Difficulty::preset(level).map(|d| d.body(&game.spec()))
 }
 
-fn input<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+unsafe fn input<'a>(ptr: *const u8, len: usize) -> Result<&'a [u8], isize> {
     if len == 0 {
-        return Some(&[]);
+        return Ok(&[]);
     }
-    if ptr.is_null() || isize::try_from(len).is_err() {
-        return None;
+    if ptr.is_null() {
+        return Err(FEINT_ERR_NULL);
     }
-    Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+    if isize::try_from(len).is_err() {
+        return Err(FEINT_ERR_INPUT);
+    }
+    Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
 }
 
-fn output(bytes: &[u8], out: *mut u8, cap: usize) -> isize {
+unsafe fn output(bytes: &[u8], out: *mut u8, cap: usize) -> isize {
     if bytes.len() > cap {
         return FEINT_ERR_SMALL;
     }
@@ -64,6 +68,14 @@ fn output(bytes: &[u8], out: *mut u8, cap: usize) -> isize {
     isize::try_from(bytes.len()).unwrap_or(FEINT_ERR_INPUT)
 }
 
+unsafe fn write<T>(out: *mut T, value: T) -> isize {
+    if out.is_null() {
+        return FEINT_ERR_NULL;
+    }
+    unsafe { out.write(value) };
+    0
+}
+
 fn guarded(broken: &mut bool, f: impl FnOnce() -> isize) -> isize {
     if *broken {
         return FEINT_ERR_BROKEN;
@@ -74,6 +86,14 @@ fn guarded(broken: &mut bool, f: impl FnOnce() -> isize) -> isize {
             *broken = true;
             FEINT_ERR_PANIC
         }
+    }
+}
+
+unsafe fn live<'a>(game: *const FeintGame) -> Result<&'a FeintGame, isize> {
+    match unsafe { game.as_ref() } {
+        None => Err(FEINT_ERR_NULL),
+        Some(g) if g.broken => Err(FEINT_ERR_BROKEN),
+        Some(g) => Ok(g),
     }
 }
 
@@ -123,7 +143,8 @@ pub unsafe extern "C" fn feint_game_observe(
         }
         let mut obs = ObservationT::default();
         game.observe(game.live(), player, &mut obs);
-        output(&encode(&MessageT::Observation(Box::new(obs))), out, cap)
+        let bytes = encode(&MessageT::Observation(Box::new(obs)));
+        unsafe { output(&bytes, out, cap) }
     })
 }
 
@@ -136,8 +157,9 @@ pub unsafe extern "C" fn feint_game_apply(
     let Some(g) = (unsafe { game.as_mut() }) else {
         return FEINT_ERR_NULL;
     };
-    let Some(bytes) = input(bytes, len) else {
-        return FEINT_ERR_NULL;
+    let bytes = match unsafe { input(bytes, len) } {
+        Ok(bytes) => bytes,
+        Err(code) => return code,
     };
     let FeintGame { game, broken } = g;
     guarded(broken, || match decode(bytes) {
@@ -167,37 +189,46 @@ pub unsafe extern "C" fn feint_game_advance(game: *mut FeintGame) -> isize {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn feint_game_finished(game: *const FeintGame) -> isize {
-    match unsafe { game.as_ref() } {
-        Some(g) if g.broken => FEINT_ERR_BROKEN,
-        Some(g) => isize::from(g.game.result().is_some()),
-        None => FEINT_ERR_NULL,
+    match unsafe { live(game) } {
+        Ok(g) => isize::from(g.game.result().is_some()),
+        Err(code) => code,
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn feint_game_tick(game: *const FeintGame) -> u64 {
-    unsafe { game.as_ref() }.map_or(0, |g| g.game.live().tick())
+pub unsafe extern "C" fn feint_game_tick(game: *const FeintGame, out: *mut u64) -> isize {
+    match unsafe { live(game) } {
+        Ok(g) => unsafe { write(out, g.game.live().tick()) },
+        Err(code) => code,
+    }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn feint_game_score(game: *const FeintGame, out: *mut i64) -> isize {
-    let Some(g) = (unsafe { game.as_ref() }) else {
-        return FEINT_ERR_NULL;
+pub unsafe extern "C" fn feint_game_score(
+    game: *const FeintGame,
+    first: *mut i64,
+    second: *mut i64,
+) -> isize {
+    let g = match unsafe { live(game) } {
+        Ok(g) => g,
+        Err(code) => return code,
     };
-    if out.is_null() {
+    if first.is_null() || second.is_null() {
         return FEINT_ERR_NULL;
     }
     let score = g.game.live().score();
     unsafe {
-        *out = i64::from(score[0]);
-        *out.add(1) = i64::from(score[1]);
+        write(first, i64::from(score[0]));
+        write(second, i64::from(score[1]))
     }
-    0
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn feint_game_digest(game: *const FeintGame) -> u64 {
-    unsafe { game.as_ref() }.map_or(0, |g| g.game.digest(g.game.live()))
+pub unsafe extern "C" fn feint_game_digest(game: *const FeintGame, out: *mut u64) -> isize {
+    match unsafe { live(game) } {
+        Ok(g) => unsafe { write(out, g.game.digest(g.game.live())) },
+        Err(code) => code,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -207,7 +238,7 @@ pub unsafe extern "C" fn feint_bot_new(
     player: u8,
     game: *const FeintGame,
 ) -> *mut FeintBot {
-    let Some(g) = (unsafe { game.as_ref() }) else {
+    let Ok(g) = (unsafe { live(game) }) else {
         return std::ptr::null_mut();
     };
     if player > 1 {
@@ -224,6 +255,7 @@ pub unsafe extern "C" fn feint_bot_new(
         bot.new_match(&spec, player, seed);
         Some(Box::new(FeintBot {
             bot,
+            player,
             last: None,
             broken: false,
         }))
@@ -250,28 +282,48 @@ pub unsafe extern "C" fn feint_bot_tick(
     out: *mut u8,
     cap: usize,
 ) -> isize {
-    let (Some(b), Some(g)) = (unsafe { bot.as_mut() }, unsafe { game.as_ref() }) else {
+    let Some(b) = (unsafe { bot.as_mut() }) else {
         return FEINT_ERR_NULL;
     };
-    let Some(obs) = input(obs, len) else {
-        return FEINT_ERR_NULL;
+    let g = match unsafe { live(game) } {
+        Ok(g) => g,
+        Err(code) => return code,
     };
-    let obs = obs.to_vec();
-    let FeintBot { bot, last, broken } = b;
+    let obs = match unsafe { input(obs, len) } {
+        Ok(obs) => obs.to_vec(),
+        Err(code) => return code,
+    };
+    let FeintBot {
+        bot,
+        player,
+        last,
+        broken,
+    } = b;
     guarded(broken, || {
         let Ok(MessageT::Observation(obs)) = decode(&obs) else {
             return FEINT_ERR_INPUT;
         };
-        if let Some((tick, bytes)) = last.as_ref().filter(|(tick, _)| *tick == obs.tick) {
-            let _ = tick;
-            return output(bytes, out, cap);
+        if obs.player != *player {
+            return FEINT_ERR_INPUT;
+        }
+        if let Some((_, bytes)) = last.as_ref().filter(|(tick, _)| *tick == obs.tick) {
+            return unsafe { output(bytes, out, cap) };
         }
         let bytes = bot
             .on_tick(&g.game, &obs)
             .map(|action| encode(&MessageT::Action(Box::new(action))))
             .unwrap_or_default();
-        let written = output(&bytes, out, cap);
+        let written = unsafe { output(&bytes, out, cap) };
         *last = Some((obs.tick, bytes));
         written
     })
+}
+
+#[cfg(feature = "test-panic")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn feint_test_panic(game: *mut FeintGame) -> isize {
+    let Some(g) = (unsafe { game.as_mut() }) else {
+        return FEINT_ERR_NULL;
+    };
+    guarded(&mut g.broken, || panic!("a panic on purpose"))
 }

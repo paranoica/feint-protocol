@@ -7,3 +7,4 @@ cpp_compat = false
 
 [export]
 include = ["FeintGame", "FeintBot"]
+exclude = ["feint_test_panic"]
