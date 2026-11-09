@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, intentName } from "../src/overlay.ts";
+import { describe, intentColor, intentName } from "../src/overlay.ts";
 
 test("intents read as fake, strike, defend", () => {
   assert.equal(intentName(-1), "waiting");
@@ -33,4 +33,13 @@ test("the bot's classes are named from the human's side of the table", () => {
 test("a strike that shows nothing says so", () => {
   const lines = describe({ intent: 2, memory: false, likelyShot: -1, likelyCover: [], shown: -1, real: 1 });
   assert.equal(lines[1], "showing nothing, playing centre");
+});
+
+test("the bot's colour in the debug view follows its intent", () => {
+  assert.equal(intentColor(3), "#facc15", "a fake is yellow");
+  assert.equal(intentColor(2), "#ef4444", "an honest strike is red");
+  assert.equal(intentColor(4), "#a78bfa", "defending is violet");
+  assert.equal(intentColor(0), "#94a3b8", "moving is grey");
+  assert.equal(intentColor(-1), "#94a3b8", "waiting is grey");
+  assert.equal(new Set([3, 2, 4, 0].map(intentColor)).size, 4, "four distinct colours");
 });

@@ -41,3 +41,15 @@ export function describe(insight: Insight): string[] {
   });
   return lines;
 }
+
+const INTENT_COLORS: Record<string, string> = {
+  fake: "#facc15",
+  strike: "#ef4444",
+  defend: "#a78bfa",
+};
+
+export const LEGEND = "colour: yellow fake · red strike · violet defend · grey move";
+
+export function intentColor(intent: number): string {
+  return INTENT_COLORS[intentName(intent)] ?? "#94a3b8";
+}

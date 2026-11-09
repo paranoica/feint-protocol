@@ -4,7 +4,7 @@ import { idle, press, release, steers, type Drag } from "./drag.ts";
 import { fit, pixels, toCanvas, toTable, TABLE, type Fit, type Table } from "./geometry.ts";
 import { countdown, follow, goalBanner, shade } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
-import { describe } from "./overlay.ts";
+import { describe, intentColor, LEGEND } from "./overlay.ts";
 import { again, finish, first, start, type Screen } from "./screens.ts";
 
 const TICK_CAP = 12;
@@ -285,7 +285,7 @@ function draw(match: WebMatch, now: number) {
   }
   const p = match.positions();
   mallet(p[4], p[5], colors.you);
-  mallet(p[8], p[9], colors.bot);
+  mallet(p[8], p[9], showDebug ? intentColor(match.intent()) : colors.bot);
   puck(p[0], p[1]);
   const big = Math.max(24, view.scale * 0.08);
   const banner = goalBanner(match.serve_pause(), pauseFull, scorer);
@@ -317,7 +317,7 @@ function drawDebug(match: WebMatch) {
     shown: match.current_shown(),
     real: match.current_real(),
   };
-  debugBox.textContent = describe(insight).join("\n");
+  debugBox.textContent = [LEGEND, ...describe(insight)].join("\n");
   const mark = (attacker: number, cls: number, color: string, filled: boolean) => {
     if (cls < 0) {
       return;
