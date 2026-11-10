@@ -222,6 +222,10 @@ pub struct LinePlaybook {
     pub shots_at: Option<u8>,
     pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
     pub signal: std::cell::Cell<Option<u8>>,
+    pub retreat: std::cell::Cell<bool>,
+    pub dash: std::cell::Cell<Option<u8>>,
+    pub steady: Vec<f32>,
+    pub window: Option<f64>,
 }
 
 impl LinePlaybook {
@@ -240,6 +244,10 @@ impl LinePlaybook {
             shots_at: None,
             twitches: std::cell::RefCell::new(Vec::new()),
             signal: std::cell::Cell::new(None),
+            retreat: std::cell::Cell::new(false),
+            dash: std::cell::Cell::new(None),
+            steady: Vec::new(),
+            window: None,
         }
     }
 }
@@ -248,6 +256,30 @@ impl Playbook<Line> for LinePlaybook {
     fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
         self.twitches.borrow_mut().push(cue.twitch);
+        if let Some(real) = self.dash.get() {
+            out.push(Choice {
+                id: 98,
+                intent: 1,
+                deceptive: false,
+                horizon_ticks: self.horizon,
+                param: [0.0, 0.0],
+                shown: None,
+                real: Some(real),
+            });
+            return;
+        }
+        if self.retreat.get() {
+            out.push(Choice {
+                id: 99,
+                intent: 2,
+                deceptive: false,
+                horizon_ticks: self.horizon,
+                param: [0.0, 0.0],
+                shown: None,
+                real: None,
+            });
+            return;
+        }
         out.extend(self.targets.iter().enumerate().map(|(i, &x)| Choice {
             id: i as u16,
             intent: 1,
@@ -256,6 +288,16 @@ impl Playbook<Line> for LinePlaybook {
             param: [x, 0.0],
             shown: self.shown.then_some(i as u8),
             real: self.shown.then_some(i as u8),
+        }));
+        let base = self.targets.len() + self.fakes.len();
+        out.extend(self.steady.iter().enumerate().map(|(i, &x)| Choice {
+            id: (base + i) as u16,
+            intent: 1,
+            deceptive: false,
+            horizon_ticks: self.horizon,
+            param: [x, 1.0],
+            shown: None,
+            real: None,
         }));
         let first = self.targets.len();
         out.extend(self.fakes.iter().enumerate().map(|(i, &x)| Choice {
@@ -279,7 +321,8 @@ impl Playbook<Line> for LinePlaybook {
     ) -> ActionT {
         let mut a = ActionT::default();
         a.player = me;
-        a.values = Some(vec![(f64::from(c.param[0]) + aim[0]) as f32]);
+        let noise = if c.param[1] >= 0.5 { 0.0 } else { aim[0] };
+        a.values = Some(vec![(f64::from(c.param[0]) + noise) as f32]);
         a
     }
 
@@ -295,7 +338,12 @@ impl Playbook<Line> for LinePlaybook {
         if self.flat {
             return 0.0;
         }
-        -(s.pos[usize::from(me.min(1))] - s.ball).abs()
+        let gap = (s.pos[usize::from(me.min(1))] - s.ball).abs();
+        match self.window {
+            Some(w) if gap > w => -1.0,
+            Some(_) => 1.0 - gap,
+            None => -gap,
+        }
     }
 
     fn margin(&self) -> f64 {

@@ -7,7 +7,7 @@ use feint_protocol::{
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
-use crate::insight::{Insight, Seen};
+use crate::insight::{Insight, STEADY_SAMPLES, Seen};
 use crate::long_game::Plan;
 use crate::model::{OpponentModel, Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
@@ -92,7 +92,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         } else {
             (None, 0, 1, 1, 1)
         };
-        let insight = Insight::new(&difficulty, playbook.signal_classes());
+        let steady = if realtime { STEADY_SAMPLES } else { 1 };
+        let insight = Insight::new(&difficulty, playbook.signal_classes(), steady);
         Ok(Self {
             difficulty,
             playbook,
@@ -172,6 +173,21 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
 
     fn unit(&mut self) -> f64 {
         (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    fn own_errors(&self, room: usize) -> Vec<([f64; 2], f64)> {
+        let wide = self.difficulty.spread / 2.0_f64.sqrt();
+        if wide > 0.0 && room >= 5 {
+            vec![
+                ([0.0; 2], 2.0 / 3.0),
+                ([-wide, -wide], 1.0 / 12.0),
+                ([-wide, wide], 1.0 / 12.0),
+                ([wide, -wide], 1.0 / 12.0),
+                ([wide, wide], 1.0 / 12.0),
+            ]
+        } else {
+            vec![([0.0; 2], 1.0)]
+        }
     }
 
     fn commit(&mut self, choice: Choice, now: u64, importance: f64, signal: Option<u8>) {

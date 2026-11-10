@@ -249,23 +249,26 @@ fn a_loaded_profile_starts_the_theories_afresh() {
 #[test]
 fn the_opponents_signals_are_tied_to_where_it_really_went() {
     let mut m = OpponentModel::new(3, 0.0);
-    assert_eq!(m.likely_their_real(0), None);
+    let likeliest = |m: &OpponentModel, s: u8| {
+        m.their_odds(s).map(|odds| {
+            odds.into_iter()
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(k, _)| k)
+        })
+    };
+    assert_eq!(m.their_odds(0), None);
     for _ in 0..2 {
         m.record_shot_after(2, &[0]);
     }
-    assert_eq!(m.likely_their_real(0), None, "two kicks are not evidence");
+    assert_eq!(m.their_odds(0), None, "two kicks are not evidence");
     m.record_shot_after(2, &[0, 1]);
     assert_eq!(
-        m.likely_their_real(0),
-        Some(2),
+        likeliest(&m, 0),
+        Some(Some(Some(2))),
         "showing left, it kicks right"
     );
-    assert_eq!(m.likely_their_real(1), None);
-    assert_eq!(
-        m.likely_their_real(2),
-        None,
-        "nothing was shown on the right"
-    );
+    assert_eq!(m.their_odds(1), None);
+    assert_eq!(m.their_odds(2), None, "nothing was shown on the right");
     assert_eq!(m.likely_shot(), Some(2), "every one of them is also a shot");
     m.record_shot_after(0, &[]);
     assert_eq!(
@@ -311,11 +314,14 @@ fn the_odds_of_a_signal_are_smoothed_and_drop_what_is_too_rare() {
     let odds = m.their_odds(0).unwrap();
     assert_eq!(
         odds.iter().map(|&(k, _)| k).collect::<Vec<_>>(),
-        vec![0, 1, 2]
+        vec![Some(0), Some(1), Some(2), None]
     );
     let p: Vec<f64> = odds.iter().map(|&(_, p)| p).collect();
     assert!(
-        close(p[0], 2.0 / 6.0) && close(p[1], 1.0 / 6.0) && close(p[2], 3.0 / 6.0),
+        close(p[0], 2.0 / 7.0)
+            && close(p[1], 1.0 / 7.0)
+            && close(p[2], 3.0 / 7.0)
+            && close(p[3], 1.0 / 7.0),
         "{p:?}"
     );
     for _ in 0..30 {
@@ -324,7 +330,7 @@ fn the_odds_of_a_signal_are_smoothed_and_drop_what_is_too_rare() {
     let odds = m.their_odds(0).unwrap();
     assert_eq!(
         odds.iter().map(|&(k, _)| k).collect::<Vec<_>>(),
-        vec![0, 2],
+        vec![Some(0), Some(2)],
         "an unseen class under the floor is dropped, a seen one stays however rare: {odds:?}"
     );
     assert!(odds[0].1 < 0.1, "{odds:?}");
@@ -333,4 +339,80 @@ fn the_odds_of_a_signal_are_smoothed_and_drop_what_is_too_rare() {
         "what is kept sums to one"
     );
     assert_eq!(m.their_odds(7), None);
+}
+
+#[test]
+fn a_show_without_a_shot_is_an_outcome_of_its_own() {
+    let mut m = OpponentModel::new(3, 0.0);
+    m.record_bluff(&[]);
+    assert_eq!(
+        m.export("pick").theirs_events,
+        vec![0, 0, 0],
+        "nothing shown, nothing learned"
+    );
+    for _ in 0..3 {
+        m.record_bluff(&[2, 9]);
+    }
+    let odds = m.their_odds(2).unwrap();
+    let total = 3.0 + 3.0 + 1.0;
+    assert_eq!(odds.len(), 4, "{odds:?}");
+    let none = odds.iter().find(|(k, _)| k.is_none()).unwrap().1;
+    assert!(close(none, 4.0 / total), "{odds:?}");
+    assert_eq!(m.export("pick").bluffs, vec![0.0, 0.0, 3.0]);
+    assert_eq!(m.likely_shot(), None, "a bluff is not a shot");
+    let mut decaying = OpponentModel::new(3, 1.0);
+    decaying.record_bluff(&[0]);
+    decaying.record_shot(1);
+    assert!(close(decaying.export("pick").bluffs[0], 0.9));
+}
+
+#[test]
+fn a_profile_from_before_the_bluffs_still_loads() {
+    let mut m = trained();
+    m.record_bluff(&[1]);
+    let mut old = m.export("airhockey");
+    old.bluffs.clear();
+    let mut target = trained();
+    target.record_bluff(&[0]);
+    target
+        .import(&old, "airhockey")
+        .expect("an older profile loads");
+    assert_eq!(target.export("airhockey").bluffs, vec![0.0; 3]);
+    let mut wrong = m.export("airhockey");
+    wrong.bluffs.pop();
+    assert_eq!(
+        target.import(&wrong, "airhockey"),
+        Err(ProfileError::WrongSize)
+    );
+    let mut bad = m.export("airhockey");
+    bad.bluffs[0] = f64::NAN;
+    assert_eq!(
+        target.import(&bad, "airhockey"),
+        Err(ProfileError::BadCount)
+    );
+}
+
+#[test]
+fn the_theories_travel_with_the_players_profile() {
+    let mut learner = OpponentModel::new(3, 1.0);
+    for _ in 0..3 {
+        learner.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    for _ in 0..6 {
+        learner.record_attempt(Some(0), Some(0), Some(0), false, false);
+    }
+    assert!(learner.knowing_beats_reading());
+    let profile = learner.export("pick");
+    assert!(profile.knowing > profile.reading, "{profile:?}");
+    let mut next_match = OpponentModel::new(3, 1.0);
+    next_match.import(&profile, "pick").unwrap();
+    assert!(
+        next_match.knowing_beats_reading(),
+        "the same player's theory was forgotten between matches"
+    );
+    let back = feint_ai::decode_profile(&feint_ai::encode_profile(&profile)).unwrap();
+    assert_eq!(back, profile);
+    let mut bad = profile.clone();
+    bad.knowing = -1.0;
+    assert_eq!(next_match.import(&bad, "pick"), Err(ProfileError::BadCount));
 }

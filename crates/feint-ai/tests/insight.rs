@@ -404,3 +404,106 @@ fn the_insight_view_predicts_a_habitual_shot() {
     }
     assert_eq!(b.insight().likely_shot, Some(2));
 }
+
+#[test]
+fn an_attempt_stays_open_through_a_quiet_commit_until_its_outcome() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive));
+    b.playbook().retreat.set(true);
+    drive_score(&mut game, &mut b, 30, [0, 0]);
+    assert_eq!(b.current().map(|c| c.id), Some(99), "the bot fell back");
+    drive_score(&mut game, &mut b, 4, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        (profile.fake_tries, profile.fake_wins),
+        (1.0, 1.0),
+        "the fake scored after the bot fell back, yet was recorded as lost"
+    );
+}
+
+fn precise_or_steady(spread: f64) -> u16 {
+    let mut p = LinePlaybook::new(&[0.5], 240);
+    p.steady = vec![0.52];
+    p.window = Some(0.03);
+    let mut game = Line::new(0.5, 0.0);
+    let mut d = difficulty(0, 0.0);
+    d.spread = spread;
+    let mut b = bot(d, p);
+    drive(&mut game, &mut b, 1);
+    b.current().expect("a plan").id
+}
+
+#[test]
+fn a_bot_that_knows_its_own_error_takes_the_option_that_forgives_it() {
+    assert_eq!(
+        precise_or_steady(0.0),
+        0,
+        "an exact bot takes the exact target"
+    );
+    for spread in [0.1, 0.2] {
+        assert_eq!(
+            precise_or_steady(spread),
+            1,
+            "spread {spread}: the bot bet on hitting a 3 cm window it misses by its own error"
+        );
+    }
+}
+
+#[test]
+fn a_dash_after_a_bait_gives_the_bait_its_real_class() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive && c.real.is_none()));
+    b.playbook().dash.set(Some(2));
+    drive_score(&mut game, &mut b, 30, [0, 0]);
+    assert_eq!(b.current().map(|c| c.id), Some(98), "the bot dashed");
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 300, [0, 0]);
+    let mine = b.profile("line").unwrap().mine;
+    assert!(
+        mine[2] > 0.0,
+        "the bait showing 0 was followed by a dash at 2, yet recorded {mine:?}"
+    );
+}
+
+#[test]
+fn a_show_that_ends_without_a_shot_is_recorded_as_a_bluff() {
+    let mut p = reading();
+    p.shots_at = Some(2);
+    let mut game = Line::new(-0.5, 0.0);
+    let mut b = bot(difficulty(2, 0.0), p);
+    b.playbook().signal.set(Some(0));
+    for _ in 0..2 {
+        game.state.ball = -0.5;
+        drive(&mut game, &mut b, 40);
+        game.state.ball = 0.5;
+        drive(&mut game, &mut b, 8);
+    }
+    game.state.ball = -0.5;
+    drive(&mut game, &mut b, 40);
+    b.playbook().signal.set(None);
+    game.state.ball_v = 0.1;
+    drive(&mut game, &mut b, 8);
+    game.state.ball_v = 0.0;
+    game.state.ball = 0.5;
+    drive(&mut game, &mut b, 8);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        profile.bluffs,
+        vec![2.0, 0.0, 0.0],
+        "two shows ended with the ball handed over"
+    );
+    assert_eq!(
+        profile.theirs[2], 1.0,
+        "the show that ended in a shot is not a bluff"
+    );
+    assert_eq!(profile.theirs_events, vec![3, 0, 0]);
+}

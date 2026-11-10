@@ -3,6 +3,12 @@ use feint_protocol::{ActionT, GameAdapter};
 use super::{Bot, SIMULATION_BUDGET};
 
 const STYLE_MARGINS: f64 = 6.0;
+
+#[derive(Clone, Copy)]
+struct Imagined {
+    stance: Stance,
+    own: [f64; 2],
+}
 use crate::playbook::{Choice, Cue, Playbook, Stance};
 
 impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
@@ -56,11 +62,12 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         adapter: &A,
         state: &A::State,
         choice: &Choice,
-        stance: Stance,
+        imagined: Imagined,
         cap: u32,
         elapsed: u64,
     ) -> f64 {
         let horizon = choice.horizon_ticks.clamp(1, cap);
+        let Imagined { stance, own } = imagined;
         let mut state = state.clone();
         let mut theirs = self.playbook.opponent_move(&state, self.opponent(), stance);
         let mut next_reply = self.reply_every;
@@ -76,7 +83,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 self.me,
                 choice,
                 elapsed.saturating_add(u64::from(done)),
-                [0.0; 2],
+                own,
             );
             state = adapter.simulate(&state, &[mine, theirs.clone()], ticks);
             done += ticks;
@@ -100,7 +107,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             &mut options,
         );
         let importance = self.playbook.importance(state, self.me);
-        let signal = self.playbook.signal(state, self.opponent());
+        let signal = self.insight.signal;
         let current = self.current;
         let depth = self.difficulty.depth;
         let held = current.map(|c| c.choice.id);
@@ -151,25 +158,26 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .collect::<Vec<_>>()
         });
         let outcomes = odds.as_ref().map_or(1, Vec::len).max(1);
-        let rollouts = options.len().saturating_mul(outcomes);
+        let errors = self.own_errors(usize::try_from(fits).unwrap_or(usize::MAX) / outcomes);
+        let rollouts = options
+            .len()
+            .saturating_mul(outcomes)
+            .saturating_mul(errors.len());
         let cap = (SIMULATION_BUDGET / u32::try_from(rollouts).unwrap_or(u32::MAX)).max(1);
         let mut scored: Vec<(Choice, f64)> = Vec::with_capacity(options.len());
         for choice in &options {
             let elapsed = current
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
-            let score = match &odds {
-                Some(odds) => odds
-                    .iter()
-                    .map(|&(stance, p)| {
-                        p * self.rollout(adapter, state, choice, stance, cap, elapsed)
-                    })
-                    .sum(),
-                None => {
-                    let stance = self.insight.stance(depth, choice);
-                    self.rollout(adapter, state, choice, stance, cap, elapsed)
+            let single = [(self.insight.stance(depth, choice), 1.0)];
+            let weighed = odds.as_deref().unwrap_or(&single);
+            let mut score = 0.0;
+            for &(own, w) in &errors {
+                for &(stance, p) in weighed {
+                    let imagined = Imagined { stance, own };
+                    score += w * p * self.rollout(adapter, state, choice, imagined, cap, elapsed);
                 }
-            };
+            }
             let read = choice.shown.zip(choice.real).is_some_and(|(shown, real)| {
                 self.insight.model().is_some_and(|m| {
                     m.likely_cover(shown) == Some(real) || m.likely_real(shown) == Some(real)
