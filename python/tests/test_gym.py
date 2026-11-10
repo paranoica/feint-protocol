@@ -1,6 +1,10 @@
+import threading
+
 import numpy as np
 import pytest
 from feint_gym import HockeyBatch
+
+from feint_train.throughput import mix
 
 MIX = [
     ("learner", "learner"),
@@ -93,7 +97,10 @@ def test_a_capped_match_is_truncated_and_starts_again() -> None:
         ([("learner", "level:9")], {}, "level 9"),
         ([("learner", "goalie")], {}, "unknown seat"),
         ([("learner", "human")], {"threads": 0}, "thread"),
-        ([("learner", "human")], {"cap_ticks": 6}, "multiple of 4"),
+        ([("learner", "human")], {"cap_ticks": 6}, "decision stride"),
+        ([("learner", "human")], {"reaction_ms": (400, 400), "cap_ticks": 96}, "at least 100"),
+        ([("learner", "human")], {"reaction_ms": (150, 300_000)}, "delay limit"),
+        ([("learner", "human")], {"goals_to_win": 0}, "one goal to win"),
         ([("learner", "human")], {"physique": (0.0, 1.0)}, "ranges"),
     ],
 )
@@ -110,6 +117,20 @@ def test_actions_of_the_wrong_shape_are_refused() -> None:
     with pytest.raises(ValueError, match="shape"):
         batch.step(np.zeros((3, 2, 2), dtype=np.float32))
     batch.step(np.zeros((4, 2, 2), dtype=np.float32))
+
+
+def test_actions_that_are_not_plain_float32_memory_are_refused() -> None:
+    batch = HockeyBatch(MIX, seed=1)
+    batch.reset()
+    record = np.zeros((4, 2, 2), dtype=[("a", "f4"), ("b", "u1")])
+    shifted = np.frombuffer(bytes(4 * 2 * 2 * 4 + 1), dtype=np.float32, offset=1).reshape(4, 2, 2)
+    fortran = np.asfortranarray(np.zeros((4, 2, 2), dtype=np.float32))
+    for bad in (record["a"], shifted, fortran):
+        with pytest.raises(ValueError, match="C-contiguous"):
+            batch.step(bad)
+    with pytest.raises(TypeError):
+        batch.step(np.zeros((4, 2, 2), dtype=np.float64))
+    batch.step(np.ascontiguousarray(fortran))
 
 
 def test_goals_to_win_ends_the_match() -> None:
@@ -134,3 +155,41 @@ def test_every_seat_name_is_read_as_written() -> None:
     assert [batch.seats(env) for env in range(len(names))] == [("learner", n) for n in names]
     with pytest.raises(ValueError, match="no env"):
         batch.seats(len(names))
+
+
+def test_the_training_mix_steps_at_full_size() -> None:
+    batch = HockeyBatch(mix(256), seed=11, threads=4)
+    out = batch.reset()
+    decided = out["ready"].copy()
+    for _ in range(20):
+        out = batch.step(policy(out))
+        decided |= out["ready"]
+        assert out["obs"].shape == (256, 2, 18)
+        assert np.isfinite(out["obs"]).all()
+    learners = np.array([[a == "learner", b == "learner"] for a, b in mix(256)])
+    assert (decided == learners).all()
+
+
+def test_another_thread_never_deadlocks_a_step() -> None:
+    batch = HockeyBatch(mix(64), seed=2, threads=2)
+    out = batch.reset()
+    done = threading.Event()
+    answers: list[str] = []
+
+    def poke() -> None:
+        while not done.is_set():
+            try:
+                batch.ticks(0)
+                answers.append("ticks")
+            except RuntimeError:
+                answers.append("busy")
+
+    other = threading.Thread(target=poke)
+    other.start()
+    for _ in range(30):
+        out = batch.step(policy(out))
+    done.set()
+    other.join(timeout=10)
+    assert not other.is_alive()
+    assert len(batch) == 64
+    assert answers

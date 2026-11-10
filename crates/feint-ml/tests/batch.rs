@@ -1,8 +1,9 @@
+use airhockey::human::{HUMAN_NOISE, Human, Reader};
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
-use feint_ai::{Bot, Difficulty, RunHeader, run_match};
+use feint_ai::{Bot, Controller, Difficulty, RunHeader, run_match};
 use feint_ml::batch::{FEATURES, OUTPUTS};
-use feint_ml::{BatchError, BatchSpec, HockeyBatch, Outputs, Pilot, Policy, Seat};
-use feint_protocol::{BodyParamsT, GameAdapter};
+use feint_ml::{BatchError, BatchSpec, Episode, HockeyBatch, Outputs, Pilot, Policy, Seat};
+use feint_protocol::GameAdapter;
 
 fn decide(features: &[f32], out: &mut [f32]) {
     out[0] = features[0] / 1.2 - 0.3;
@@ -98,48 +99,87 @@ fn ready_seats_see_their_reaction_and_body_and_the_rest_see_nothing() {
     }
 }
 
-#[test]
-fn the_batch_plays_what_run_match_plays() {
-    let mut spec = BatchSpec::new(vec![[Seat::Learner, Seat::Level(2)]], 9);
-    spec.threads = 2;
-    let mut batch = HockeyBatch::new(spec).expect("a valid batch");
-    let mut out = batch.reset().expect("resets").clone();
-    let episode = batch.episode(0).expect("env 0");
-    for _ in 0..400 {
-        out = batch.step(&actions(&out, 1)).expect("steps").clone();
-        assert!(!out.terminated[0] && !out.truncated[0]);
-    }
-    let ticks = batch.ticks(0).expect("env 0");
-    assert!(ticks > 1600, "{ticks}");
-
+fn replayed(seats: [Seat; 2], episode: Episode, ticks: u64) -> u64 {
     let params = Params::default();
     let mut game = AirHockey::new(params.clone(), 0);
     let spec = game.spec();
-    let body = |physique: f64| -> BodyParamsT {
+    let mut players: Vec<Box<dyn Controller<AirHockey>>> = Vec::new();
+    let mut bodies = Vec::new();
+    for (index, seat) in seats.into_iter().enumerate() {
         let mut d = Difficulty::preset(5).unwrap();
-        d.physique = physique;
-        d.body(&spec)
-    };
-    let mut pilot = Pilot::new(
-        HockeyPlaybook::new(params.clone()),
-        Same,
-        &spec,
-        episode.reaction_ms[0],
-        episode.physique[0],
-    )
-    .expect("a pilot");
-    let level = Difficulty::preset(2).unwrap();
-    assert_eq!(episode.reaction_ms[1], level.reaction_ms);
-    let mut bot = Bot::new(level, HockeyPlaybook::new(params.clone()), &spec).expect("a bot");
+        d.physique = episode.physique[index];
+        bodies.push(d.body(&spec));
+        players.push(match seat {
+            Seat::Learner => Box::new(
+                Pilot::new(
+                    HockeyPlaybook::new(params.clone()),
+                    Same,
+                    &spec,
+                    episode.reaction_ms[index],
+                    episode.physique[index],
+                )
+                .expect("a pilot"),
+            ),
+            Seat::Level(level) => {
+                let d = Difficulty::preset(level).unwrap();
+                assert_eq!(episode.reaction_ms[index], d.reaction_ms);
+                Box::new(Bot::new(d, HockeyPlaybook::new(params.clone()), &spec).expect("a bot"))
+            }
+            Seat::Human => Box::new(Human::new(params.clone(), HUMAN_NOISE)),
+            Seat::Reader { anticipates } => Box::new(Reader::new(params.clone(), anticipates)),
+        });
+    }
     let header = RunHeader {
         game_id: "airhockey".into(),
         game_version: GAME_VERSION,
         seed: episode.seed,
-        bodies: vec![body(episode.physique[0]), level.body(&spec)],
+        bodies,
         levels: [0, 0],
     };
-    run_match(&mut game, [&mut pilot, &mut bot], header, ticks).expect("runs");
-    assert_eq!(batch.digest(0), Some(game.digest(game.live())));
+    let [a, b] = &mut players[..] else {
+        unreachable!("two seats")
+    };
+    run_match(&mut game, [a.as_mut(), b.as_mut()], header, ticks).expect("runs");
+    game.digest(game.live())
+}
+
+#[test]
+fn the_batch_plays_what_run_match_plays() {
+    for seats in [
+        [Seat::Learner, Seat::Level(2)],
+        [Seat::Human, Seat::Learner],
+        [Seat::Learner, Seat::Learner],
+    ] {
+        let mut spec = BatchSpec::new(vec![seats], 9);
+        spec.threads = 2;
+        spec.cap_ticks = 1_200;
+        let mut batch = HockeyBatch::new(spec).expect("a valid batch");
+        let mut out = batch.reset().expect("resets").clone();
+        let first = batch.episode(0).expect("env 0");
+        let ticks = batch.ticks(0).expect("env 0");
+        assert_eq!(
+            batch.digest(0),
+            Some(replayed(seats, first, ticks)),
+            "{seats:?} start"
+        );
+        while !out.truncated[0] {
+            out = batch.step(&actions(&out, 1)).expect("steps").clone();
+            assert!(!out.terminated[0], "{seats:?}");
+        }
+        let second = batch.episode(0).expect("env 0");
+        assert_ne!(second.seed, first.seed);
+        for _ in 0..200 {
+            out = batch.step(&actions(&out, 1)).expect("steps").clone();
+            assert!(!out.terminated[0] && !out.truncated[0], "{seats:?}");
+        }
+        let ticks = batch.ticks(0).expect("env 0");
+        assert!(ticks > 800, "{ticks}");
+        assert_eq!(
+            batch.digest(0),
+            Some(replayed(seats, second, ticks)),
+            "{seats:?}"
+        );
+    }
 }
 
 #[test]
@@ -228,16 +268,38 @@ fn malformed_batches_and_actions_are_refused() {
     let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
     s.threads = 0;
     assert_eq!(refused(s), Some(BatchError::ZeroThreads));
-    for cap in [0, 6] {
+    for (reaction, cap, least) in [
+        (400, 0, 100),
+        (400, 96, 100),
+        (400, 102, 100),
+        (150, 36, 40),
+    ] {
         let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
+        s.reaction_ms = [150, reaction];
         s.cap_ticks = cap;
-        assert_eq!(refused(s), Some(BatchError::BadCap(cap)));
+        assert_eq!(refused(s), Some(BatchError::BadCap { cap, least }));
     }
+    let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
+    s.reaction_ms = [400, 400];
+    s.cap_ticks = 100;
+    let mut tight = HockeyBatch::new(s).expect("the least cap is valid");
+    let mut out = tight.reset().expect("resets").clone();
+    for _ in 0..30 {
+        assert!(out.ready[0]);
+        out = tight.step(&still(1, [0.0, 0.0])).expect("steps").clone();
+    }
+    let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
+    s.params.goals_to_win = 0;
+    assert!(matches!(refused(s), Some(BatchError::BadParams(_))));
+    let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
+    s.params.decision_hz = 70;
+    assert!(matches!(refused(s), Some(BatchError::BadParams(_))));
     for (reaction, physique) in [
         ([400, 150], [0.4, 1.0]),
         ([150, 400], [0.0, 1.0]),
         ([150, 400], [0.9, 0.5]),
         ([150, 400], [0.5, 1.1]),
+        ([150, 300_000], [0.4, 1.0]),
     ] {
         let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
         s.reaction_ms = reaction;

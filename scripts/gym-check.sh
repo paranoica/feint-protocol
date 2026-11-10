@@ -9,4 +9,4 @@ cd python
 uv sync --locked --reinstall-package feint-gym -q
 uv run ruff check .
 uv run black --check -q .
-uv run pytest
+timeout 600 uv run pytest

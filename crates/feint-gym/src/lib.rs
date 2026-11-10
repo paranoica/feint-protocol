@@ -1,10 +1,10 @@
 use feint_ml::batch::{FEATURES, OUTPUTS};
 use feint_ml::{BatchError, BatchSpec, HockeyBatch, Outputs, Seat};
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArrayDyn};
-use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, TryLockError};
 
 fn refused(error: BatchError) -> PyErr {
     PyValueError::new_err(error.to_string())
@@ -39,13 +39,32 @@ fn name(seat: Seat) -> String {
 #[pyclass(name = "HockeyBatch", module = "feint_gym")]
 struct PyHockeyBatch {
     batch: Mutex<HockeyBatch>,
+    envs: usize,
 }
 
 impl PyHockeyBatch {
     fn batch(&self) -> PyResult<MutexGuard<'_, HockeyBatch>> {
-        self.batch
-            .lock()
-            .map_err(|_| PyValueError::new_err("the batch panicked earlier"))
+        self.batch.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => {
+                PyRuntimeError::new_err("the batch is stepping in another thread")
+            }
+            TryLockError::Poisoned(_) => PyValueError::new_err("the batch panicked earlier"),
+        })
+    }
+
+    fn run<'py>(
+        &self,
+        py: Python<'py>,
+        work: impl FnOnce(&mut HockeyBatch) -> Result<Outputs, BatchError> + Send,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let out = py.detach(|| {
+            let mut batch = self
+                .batch
+                .lock()
+                .map_err(|_| String::from("the batch panicked earlier"))?;
+            work(&mut batch).map_err(|error| error.to_string())
+        });
+        arrays(py, &out.map_err(PyValueError::new_err)?, self.envs)
     }
 }
 
@@ -101,12 +120,13 @@ impl PyHockeyBatch {
         }
         let batch = HockeyBatch::new(spec).map_err(refused)?;
         Ok(Self {
+            envs: batch.len(),
             batch: Mutex::new(batch),
         })
     }
 
-    fn __len__(&self) -> PyResult<usize> {
-        Ok(self.batch()?.len())
+    fn __len__(&self) -> usize {
+        self.envs
     }
 
     #[classattr]
@@ -120,11 +140,7 @@ impl PyHockeyBatch {
     }
 
     fn reset<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let mut guard = self.batch()?;
-        let envs = guard.len();
-        let batch = &mut *guard;
-        let out = py.detach(|| batch.reset().cloned()).map_err(refused)?;
-        arrays(py, &out, envs)
+        self.run(py, |batch| batch.reset().cloned())
     }
 
     fn step<'py>(
@@ -132,20 +148,20 @@ impl PyHockeyBatch {
         py: Python<'py>,
         actions: PyReadonlyArrayDyn<'py, f32>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let mut guard = self.batch()?;
-        let envs = guard.len();
-        let shape = actions.as_array().shape().to_vec();
+        let envs = self.envs;
+        let shape = actions.shape().to_vec();
         if shape != [envs, 2, OUTPUTS] {
             return Err(PyValueError::new_err(format!(
                 "actions of shape {shape:?}, expected [{envs}, 2, {OUTPUTS}]"
             )));
         }
-        let actions: Vec<f32> = actions.as_array().iter().copied().collect();
-        let batch = &mut *guard;
-        let out = py
-            .detach(|| batch.step(&actions).cloned())
-            .map_err(refused)?;
-        arrays(py, &out, envs)
+        if !actions.is_c_contiguous() || !actions.data().is_aligned() {
+            return Err(PyValueError::new_err(
+                "actions must be a C-contiguous, aligned float32 array: pass np.ascontiguousarray(actions, dtype=np.float32)",
+            ));
+        }
+        let actions = actions.as_slice()?.to_vec();
+        self.run(py, move |batch| batch.step(&actions).cloned())
     }
 
     fn episode(&self, env: usize) -> PyResult<EpisodeView> {

@@ -3,7 +3,7 @@ mod env;
 use std::sync::Mutex;
 
 use airhockey::{OBSERVATION_LEN, Params};
-use feint_ai::Difficulty;
+use feint_ai::{Difficulty, MAX_DELAY_TICKS, delay_ticks};
 use feint_protocol::GameAdapter;
 
 use crate::pilot::{EXTRA_FEATURES, Policy};
@@ -55,7 +55,8 @@ pub enum BatchError {
     NoLearner(usize),
     BadLevel(u8),
     ZeroThreads,
-    BadCap(u64),
+    BadParams(&'static str),
+    BadCap { cap: u64, least: u64 },
     BadRange,
     BadActions { expected: usize, got: usize },
     Game(String),
@@ -68,8 +69,15 @@ impl std::fmt::Display for BatchError {
             Self::NoLearner(env) => write!(f, "env {env} has no learner seat"),
             Self::BadLevel(level) => write!(f, "no hand-made level {level}"),
             Self::ZeroThreads => write!(f, "a batch needs at least one thread"),
-            Self::BadCap(cap) => write!(f, "cap {cap} is not a positive multiple of 4 ticks"),
-            Self::BadRange => write!(f, "reaction and physique ranges must be low <= high"),
+            Self::BadParams(why) => write!(f, "bad game parameters: {why}"),
+            Self::BadCap { cap, least } => write!(
+                f,
+                "cap {cap} must be a multiple of the decision stride and at least {least} ticks, past the slowest warm-up"
+            ),
+            Self::BadRange => write!(
+                f,
+                "reaction and physique ranges must be low <= high, physique in (0, 1], reaction within the delay limit"
+            ),
             Self::BadActions { expected, got } => {
                 write!(f, "{got} action values, expected {expected}")
             }
@@ -123,12 +131,28 @@ impl HockeyBatch {
         if spec.threads == 0 {
             return Err(BatchError::ZeroThreads);
         }
-        if spec.cap_ticks == 0 || !spec.cap_ticks.is_multiple_of(4) {
-            return Err(BatchError::BadCap(spec.cap_ticks));
+        let params = &spec.params;
+        params.validate().map_err(BatchError::BadParams)?;
+        if !params.tick_hz.is_multiple_of(params.decision_hz) {
+            return Err(BatchError::BadParams(
+                "the batch needs decisions on a whole number of ticks",
+            ));
         }
         let [low, high] = spec.physique;
-        if spec.reaction_ms[0] > spec.reaction_ms[1] || !(0.0 < low && low <= high && high <= 1.0) {
+        let delay = delay_ticks(spec.reaction_ms[1], params.tick_hz);
+        if spec.reaction_ms[0] > spec.reaction_ms[1]
+            || delay > MAX_DELAY_TICKS
+            || !(0.0 < low && low <= high && high <= 1.0)
+        {
             return Err(BatchError::BadRange);
+        }
+        let stride = u64::from(params.tick_hz / params.decision_hz);
+        let least = (delay as u64).div_ceil(stride) * stride + stride;
+        if spec.cap_ticks < least || !spec.cap_ticks.is_multiple_of(stride) {
+            return Err(BatchError::BadCap {
+                cap: spec.cap_ticks,
+                least,
+            });
         }
         let ranges = Ranges {
             reaction_ms: spec.reaction_ms,
