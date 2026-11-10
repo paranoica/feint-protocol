@@ -240,10 +240,12 @@ fn main() {
             bot,
             &reader,
             &mut human,
-            h,
-            seat,
-            240 * 600,
-            |s| s.score().map(i64::from),
+            Setup {
+                header: h,
+                seat,
+                cap: 240 * 600,
+                score_of: |s: &airhockey::Match| s.score().map(i64::from),
+            },
             &mut s,
         );
     }
@@ -276,10 +278,12 @@ fn main() {
             bot,
             &reader,
             &mut human,
-            h,
-            seat,
-            240 * 900,
-            |s| s.score.map(i64::from),
+            Setup {
+                header: h,
+                seat,
+                cap: 240 * 900,
+                score_of: |s: &penalty::Shootout| s.score.map(i64::from),
+            },
             &mut s,
         );
     }
@@ -305,10 +309,12 @@ fn main() {
             bot,
             &reader,
             &mut human,
-            h,
-            seat,
-            240 * 900,
-            |s| s.score.map(i64::from),
+            Setup {
+                header: h,
+                seat,
+                cap: 240 * 900,
+                score_of: |s: &duel::Duel| s.score.map(i64::from),
+            },
             &mut s,
         );
     }
