@@ -1,4 +1,5 @@
 use feint_ai::{Difficulty, LongGame, Standing};
+use feint_compare::attacks::{Side, Study};
 use feint_compare::{GameReport, honest, measure, to_json};
 
 fn standing(mine: u32, theirs: u32, fakes: u32) -> Standing {
@@ -20,6 +21,21 @@ fn the_report_names_each_game_its_ladder_and_the_payoff_of_deception() {
             .map(|(m, t)| standing(m, t, 4))
             .to_vec(),
         honest: standing(1, 1, 0),
+        attacks: Study {
+            honest: Side {
+                attempts: 20,
+                scored: 5,
+                ..Side::default()
+            },
+            fake: Side {
+                attempts: 8,
+                scored: 4,
+                read: 6,
+                bit: 3,
+                ..Side::default()
+            },
+            unread: 2,
+        },
     };
     assert!((game.payoff() - (5.0 / 6.0 - 0.5)).abs() < 1e-12);
     let json = to_json(40, &[game]);
@@ -30,10 +46,15 @@ fn the_report_names_each_game_its_ladder_and_the_payoff_of_deception() {
     assert!(json.contains("\"levels\":[{\"level\":1,\"matches\":10,\"won\":6,\"mine\":1,\"theirs\":3,\"share\":0.2500,\"fakes\":0.4000}"), "{json}");
     assert!(json.contains("\"honest\":{\"level\":5,\"matches\":10,\"won\":6,\"mine\":1,\"theirs\":1,\"share\":0.5000,\"fakes\":0.0000}"), "{json}");
     assert!(json.contains("\"payoff\":0.3333"), "{json}");
+    assert!(
+        json.contains("\"attacks\":{\"honest\":{\"count\":20,\"scored\":5},\"fake\":{\"count\":8,\"scored\":4,\"answered\":6,\"bitten\":3}}"),
+        "{json}"
+    );
     assert!(json.ends_with("}]}"));
 }
 
 #[test]
+#[ignore = "release only: bedrock cmd strength"]
 fn the_honest_level_five_loses_only_its_fakes_and_its_long_game_breaks() {
     let five = Difficulty::preset(5).unwrap();
     let plain = honest(five);
@@ -55,5 +76,10 @@ fn the_honest_level_five_loses_only_its_fakes_and_its_long_game_breaks() {
         );
         assert!(report.ladder[4].fakes > 0, "{id}: level 5 does fake");
         assert!(report.ladder.iter().all(|s| s.matches == 4), "{id}");
+        assert!(
+            report.attacks.honest.attempts + report.attacks.fake.attempts > 0,
+            "{id}"
+        );
+        assert!(report.attacks.fake.bit <= report.attacks.fake.read, "{id}");
     }
 }
