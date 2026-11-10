@@ -299,3 +299,34 @@ fn old_signals_fade_like_every_other_count() {
     m.record_shot(1);
     assert!(close(m.export("pick").theirs[2], 0.9));
 }
+
+#[test]
+fn the_odds_of_a_signal_are_smoothed_and_drop_what_is_too_rare() {
+    let mut m = OpponentModel::new(3, 0.0);
+    for _ in 0..2 {
+        m.record_shot_after(2, &[0]);
+    }
+    assert_eq!(m.their_odds(0), None, "two kicks are not evidence");
+    m.record_shot_after(0, &[0]);
+    let odds = m.their_odds(0).unwrap();
+    assert_eq!(
+        odds.iter().map(|&(k, _)| k).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    let p: Vec<f64> = odds.iter().map(|&(_, p)| p).collect();
+    assert!(
+        close(p[0], 2.0 / 6.0) && close(p[1], 1.0 / 6.0) && close(p[2], 3.0 / 6.0),
+        "{p:?}"
+    );
+    for _ in 0..30 {
+        m.record_shot_after(2, &[0]);
+    }
+    let odds = m.their_odds(0).unwrap();
+    assert_eq!(
+        odds.iter().map(|&(k, _)| k).collect::<Vec<_>>(),
+        vec![2],
+        "a class under the floor is dropped: {odds:?}"
+    );
+    assert!(close(odds[0].1, 1.0), "what is kept sums to one");
+    assert_eq!(m.their_odds(7), None);
+}

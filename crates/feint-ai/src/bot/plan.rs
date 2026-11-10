@@ -56,12 +56,11 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         adapter: &A,
         state: &A::State,
         choice: &Choice,
+        stance: Stance,
         cap: u32,
         elapsed: u64,
     ) -> f64 {
         let horizon = choice.horizon_ticks.clamp(1, cap);
-        let signal = self.playbook.signal(state, self.opponent());
-        let stance = self.insight.stance(self.difficulty.depth, choice, signal);
         let mut state = state.clone();
         let mut theirs = self.playbook.opponent_move(&state, self.opponent(), stance);
         let mut next_reply = self.reply_every;
@@ -134,13 +133,27 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             self.options = options;
             return;
         }
-        let cap = (SIMULATION_BUDGET / u32::try_from(options.len()).unwrap_or(u32::MAX)).max(1);
+        let odds = self.insight.odds(depth, signal);
+        let outcomes = odds.as_ref().map_or(1, Vec::len).max(1);
+        let rollouts = options.len().saturating_mul(outcomes);
+        let cap = (SIMULATION_BUDGET / u32::try_from(rollouts).unwrap_or(u32::MAX)).max(1);
         let mut scored: Vec<(Choice, f64)> = Vec::with_capacity(options.len());
         for choice in &options {
             let elapsed = current
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
-            let score = self.rollout(adapter, state, choice, cap, elapsed);
+            let score = match &odds {
+                Some(odds) => odds
+                    .iter()
+                    .map(|&(stance, p)| {
+                        p * self.rollout(adapter, state, choice, stance, cap, elapsed)
+                    })
+                    .sum(),
+                None => {
+                    let stance = self.insight.stance(depth, choice);
+                    self.rollout(adapter, state, choice, stance, cap, elapsed)
+                }
+            };
             let read = choice.shown.zip(choice.real).is_some_and(|(shown, real)| {
                 self.insight.model().is_some_and(|m| {
                     m.likely_cover(shown) == Some(real) || m.likely_real(shown) == Some(real)

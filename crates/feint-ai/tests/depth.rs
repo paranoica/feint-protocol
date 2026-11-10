@@ -146,7 +146,9 @@ fn depth_one_defends_the_opponents_habit() {
 
 fn saves(depth: u8, lies: bool) -> u32 {
     let mut game = Penalty::new(40);
-    let mut striker = SignalStriker { lies };
+    let mut striker = SignalStriker {
+        lies_in_ten: if lies { 10 } else { 0 },
+    };
     let mut keeper = penalty_bot(thinker(depth, 0.0, Memory::Match));
     let report = run_match(&mut game, [&mut striker, &mut keeper], header(5), 200).unwrap();
     u32::try_from(report.score[usize::from(KEEPER)]).unwrap()
@@ -165,6 +167,32 @@ fn from_depth_two_a_keeper_learns_whether_the_shown_side_is_the_real_one() {
     assert!(
         blind <= 26,
         "depth 1 reads only habits, yet saved {blind} of 40 from a liar"
+    );
+}
+
+#[test]
+fn a_keeper_unsure_of_the_lie_waits_for_the_ball_instead_of_guessing() {
+    let mut game = Penalty::new(60);
+    let mut striker = SignalStriker { lies_in_ten: 7 };
+    let playbook = PenaltyPlaybook {
+        watches: true,
+        ..PenaltyPlaybook::default()
+    };
+    let mut keeper = Bot::new(thinker(2, 0.0, Memory::Match), playbook, &penalty_spec()).unwrap();
+    let report = run_match(&mut game, [&mut striker, &mut keeper], header(6), 300).unwrap();
+    let guesses = report
+        .actions
+        .iter()
+        .filter(|a| a.player == KEEPER && a.discrete != i32::from(penalty_game::WATCH))
+        .count();
+    assert!(
+        guesses <= 6,
+        "a keeper who sees the ball in time guessed {guesses} of 60 kicks"
+    );
+    assert!(
+        report.score[usize::from(KEEPER)] >= 54,
+        "{:?}",
+        report.score
     );
 }
 
