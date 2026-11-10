@@ -184,3 +184,57 @@ fn an_attempt_with_nothing_to_record_does_not_decay() {
     m.record_attempt(None, None, Some(9), false, false);
     assert_eq!(m.export("g").shots[0], 1.0);
 }
+
+#[test]
+fn the_theory_that_named_the_cover_more_often_wins() {
+    let mut fresh = OpponentModel::new(3, 1.0);
+    assert!(
+        !fresh.knowing_beats_reading(),
+        "with no record, what was seen comes first"
+    );
+    for _ in 0..3 {
+        fresh.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    let mut reader = fresh.clone();
+    for _ in 0..6 {
+        reader.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    assert!(
+        !reader.knowing_beats_reading(),
+        "a keeper who keeps covering the other side is read, not known"
+    );
+    let mut learner = fresh.clone();
+    for _ in 0..6 {
+        learner.record_attempt(Some(0), Some(0), Some(0), false, false);
+    }
+    assert!(
+        learner.knowing_beats_reading(),
+        "a keeper who learned the striker's habit is named by the habit first"
+    );
+    let mut blind = fresh;
+    for _ in 0..6 {
+        blind.record_attempt(Some(0), Some(0), None, false, false);
+    }
+    assert!(
+        !blind.knowing_beats_reading(),
+        "attempts nobody answered say nothing"
+    );
+}
+
+#[test]
+fn a_loaded_profile_starts_the_theories_afresh() {
+    let mut learner = OpponentModel::new(3, 1.0);
+    for _ in 0..3 {
+        learner.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    for _ in 0..6 {
+        learner.record_attempt(Some(0), Some(0), Some(0), false, false);
+    }
+    assert!(learner.knowing_beats_reading());
+    let other = OpponentModel::new(3, 1.0).export("pick");
+    learner.import(&other, "pick").unwrap();
+    assert!(
+        !learner.knowing_beats_reading(),
+        "the theory that fitted the last opponent was kept for the next one"
+    );
+}

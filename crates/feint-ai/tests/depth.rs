@@ -90,6 +90,21 @@ fn depth_three_beats_an_adaptive_keeper() {
 }
 
 #[test]
+fn depth_three_believes_what_the_keeper_did_over_what_it_could_know() {
+    let report = shootout(
+        thinker(3, 1.0, Memory::Match),
+        KeeperRule::Anticipator,
+        60,
+        2,
+    );
+    assert!(
+        report.score[0] >= 55,
+        "a keeper that always dives against the shown side let in only {} of 60",
+        report.score[0]
+    );
+}
+
+#[test]
 fn depth_below_two_feints_rarely_and_randomly() {
     let report = shootout(thinker(1, 0.1, Memory::Match), KeeperRule::Biter, 100, 3);
     let fakes = deceptive_kicks(&report);
