@@ -473,3 +473,37 @@ fn a_dash_after_a_bait_gives_the_bait_its_real_class() {
         "the bait showing 0 was followed by a dash at 2, yet recorded {mine:?}"
     );
 }
+
+#[test]
+fn a_show_that_ends_without_a_shot_is_recorded_as_a_bluff() {
+    let mut p = reading();
+    p.shots_at = Some(2);
+    let mut game = Line::new(-0.5, 0.0);
+    let mut b = bot(difficulty(2, 0.0), p);
+    b.playbook().signal.set(Some(0));
+    for _ in 0..2 {
+        game.state.ball = -0.5;
+        drive(&mut game, &mut b, 40);
+        game.state.ball = 0.5;
+        drive(&mut game, &mut b, 8);
+    }
+    game.state.ball = -0.5;
+    drive(&mut game, &mut b, 40);
+    b.playbook().signal.set(None);
+    game.state.ball_v = 0.1;
+    drive(&mut game, &mut b, 8);
+    game.state.ball_v = 0.0;
+    game.state.ball = 0.5;
+    drive(&mut game, &mut b, 8);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        profile.bluffs,
+        vec![2.0, 0.0, 0.0],
+        "two shows ended with the ball handed over"
+    );
+    assert_eq!(
+        profile.theirs[2], 1.0,
+        "the show that ended in a shot is not a bluff"
+    );
+    assert_eq!(profile.theirs_events, vec![3, 0, 0]);
+}

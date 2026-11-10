@@ -148,6 +148,9 @@ impl<S: Clone> Insight<S> {
             self.end_attempt();
             self.twitch = None;
             self.since = Some(state.clone());
+            if let Some(model) = &mut self.model {
+                model.record_bluff(&self.their_signals);
+            }
             self.their_signals.clear();
         }
         if let Some(signal) = playbook.signal(state, them)
@@ -233,7 +236,7 @@ impl<S: Clone> Insight<S> {
         let odds = self.model.as_ref()?.their_odds(signal?)?;
         (depth >= 2).then(|| {
             odds.into_iter()
-                .map(|(real, p)| (Stance::Shoot(real), p))
+                .map(|(real, p)| (real.map_or(Stance::Still, Stance::Shoot), p))
                 .collect()
         })
     }

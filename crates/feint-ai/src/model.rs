@@ -16,6 +16,7 @@ pub struct Profile {
     pub fake_wins: f64,
     pub theirs: Vec<f64>,
     pub theirs_events: Vec<u32>,
+    pub bluffs: Vec<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub struct OpponentModel {
     reading: f64,
     theirs: Vec<f64>,
     theirs_events: Vec<u32>,
+    bluffs: Vec<f64>,
 }
 
 impl OpponentModel {
@@ -63,6 +65,7 @@ impl OpponentModel {
             reading: 0.0,
             theirs: vec![0.0; n * n],
             theirs_events: vec![0; n],
+            bluffs: vec![0.0; n],
         }
     }
 
@@ -78,6 +81,7 @@ impl OpponentModel {
             .chain(self.shots.iter_mut())
             .chain(self.mine.iter_mut())
             .chain(self.theirs.iter_mut())
+            .chain(self.bluffs.iter_mut())
         {
             *count *= keep;
         }
@@ -199,6 +203,23 @@ impl OpponentModel {
             .flatten()
     }
 
+    pub fn record_bluff(&mut self, shown: &[u8]) {
+        let n = self.classes;
+        let shown: Vec<usize> = shown
+            .iter()
+            .map(|&s| usize::from(s))
+            .filter(|&s| s < n)
+            .collect();
+        if shown.is_empty() {
+            return;
+        }
+        self.decay();
+        for s in shown {
+            Self::bump(&mut self.bluffs[s]);
+            self.theirs_events[s] = self.theirs_events[s].saturating_add(1);
+        }
+    }
+
     #[must_use]
     pub fn likely_their_real(&self, shown: u8) -> Option<u8> {
         let s = self.class(Some(shown))?;
@@ -208,18 +229,21 @@ impl OpponentModel {
     }
 
     #[must_use]
-    pub fn their_odds(&self, shown: u8) -> Option<Vec<(u8, f64)>> {
+    pub fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>> {
         let s = self.class(Some(shown))?;
         if self.theirs_events[s] < MIN_EVIDENCE {
             return None;
         }
         let row = Self::row(&self.theirs, self.classes, s);
-        let total = row.iter().sum::<f64>() + self.classes as f64;
-        let kept: Vec<(u8, f64)> = row
+        let bluffs = self.bluffs[s];
+        let total = row.iter().sum::<f64>() + bluffs + self.classes as f64 + 1.0;
+        let kept: Vec<(Option<u8>, f64)> = row
             .iter()
             .enumerate()
-            .filter(|&(_, &v)| v > 0.0 || (v + 1.0) / total >= ODDS_FLOOR)
-            .filter_map(|(k, &v)| Some((u8::try_from(k).ok()?, (v + 1.0) / total)))
+            .filter_map(|(k, &v)| Some((Some(u8::try_from(k).ok()?), v)))
+            .chain([(None, bluffs)])
+            .filter(|&(_, v)| v > 0.0 || (v + 1.0) / total >= ODDS_FLOOR)
+            .map(|(k, v)| (k, (v + 1.0) / total))
             .collect();
         let mass: f64 = kept.iter().map(|&(_, p)| p).sum();
         (mass > 0.0).then(|| kept.into_iter().map(|(k, p)| (k, p / mass)).collect())
@@ -265,6 +289,7 @@ impl OpponentModel {
             fake_wins: self.fake_wins,
             theirs: self.theirs.clone(),
             theirs_events: self.theirs_events.clone(),
+            bluffs: self.bluffs.clone(),
         }
     }
 
@@ -282,7 +307,8 @@ impl OpponentModel {
         let older = profile.theirs.is_empty() && profile.theirs_events.is_empty();
         let theirs_match =
             older || (profile.theirs.len() == n * n && profile.theirs_events.len() == n);
-        if !sizes_match || !theirs_match {
+        let bluffs_match = profile.bluffs.is_empty() || profile.bluffs.len() == n;
+        if !sizes_match || !theirs_match || !bluffs_match {
             return Err(ProfileError::WrongSize);
         }
         let valid = |x: &f64| x.is_finite() && (0.0..=COUNT_CAP).contains(x);
@@ -292,6 +318,7 @@ impl OpponentModel {
             .chain(&profile.shots)
             .chain(&profile.mine)
             .chain(&profile.theirs)
+            .chain(&profile.bluffs)
             .chain([&profile.fake_tries, &profile.fake_wins])
             .all(valid)
             && profile.fake_wins <= profile.fake_tries;
@@ -312,6 +339,11 @@ impl OpponentModel {
         } else {
             self.theirs.clone_from(&profile.theirs);
             self.theirs_events.clone_from(&profile.theirs_events);
+        }
+        if profile.bluffs.is_empty() {
+            self.bluffs.fill(0.0);
+        } else {
+            self.bluffs.clone_from(&profile.bluffs);
         }
         self.knowing = 0.0;
         self.reading = 0.0;

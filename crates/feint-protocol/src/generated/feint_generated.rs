@@ -2494,6 +2494,7 @@ impl<'a> Profile<'a> {
   pub const VT_FAKE_WINS: ::flatbuffers::VOffsetT = 22;
   pub const VT_THEIRS: ::flatbuffers::VOffsetT = 24;
   pub const VT_THEIRS_EVENTS: ::flatbuffers::VOffsetT = 26;
+  pub const VT_BLUFFS: ::flatbuffers::VOffsetT = 28;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -2507,6 +2508,7 @@ impl<'a> Profile<'a> {
     let mut builder = ProfileBuilder::new(_fbb);
     builder.add_fake_wins(args.fake_wins);
     builder.add_fake_tries(args.fake_tries);
+    if let Some(x) = args.bluffs { builder.add_bluffs(x); }
     if let Some(x) = args.theirs_events { builder.add_theirs_events(x); }
     if let Some(x) = args.theirs { builder.add_theirs(x); }
     if let Some(x) = args.mine_events { builder.add_mine_events(x); }
@@ -2549,6 +2551,9 @@ impl<'a> Profile<'a> {
     let theirs_events = self.theirs_events().map(|x| {
       x.into_iter().collect()
     });
+    let bluffs = self.bluffs().map(|x| {
+      x.into_iter().collect()
+    });
     ProfileT {
       game_id,
       classes,
@@ -2562,6 +2567,7 @@ impl<'a> Profile<'a> {
       fake_wins,
       theirs,
       theirs_events,
+      bluffs,
     }
   }
 
@@ -2649,6 +2655,13 @@ impl<'a> Profile<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u32>>>(Profile::VT_THEIRS_EVENTS, None)}
   }
+  #[inline]
+  pub fn bluffs(&self) -> Option<::flatbuffers::Vector<'a, f64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_BLUFFS, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Profile<'_> {
@@ -2669,6 +2682,7 @@ impl ::flatbuffers::Verifiable for Profile<'_> {
      .visit_field::<f64>("fake_wins", Self::VT_FAKE_WINS, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("theirs", Self::VT_THEIRS, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("theirs_events", Self::VT_THEIRS_EVENTS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("bluffs", Self::VT_BLUFFS, false)?
      .finish();
     Ok(())
   }
@@ -2686,6 +2700,7 @@ pub struct ProfileArgs<'a> {
     pub fake_wins: f64,
     pub theirs: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
     pub theirs_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
+    pub bluffs: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
 }
 impl<'a> Default for ProfileArgs<'a> {
   #[inline]
@@ -2703,6 +2718,7 @@ impl<'a> Default for ProfileArgs<'a> {
       fake_wins: 0.0,
       theirs: None,
       theirs_events: None,
+      bluffs: None,
     }
   }
 }
@@ -2761,6 +2777,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ProfileBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_THEIRS_EVENTS, theirs_events);
   }
   #[inline]
+  pub fn add_bluffs(&mut self, bluffs: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_BLUFFS, bluffs);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ProfileBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ProfileBuilder {
@@ -2790,6 +2810,7 @@ impl ::core::fmt::Debug for Profile<'_> {
       ds.field("fake_wins", &self.fake_wins());
       ds.field("theirs", &self.theirs());
       ds.field("theirs_events", &self.theirs_events());
+      ds.field("bluffs", &self.bluffs());
       ds.finish()
   }
 }
@@ -2808,6 +2829,7 @@ pub struct ProfileT {
   pub fake_wins: f64,
   pub theirs: Option<alloc::vec::Vec<f64>>,
   pub theirs_events: Option<alloc::vec::Vec<u32>>,
+  pub bluffs: Option<alloc::vec::Vec<f64>>,
 }
 impl Default for ProfileT {
   fn default() -> Self {
@@ -2824,6 +2846,7 @@ impl Default for ProfileT {
       fake_wins: 0.0,
       theirs: None,
       theirs_events: None,
+      bluffs: None,
     }
   }
 }
@@ -2860,6 +2883,9 @@ impl ProfileT {
     let theirs_events = self.theirs_events.as_ref().map(|x|{
       _fbb.create_vector(x)
     });
+    let bluffs = self.bluffs.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
     Profile::create(_fbb, &ProfileArgs{
       game_id,
       classes,
@@ -2873,6 +2899,7 @@ impl ProfileT {
       fake_wins,
       theirs,
       theirs_events,
+      bluffs,
     })
   }
 }
