@@ -2,12 +2,12 @@ mod env;
 
 use std::sync::Mutex;
 
-use airhockey::{OBSERVATION_LEN, Params};
+use airhockey::{AirHockey, OBSERVATION_LEN, Params};
 use feint_ai::{Difficulty, MAX_DELAY_TICKS, delay_ticks};
 use feint_protocol::GameAdapter;
 
 use crate::pilot::{EXTRA_FEATURES, Policy};
-use env::{Env, Ranges};
+use env::{Env, Ranges, body};
 
 pub const FEATURES: usize = OBSERVATION_LEN + EXTRA_FEATURES;
 
@@ -144,6 +144,11 @@ impl HockeyBatch {
             || delay > MAX_DELAY_TICKS
             || !(0.0 < low && low <= high && high <= 1.0)
         {
+            return Err(BatchError::BadRange);
+        }
+        let mut probe = AirHockey::new(params.clone(), 0);
+        let weakest = body(&probe, low);
+        if probe.reset(0, &[weakest.clone(), weakest]).is_err() {
             return Err(BatchError::BadRange);
         }
         let stride = u64::from(params.tick_hz / params.decision_hz);

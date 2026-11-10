@@ -274,7 +274,7 @@ impl Env {
     }
 }
 
-fn body(game: &AirHockey, physique: f64) -> feint_protocol::BodyParamsT {
+pub(super) fn body(game: &AirHockey, physique: f64) -> feint_protocol::BodyParamsT {
     let mut d = Difficulty::preset(5).unwrap_or_else(|| unreachable!("level 5 exists"));
     d.physique = physique;
     d.body(&game.spec())

@@ -300,6 +300,8 @@ fn malformed_batches_and_actions_are_refused() {
         ([150, 400], [0.9, 0.5]),
         ([150, 400], [0.5, 1.1]),
         ([150, 300_000], [0.4, 1.0]),
+        ([150, 400], [1e-50, 2e-45]),
+        ([150, 400], [1e-300, 1e-300]),
     ] {
         let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
         s.reaction_ms = reaction;
