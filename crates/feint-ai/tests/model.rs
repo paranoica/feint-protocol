@@ -388,3 +388,28 @@ fn a_profile_from_before_the_bluffs_still_loads() {
         Err(ProfileError::BadCount)
     );
 }
+
+#[test]
+fn the_theories_travel_with_the_players_profile() {
+    let mut learner = OpponentModel::new(3, 1.0);
+    for _ in 0..3 {
+        learner.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    for _ in 0..6 {
+        learner.record_attempt(Some(0), Some(0), Some(0), false, false);
+    }
+    assert!(learner.knowing_beats_reading());
+    let profile = learner.export("pick");
+    assert!(profile.knowing > profile.reading, "{profile:?}");
+    let mut next_match = OpponentModel::new(3, 1.0);
+    next_match.import(&profile, "pick").unwrap();
+    assert!(
+        next_match.knowing_beats_reading(),
+        "the same player's theory was forgotten between matches"
+    );
+    let back = feint_ai::decode_profile(&feint_ai::encode_profile(&profile)).unwrap();
+    assert_eq!(back, profile);
+    let mut bad = profile.clone();
+    bad.knowing = -1.0;
+    assert_eq!(next_match.import(&bad, "pick"), Err(ProfileError::BadCount));
+}

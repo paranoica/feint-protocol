@@ -17,6 +17,8 @@ pub struct Profile {
     pub theirs: Vec<f64>,
     pub theirs_events: Vec<u32>,
     pub bluffs: Vec<f64>,
+    pub knowing: f64,
+    pub reading: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,6 +292,8 @@ impl OpponentModel {
             theirs: self.theirs.clone(),
             theirs_events: self.theirs_events.clone(),
             bluffs: self.bluffs.clone(),
+            knowing: self.knowing,
+            reading: self.reading,
         }
     }
 
@@ -319,7 +323,12 @@ impl OpponentModel {
             .chain(&profile.mine)
             .chain(&profile.theirs)
             .chain(&profile.bluffs)
-            .chain([&profile.fake_tries, &profile.fake_wins])
+            .chain([
+                &profile.fake_tries,
+                &profile.fake_wins,
+                &profile.knowing,
+                &profile.reading,
+            ])
             .all(valid)
             && profile.fake_wins <= profile.fake_tries;
         if !counts_ok {
@@ -345,8 +354,8 @@ impl OpponentModel {
         } else {
             self.bluffs.clone_from(&profile.bluffs);
         }
-        self.knowing = 0.0;
-        self.reading = 0.0;
+        self.knowing = profile.knowing;
+        self.reading = profile.reading;
         Ok(())
     }
 }

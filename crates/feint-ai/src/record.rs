@@ -108,6 +108,8 @@ pub fn encode_profile(profile: &Profile) -> Vec<u8> {
     p.theirs = Some(profile.theirs.clone());
     p.theirs_events = Some(profile.theirs_events.clone());
     p.bluffs = Some(profile.bluffs.clone());
+    p.knowing = profile.knowing;
+    p.reading = profile.reading;
     encode(&MessageT::Profile(Box::new(p)))
 }
 
@@ -127,6 +129,8 @@ pub fn decode_profile(bytes: &[u8]) -> Result<Profile, RecordError> {
             theirs: p.theirs.unwrap_or_default(),
             theirs_events: p.theirs_events.unwrap_or_default(),
             bluffs: p.bluffs.unwrap_or_default(),
+            knowing: p.knowing,
+            reading: p.reading,
         }),
         _ => Err(RecordError::Order),
     }

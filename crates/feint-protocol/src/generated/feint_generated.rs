@@ -2495,6 +2495,8 @@ impl<'a> Profile<'a> {
   pub const VT_THEIRS: ::flatbuffers::VOffsetT = 24;
   pub const VT_THEIRS_EVENTS: ::flatbuffers::VOffsetT = 26;
   pub const VT_BLUFFS: ::flatbuffers::VOffsetT = 28;
+  pub const VT_KNOWING: ::flatbuffers::VOffsetT = 30;
+  pub const VT_READING: ::flatbuffers::VOffsetT = 32;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -2506,6 +2508,8 @@ impl<'a> Profile<'a> {
     args: &'args ProfileArgs<'args>
   ) -> ::flatbuffers::WIPOffset<Profile<'bldr>> {
     let mut builder = ProfileBuilder::new(_fbb);
+    builder.add_reading(args.reading);
+    builder.add_knowing(args.knowing);
     builder.add_fake_wins(args.fake_wins);
     builder.add_fake_tries(args.fake_tries);
     if let Some(x) = args.bluffs { builder.add_bluffs(x); }
@@ -2554,6 +2558,8 @@ impl<'a> Profile<'a> {
     let bluffs = self.bluffs().map(|x| {
       x.into_iter().collect()
     });
+    let knowing = self.knowing();
+    let reading = self.reading();
     ProfileT {
       game_id,
       classes,
@@ -2568,6 +2574,8 @@ impl<'a> Profile<'a> {
       theirs,
       theirs_events,
       bluffs,
+      knowing,
+      reading,
     }
   }
 
@@ -2662,6 +2670,20 @@ impl<'a> Profile<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_BLUFFS, None)}
   }
+  #[inline]
+  pub fn knowing(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Profile::VT_KNOWING, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn reading(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Profile::VT_READING, Some(0.0)).unwrap()}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Profile<'_> {
@@ -2683,6 +2705,8 @@ impl ::flatbuffers::Verifiable for Profile<'_> {
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("theirs", Self::VT_THEIRS, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("theirs_events", Self::VT_THEIRS_EVENTS, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("bluffs", Self::VT_BLUFFS, false)?
+     .visit_field::<f64>("knowing", Self::VT_KNOWING, false)?
+     .visit_field::<f64>("reading", Self::VT_READING, false)?
      .finish();
     Ok(())
   }
@@ -2701,6 +2725,8 @@ pub struct ProfileArgs<'a> {
     pub theirs: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
     pub theirs_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
     pub bluffs: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
+    pub knowing: f64,
+    pub reading: f64,
 }
 impl<'a> Default for ProfileArgs<'a> {
   #[inline]
@@ -2719,6 +2745,8 @@ impl<'a> Default for ProfileArgs<'a> {
       theirs: None,
       theirs_events: None,
       bluffs: None,
+      knowing: 0.0,
+      reading: 0.0,
     }
   }
 }
@@ -2781,6 +2809,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ProfileBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_BLUFFS, bluffs);
   }
   #[inline]
+  pub fn add_knowing(&mut self, knowing: f64) {
+    self.fbb_.push_slot::<f64>(Profile::VT_KNOWING, knowing, 0.0);
+  }
+  #[inline]
+  pub fn add_reading(&mut self, reading: f64) {
+    self.fbb_.push_slot::<f64>(Profile::VT_READING, reading, 0.0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ProfileBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ProfileBuilder {
@@ -2811,6 +2847,8 @@ impl ::core::fmt::Debug for Profile<'_> {
       ds.field("theirs", &self.theirs());
       ds.field("theirs_events", &self.theirs_events());
       ds.field("bluffs", &self.bluffs());
+      ds.field("knowing", &self.knowing());
+      ds.field("reading", &self.reading());
       ds.finish()
   }
 }
@@ -2830,6 +2868,8 @@ pub struct ProfileT {
   pub theirs: Option<alloc::vec::Vec<f64>>,
   pub theirs_events: Option<alloc::vec::Vec<u32>>,
   pub bluffs: Option<alloc::vec::Vec<f64>>,
+  pub knowing: f64,
+  pub reading: f64,
 }
 impl Default for ProfileT {
   fn default() -> Self {
@@ -2847,6 +2887,8 @@ impl Default for ProfileT {
       theirs: None,
       theirs_events: None,
       bluffs: None,
+      knowing: 0.0,
+      reading: 0.0,
     }
   }
 }
@@ -2886,6 +2928,8 @@ impl ProfileT {
     let bluffs = self.bluffs.as_ref().map(|x|{
       _fbb.create_vector(x)
     });
+    let knowing = self.knowing;
+    let reading = self.reading;
     Profile::create(_fbb, &ProfileArgs{
       game_id,
       classes,
@@ -2900,6 +2944,8 @@ impl ProfileT {
       theirs,
       theirs_events,
       bluffs,
+      knowing,
+      reading,
     })
   }
 }
