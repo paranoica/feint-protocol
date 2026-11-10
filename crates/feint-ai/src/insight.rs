@@ -6,6 +6,7 @@ use crate::playbook::{Choice, Playbook, Stance};
 
 const MIN_AWAY_SAMPLES: u32 = 6;
 const ATTEMPT_AWAY_SAMPLES: u32 = 60;
+pub(crate) const STEADY_SAMPLES: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Attempt {
@@ -35,13 +36,17 @@ pub(crate) struct Insight<S> {
     since: Option<S>,
     own_prev: Option<S>,
     their_signals: Vec<u8>,
+    raw_signal: Option<u8>,
+    raw_seen: u32,
+    steady: u32,
+    pub(crate) signal: Option<u8>,
     pub(crate) gate_open: bool,
     pub(crate) fake_pending: bool,
     pub(crate) twitch: Option<u8>,
 }
 
 impl<S: Clone> Insight<S> {
-    pub(crate) fn new(difficulty: &Difficulty, classes: u8) -> Self {
+    pub(crate) fn new(difficulty: &Difficulty, classes: u8, steady: u32) -> Self {
         let model = (difficulty.memory != Memory::None)
             .then(|| OpponentModel::new(classes, difficulty.adaptation));
         Self {
@@ -55,6 +60,10 @@ impl<S: Clone> Insight<S> {
             since: None,
             own_prev: None,
             their_signals: Vec::new(),
+            raw_signal: None,
+            raw_seen: 0,
+            steady: steady.max(1),
+            signal: None,
             gate_open: false,
             fake_pending: false,
             twitch: None,
@@ -79,6 +88,9 @@ impl<S: Clone> Insight<S> {
         self.since = None;
         self.own_prev = None;
         self.their_signals.clear();
+        self.raw_signal = None;
+        self.raw_seen = 0;
+        self.signal = None;
         self.gate_open = false;
         self.fake_pending = false;
         self.twitch = None;
@@ -120,6 +132,9 @@ impl<S: Clone> Insight<S> {
                     model.record_shot_after(shot, &self.their_signals);
                 }
                 self.their_signals.clear();
+                self.signal = None;
+                self.raw_signal = None;
+                self.raw_seen = 0;
             }
             let reference = self.since.as_ref().unwrap_or(prev);
             let covered = (had || possession.is_some())
@@ -153,7 +168,17 @@ impl<S: Clone> Insight<S> {
             }
             self.their_signals.clear();
         }
-        if let Some(signal) = playbook.signal(state, them)
+        let raw = playbook.signal(state, them);
+        if raw == self.raw_signal {
+            self.raw_seen = self.raw_seen.saturating_add(1);
+        } else {
+            self.raw_signal = raw;
+            self.raw_seen = 1;
+        }
+        if self.raw_seen >= self.steady {
+            self.signal = raw;
+        }
+        if let Some(signal) = self.signal
             && !self.their_signals.contains(&signal)
         {
             self.their_signals.push(signal);

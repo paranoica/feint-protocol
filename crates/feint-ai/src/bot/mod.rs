@@ -7,7 +7,7 @@ use feint_protocol::{
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use crate::difficulty::Difficulty;
-use crate::insight::{Insight, Seen};
+use crate::insight::{Insight, STEADY_SAMPLES, Seen};
 use crate::long_game::Plan;
 use crate::model::{OpponentModel, Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
@@ -92,7 +92,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         } else {
             (None, 0, 1, 1, 1)
         };
-        let insight = Insight::new(&difficulty, playbook.signal_classes());
+        let steady = if realtime { STEADY_SAMPLES } else { 1 };
+        let insight = Insight::new(&difficulty, playbook.signal_classes(), steady);
         Ok(Self {
             difficulty,
             playbook,

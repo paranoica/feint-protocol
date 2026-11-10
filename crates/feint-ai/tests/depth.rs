@@ -391,13 +391,40 @@ fn near_ties_are_random_from_depth_one() {
 }
 
 #[test]
+fn a_flickering_signal_does_not_reopen_the_plan() {
+    let mut playbook = LinePlaybook::new(&[0.0, 1.0], 240);
+    playbook.flat = true;
+    playbook.margin = 10.0;
+    let mut game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 0.0), playbook, 3);
+    drive(&mut game, &mut bot, 1);
+    let rollouts = |bot: &Bot<Line, LinePlaybook>| bot.playbook().replies.get();
+    let held = rollouts(&bot);
+    for flick in 0..24u8 {
+        bot.playbook().signal.set(Some(2 * (flick % 2)));
+        drive(&mut game, &mut bot, 4);
+    }
+    assert_eq!(
+        rollouts(&bot),
+        held,
+        "a signal that changed on every sample reopened the plan"
+    );
+    bot.playbook().signal.set(Some(2));
+    drive(&mut game, &mut bot, 48);
+    assert!(
+        rollouts(&bot) > held,
+        "a signal held steady never reopened it"
+    );
+}
+
+#[test]
 fn weighing_the_odds_never_cuts_a_rollout_short_of_its_horizon() {
     let mut playbook = LinePlaybook::new(&[-0.5, 0.0, 0.5], 700);
     playbook.shots_at = Some(2);
     let mut game = Line::new(-0.9, 0.0);
     let mut bot = line_bot(realtime(2, 0.0), playbook, 1);
     bot.playbook().signal.set(Some(0));
-    for _ in 0..3 {
+    for _ in 0..4 {
         game.state.ball = -0.9;
         game.state.ball_v = 0.0;
         drive(&mut game, &mut bot, 8);
@@ -409,7 +436,7 @@ fn weighing_the_odds_never_cuts_a_rollout_short_of_its_horizon() {
     drive(&mut game, &mut bot, 48);
     bot.playbook().signal.set(Some(0));
     game.simulated.set(0);
-    drive(&mut game, &mut bot, 24);
+    drive(&mut game, &mut bot, 48);
     let simulated = game.simulated.get();
     assert!(simulated > 0, "the new signal did not reopen the plan");
     assert!(

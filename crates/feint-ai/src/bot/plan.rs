@@ -107,7 +107,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             &mut options,
         );
         let importance = self.playbook.importance(state, self.me);
-        let signal = self.playbook.signal(state, self.opponent());
+        let signal = self.insight.signal;
         let current = self.current;
         let depth = self.difficulty.depth;
         let held = current.map(|c| c.choice.id);
