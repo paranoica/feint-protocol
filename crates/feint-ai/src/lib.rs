@@ -11,7 +11,9 @@ pub mod runner;
 pub mod standing;
 
 pub use anticipate::{Anticipation, clamp_to_space};
-pub use bot::{Bot, BotError, InsightView, OPPONENT_REACTION_MS, REPLAN_HZ, SIMULATION_BUDGET};
+pub use bot::{
+    Bot, BotError, InsightView, MAX_DELAY_TICKS, OPPONENT_REACTION_MS, REPLAN_HZ, SIMULATION_BUDGET,
+};
 pub use difficulty::{Difficulty, LongGame, Memory};
 pub use long_game::{DECISIVE, PATTERN_BONUS, Plan};
 pub use model::{COUNT_CAP, MIN_EVIDENCE, OpponentModel, Profile, ProfileError};
