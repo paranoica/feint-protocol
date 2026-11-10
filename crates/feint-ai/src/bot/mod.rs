@@ -176,11 +176,13 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
 
     fn own_errors(&self, room: usize) -> Vec<([f64; 2], f64)> {
         let wide = self.difficulty.spread / 2.0_f64.sqrt();
-        if wide > 0.0 && room >= 3 {
+        if wide > 0.0 && room >= 5 {
             vec![
-                ([-wide, -wide], 1.0 / 6.0),
                 ([0.0; 2], 2.0 / 3.0),
-                ([wide, wide], 1.0 / 6.0),
+                ([-wide, -wide], 1.0 / 12.0),
+                ([-wide, wide], 1.0 / 12.0),
+                ([wide, -wide], 1.0 / 12.0),
+                ([wide, wide], 1.0 / 12.0),
             ]
         } else {
             vec![([0.0; 2], 1.0)]

@@ -452,3 +452,24 @@ fn a_bot_that_knows_its_own_error_takes_the_option_that_forgives_it() {
         );
     }
 }
+
+#[test]
+fn a_dash_after_a_bait_gives_the_bait_its_real_class() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    p.fake_real = None;
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive && c.real.is_none()));
+    b.playbook().dash.set(Some(2));
+    drive_score(&mut game, &mut b, 30, [0, 0]);
+    assert_eq!(b.current().map(|c| c.id), Some(98), "the bot dashed");
+    game.state.ball = -0.5;
+    drive_score(&mut game, &mut b, 300, [0, 0]);
+    let mine = b.profile("line").unwrap().mine;
+    assert!(
+        mine[2] > 0.0,
+        "the bait showing 0 was followed by a dash at 2, yet recorded {mine:?}"
+    );
+}

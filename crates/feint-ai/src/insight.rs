@@ -184,7 +184,7 @@ impl<S: Clone> Insight<S> {
     }
 
     pub(crate) fn start_attempt(&mut self, choice: &Choice) {
-        let quiet = choice.shown.is_none() && !choice.deceptive;
+        let quiet = choice.shown.is_none() && choice.real.is_none() && !choice.deceptive;
         if quiet && self.attempt.is_some() {
             return;
         }
