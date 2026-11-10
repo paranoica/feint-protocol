@@ -50,18 +50,23 @@ test("results keep only well-formed rows and say what you played", () => {
 test("the verdict compares faked and honest attacks with a dead zone", () => {
   assert.match(verdict(0.12), /^deception decides: faked attacks score 12 points more/);
   assert.match(verdict(0.05), /^deception decides/);
-  assert.match(verdict(0.049), /^deception barely matters here: faked and honest attacks score within 5 points/);
+  assert.match(verdict(0.049), /^deception decides: faked attacks score 5 points more/, "the verdict follows the rounded points it prints");
+  assert.match(verdict(0.044), /^deception barely matters here: faked and honest attacks score within 4 points/);
   assert.match(verdict(-0.03), /^deception barely matters here: .* within 3 points/);
   assert.match(verdict(-0.08), /^deception costs: faked attacks score 8 points less/);
-  assert.match(verdict(null), /^deception untested here/);
+  assert.match(verdict(null), /^deception untested here: fewer than 20/);
 });
 
 test("the gain is the faked scoring rate minus the honest one, and needs both", async () => {
-  const { attackGain } = await import("../src/compare.ts");
+  const { attackGain, attackLine } = await import("../src/compare.ts");
   const c = parseComparison(good)!;
-  assert.ok(Math.abs(attackGain(c.games[0])! - (2 / 4 - 3 / 10)) < 1e-12);
-  const lone = { ...c.games[0], attacks: { ...c.games[0].attacks, fake: { count: 0, scored: 0, answered: 0, bitten: 0 } } };
-  assert.equal(attackGain(lone), null);
+  assert.equal(attackGain(c.games[0]), null, "4 faked attacks are too few to judge");
+  const many = { ...c.games[0], attacks: { honest: { count: 40, scored: 12 }, fake: { count: 20, scored: 10, answered: 15, bitten: 5 } } };
+  assert.ok(Math.abs(attackGain(many)! - (10 / 20 - 12 / 40)) < 1e-12);
+  const few = { ...many, attacks: { ...many.attacks, honest: { count: 19, scored: 1 } } };
+  assert.equal(attackGain(few), null);
+  const unanswered = { ...many, attacks: { ...many.attacks, fake: { count: 20, scored: 10, answered: 0, bitten: 0 } } };
+  assert.match(attackLine(unanswered), /; no fake was answered$/);
 });
 
 test("attacks are read and told as scoring rates with and without a fake", async () => {
@@ -79,7 +84,7 @@ test("attacks are read and told as scoring rates with and without a fake", async
   assert.ok(c);
   assert.equal(
     attackLine(c.games[0]),
-    "level 5 attacks score 84% honest (32) and 96% with a fake (127); the human model bit on 18% of fakes",
+    "level 5 attacks score 84% honest (32) and 96% with a fake (127); the human model bit on 18% of the 127 fakes it answered",
   );
   assert.equal(parseComparison({ ...withAttacks, games: [{ ...withAttacks.games[0], attacks: { honest: { count: 1, scored: 2 }, fake: withAttacks.games[0].attacks.fake } }] }), null, "more goals than attacks");
   const none = parseComparison({ ...good, games: [{ ...good.games[0], attacks: { honest: { count: 0, scored: 0 }, fake: { count: 0, scored: 0, answered: 0, bitten: 0 } } }] });

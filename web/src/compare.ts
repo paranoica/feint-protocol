@@ -128,9 +128,11 @@ export function parseResults(json: unknown): Result[] {
   return out;
 }
 
+export const MIN_ATTACKS = 20;
+
 export function attackGain(g: GameRow): number | null {
   const { honest, fake } = g.attacks;
-  if (honest.count === 0 || fake.count === 0) {
+  if (honest.count < MIN_ATTACKS || fake.count < MIN_ATTACKS) {
     return null;
   }
   return fake.scored / fake.count - honest.scored / honest.count;
@@ -138,13 +140,14 @@ export function attackGain(g: GameRow): number | null {
 
 export function verdict(gain: number | null): string {
   if (gain === null) {
-    return "deception untested here: level 5 made no faked or no honest attacks";
+    return `deception untested here: fewer than ${MIN_ATTACKS} faked or honest attacks`;
   }
-  const points = Math.round(Math.abs(gain) * 100);
-  if (gain >= 0.05) {
+  const signed = Math.round(gain * 100);
+  const points = Math.abs(signed);
+  if (signed >= 5) {
     return `deception decides: faked attacks score ${points} points more often than honest ones`;
   }
-  if (gain <= -0.05) {
+  if (signed <= -5) {
     return `deception costs: faked attacks score ${points} points less often than honest ones`;
   }
   return `deception barely matters here: faked and honest attacks score within ${points} points`;
@@ -156,7 +159,11 @@ export function attackLine(g: GameRow): string {
     return "level 5 made no attacks";
   }
   const pct = (a: number, b: number) => (b === 0 ? "—" : `${Math.round((100 * a) / b)}%`);
-  return `level 5 attacks score ${pct(honest.scored, honest.count)} honest (${honest.count}) and ${pct(fake.scored, fake.count)} with a fake (${fake.count}); the human model bit on ${pct(fake.bitten, fake.answered)} of fakes`;
+  const bites =
+    fake.answered === 0
+      ? "no fake was answered"
+      : `the human model bit on ${pct(fake.bitten, fake.answered)} of the ${fake.answered} fakes it answered`;
+  return `level 5 attacks score ${pct(honest.scored, honest.count)} honest (${honest.count}) and ${pct(fake.scored, fake.count)} with a fake (${fake.count}); ${bites}`;
 }
 
 export function yours(results: Result[], game: string, level: number): string {
