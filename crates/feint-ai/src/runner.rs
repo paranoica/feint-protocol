@@ -114,6 +114,10 @@ impl Runner {
         &self.actions
     }
 
+    pub fn forget_actions(&mut self) {
+        self.actions.clear();
+    }
+
     #[must_use]
     pub fn report<A: GameAdapter>(&self, adapter: &A) -> RunReport {
         let result = adapter.result();
