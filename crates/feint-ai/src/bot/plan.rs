@@ -1,4 +1,4 @@
-use feint_protocol::{ActionT, GameAdapter};
+use feint_protocol::GameAdapter;
 
 use super::{Bot, SIMULATION_BUDGET};
 
@@ -12,51 +12,6 @@ struct Imagined {
 use crate::playbook::{Choice, Cue, Playbook, Stance};
 
 impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
-    pub(super) fn step(
-        &self,
-        adapter: &A,
-        state: &A::State,
-        own: Option<&ActionT>,
-        ticks: u64,
-    ) -> A::State {
-        let reply = self
-            .playbook
-            .opponent_move(state, self.opponent(), Stance::Naive);
-        let ticks = u32::try_from(ticks).unwrap_or(u32::MAX);
-        match own {
-            Some(own) => adapter.simulate(state, &[own.clone(), reply], ticks),
-            None => adapter.simulate(state, std::slice::from_ref(&reply), ticks),
-        }
-    }
-
-    pub(super) fn roll_forward(
-        &self,
-        adapter: &A,
-        state: A::State,
-        from: u64,
-        to: u64,
-    ) -> A::State {
-        let to = to.min(from.saturating_add(self.delay as u64));
-        let mut state = state;
-        let mut at = from;
-        let mut own = self.history.iter().rev().find(|a| a.tick <= from);
-        for action in self
-            .history
-            .iter()
-            .filter(|a| a.tick > from && a.tick <= to)
-        {
-            if action.tick > at {
-                state = self.step(adapter, &state, own, action.tick - at);
-                at = action.tick;
-            }
-            own = Some(action);
-        }
-        if to > at {
-            state = self.step(adapter, &state, own, to - at);
-        }
-        state
-    }
-
     fn rollout(
         &self,
         adapter: &A,

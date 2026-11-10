@@ -1,3 +1,4 @@
+pub mod anticipate;
 pub mod bot;
 pub mod difficulty;
 mod insight;
@@ -9,6 +10,7 @@ pub mod record;
 pub mod runner;
 pub mod standing;
 
+pub use anticipate::{Anticipation, clamp_to_space};
 pub use bot::{Bot, BotError, InsightView, OPPONENT_REACTION_MS, REPLAN_HZ, SIMULATION_BUDGET};
 pub use difficulty::{Difficulty, LongGame, Memory};
 pub use long_game::{DECISIVE, PATTERN_BONUS, Plan};

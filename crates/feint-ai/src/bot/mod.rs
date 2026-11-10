@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::marker::PhantomData;
 
 use feint_protocol::{
@@ -6,6 +5,7 @@ use feint_protocol::{
 };
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
+use crate::anticipate::{Anticipation, clamp_to_space};
 use crate::difficulty::Difficulty;
 use crate::insight::{Insight, STEADY_SAMPLES, Seen};
 use crate::long_game::Plan;
@@ -51,7 +51,6 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     playbook: P,
     spec: GameSpecT,
     cadence: Option<Cadence>,
-    delay: usize,
     stride: u32,
     reply_every: u32,
     replan_every: u64,
@@ -63,7 +62,7 @@ pub struct Bot<A: GameAdapter, P: Playbook<A>> {
     last_replan: Option<u64>,
     newest: Option<u64>,
     observed: Option<u64>,
-    history: VecDeque<ActionT>,
+    own: Anticipation,
     options: Vec<Choice>,
     insight: Insight<A::State>,
     plan: Plan,
@@ -99,7 +98,6 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             playbook,
             spec: spec.clone(),
             cadence,
-            delay,
             stride,
             reply_every,
             replan_every,
@@ -111,7 +109,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             last_replan: None,
             newest: None,
             observed: None,
-            history: VecDeque::new(),
+            own: Anticipation::new(delay as u64),
             options: Vec::new(),
             insight,
             plan: Plan::new(difficulty.long_game),
@@ -148,7 +146,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         };
         InsightView {
             current: self.current(),
-            intent: self.history.back().map(|a| (a.intent, a.deceptive)),
+            intent: self.own.last().map(|a| (a.intent, a.deceptive)),
             memory: model.is_some(),
             likely_shot: model.and_then(OpponentModel::likely_shot),
             likely_cover: (0..classes)
@@ -159,7 +157,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
 
     #[must_use]
     pub fn memory_len(&self) -> usize {
-        self.history.len()
+        self.own.len()
     }
 
     #[must_use]
@@ -211,14 +209,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         action.player = self.me;
         action.intent = choice.intent;
         action.deceptive = choice.deceptive;
-        let space = self.spec.action_space.as_deref();
-        if let (Some(values), Some(dims)) = (
-            action.values.as_mut(),
-            space.and_then(|s| s.continuous.as_ref()),
-        ) {
-            for (value, dim) in values.iter_mut().zip(dims) {
-                *value = value.max(dim.min).min(dim.max);
-            }
+        if let Some(values) = action.values.as_mut() {
+            clamp_to_space(values, &self.spec);
         }
         if action.discrete >= 0
             && self.difficulty.spread > 0.0
@@ -255,7 +247,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
         self.last_replan = None;
         self.newest = None;
         self.observed = None;
-        self.history.clear();
+        self.own.clear();
         self.insight.new_match();
         self.plan.reset();
     }
@@ -272,7 +264,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
     fn on_tick(&mut self, adapter: &A, obs: &ObservationT) -> Option<ActionT> {
         let now = obs.tick;
         if self.newest.is_some_and(|newest| now < newest) {
-            self.history.clear();
+            self.own.clear();
             self.buffer.clear();
             self.last_replan = None;
             self.current = None;
@@ -315,7 +307,9 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             return None;
         }
         if self.cadence.is_some() && self.difficulty.anticipate {
-            state = self.roll_forward(adapter, state, seen.tick, now);
+            state = self
+                .own
+                .roll_forward(adapter, &self.playbook, them, state, seen.tick, now);
         }
         self.seen = seen;
         self.insight
@@ -333,14 +327,7 @@ impl<A: GameAdapter, P: Playbook<A>> Controller<A> for Bot<A, P> {
             self.playbook
                 .act(&state, self.me, &committed.choice, elapsed, committed.aim);
         self.finish(&mut action, now, &committed.choice);
-        let cutoff = now.saturating_sub(self.delay as u64);
-        while self.history.len() > 1 && self.history[1].tick <= cutoff {
-            self.history.pop_front();
-        }
-        if self.history.back().is_some_and(|last| last.tick == now) {
-            self.history.pop_back();
-        }
-        self.history.push_back(action.clone());
+        self.own.remember(&action, now);
         Some(action)
     }
 }
