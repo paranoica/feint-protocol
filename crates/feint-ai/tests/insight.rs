@@ -424,3 +424,31 @@ fn an_attempt_stays_open_through_a_quiet_commit_until_its_outcome() {
         "the fake scored after the bot fell back, yet was recorded as lost"
     );
 }
+
+fn precise_or_steady(spread: f64) -> u16 {
+    let mut p = LinePlaybook::new(&[0.5], 240);
+    p.steady = vec![0.52];
+    p.window = Some(0.03);
+    let mut game = Line::new(0.5, 0.0);
+    let mut d = difficulty(0, 0.0);
+    d.spread = spread;
+    let mut b = bot(d, p);
+    drive(&mut game, &mut b, 1);
+    b.current().expect("a plan").id
+}
+
+#[test]
+fn a_bot_that_knows_its_own_error_takes_the_option_that_forgives_it() {
+    assert_eq!(
+        precise_or_steady(0.0),
+        0,
+        "an exact bot takes the exact target"
+    );
+    for spread in [0.1, 0.2] {
+        assert_eq!(
+            precise_or_steady(spread),
+            1,
+            "spread {spread}: the bot bet on hitting a 3 cm window it misses by its own error"
+        );
+    }
+}
