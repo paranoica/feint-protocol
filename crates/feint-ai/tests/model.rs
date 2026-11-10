@@ -249,23 +249,26 @@ fn a_loaded_profile_starts_the_theories_afresh() {
 #[test]
 fn the_opponents_signals_are_tied_to_where_it_really_went() {
     let mut m = OpponentModel::new(3, 0.0);
-    assert_eq!(m.likely_their_real(0), None);
+    let likeliest = |m: &OpponentModel, s: u8| {
+        m.their_odds(s).map(|odds| {
+            odds.into_iter()
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(k, _)| k)
+        })
+    };
+    assert_eq!(m.their_odds(0), None);
     for _ in 0..2 {
         m.record_shot_after(2, &[0]);
     }
-    assert_eq!(m.likely_their_real(0), None, "two kicks are not evidence");
+    assert_eq!(m.their_odds(0), None, "two kicks are not evidence");
     m.record_shot_after(2, &[0, 1]);
     assert_eq!(
-        m.likely_their_real(0),
-        Some(2),
+        likeliest(&m, 0),
+        Some(Some(Some(2))),
         "showing left, it kicks right"
     );
-    assert_eq!(m.likely_their_real(1), None);
-    assert_eq!(
-        m.likely_their_real(2),
-        None,
-        "nothing was shown on the right"
-    );
+    assert_eq!(m.their_odds(1), None);
+    assert_eq!(m.their_odds(2), None, "nothing was shown on the right");
     assert_eq!(m.likely_shot(), Some(2), "every one of them is also a shot");
     m.record_shot_after(0, &[]);
     assert_eq!(

@@ -223,14 +223,6 @@ impl OpponentModel {
     }
 
     #[must_use]
-    pub fn likely_their_real(&self, shown: u8) -> Option<u8> {
-        let s = self.class(Some(shown))?;
-        (self.theirs_events[s] >= MIN_EVIDENCE)
-            .then(|| Self::argmax(Self::row(&self.theirs, self.classes, s), s))
-            .flatten()
-    }
-
-    #[must_use]
     pub fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>> {
         let s = self.class(Some(shown))?;
         if self.theirs_events[s] < MIN_EVIDENCE {
