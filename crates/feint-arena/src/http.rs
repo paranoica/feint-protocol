@@ -99,6 +99,7 @@ pub fn router(arena: Arc<Arena>) -> Router {
     Router::new()
         .route("/api/seed", post(seed))
         .route("/api/profile", get(profile))
+        .route("/api/results", get(results))
         .route("/api/matches", post(upload))
         .fallback(get(file))
         .layer(DefaultBodyLimit::max(MAX_BODY))
@@ -231,6 +232,34 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
             response
         }
         Some(Ok(None)) => StatusCode::NO_CONTENT.into_response(),
+        _ => error(StatusCode::INTERNAL_SERVER_ERROR, "store"),
+    }
+}
+
+async fn results(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
+    let Some(nick) = query(&uri, "nick").and_then(|n| clean_nick(&n).ok()) else {
+        return error(StatusCode::BAD_REQUEST, "nick");
+    };
+    let work = arena.clone();
+    match blocking(move || work.with_store(|store| store.results(&nick))).await {
+        Some(Ok(rows)) => {
+            let items: Vec<String> = rows
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{{\"game\":\"{}\",\"level\":{},\"matches\":{},\"won\":{},\"lost\":{},\"mine\":{},\"theirs\":{}}}",
+                        r.game,
+                        r.level,
+                        r.matches,
+                        r.won,
+                        r.lost,
+                        r.mine,
+                        r.theirs
+                    )
+                })
+                .collect();
+            reply(StatusCode::OK, format!("[{}]", items.join(",")))
+        }
         _ => error(StatusCode::INTERNAL_SERVER_ERROR, "store"),
     }
 }

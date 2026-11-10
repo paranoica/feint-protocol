@@ -1,15 +1,12 @@
-mod opponents;
-
 use airhockey::analysis::{Frame, Tally, attempts, tally};
+use airhockey::human::{HUMAN_NOISE, Human, Reader, Recorder, against_human};
 use airhockey::{AirHockey, HockeyPlaybook, Params};
-use feint_ai::{Bot, Controller, Difficulty, RunHeader, RunReport, run_match};
+use feint_ai::{Bot, Controller, Difficulty, RunHeader, RunReport, Standing, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use opponents::{Human, Reader, Recorder};
 
 const GOALS: u32 = 3;
 const CAP_TICKS: u64 = 240 * 600;
 const PANEL_BODY_LEVEL: u8 = 3;
-const HUMAN_NOISE: f64 = 0.04;
 
 fn params() -> Params {
     Params {
@@ -213,57 +210,36 @@ fn wins(level: u8, opponent: Side, seeds: std::ops::Range<u64>) -> usize {
         .sum()
 }
 
-fn against_the_human(level: u8) -> (usize, u32, u32) {
-    let seven = Params {
-        goals_to_win: 7,
-        ..params()
-    };
-    let (mut won_matches, mut goals, mut against) = (0, 0, 0);
-    for seed in 0..40u64 {
-        let me = (seed % 2) as usize;
-        let sides = if me == 0 {
-            [Side::Level(level), Side::Human]
-        } else {
-            [Side::Human, Side::Level(level)]
-        };
-        let report = record_with(&seven, seed, sides).0;
-        won_matches += usize::from(won(&report, me));
-        goals += report.score[me] as u32;
-        against += report.score[1 - me] as u32;
-    }
-    (won_matches, goals, against)
-}
-
 #[test]
 #[ignore = "release only: bedrock cmd strength"]
 fn the_levels_climb_against_a_human_model() {
-    let share = |(_, goals, against): (usize, u32, u32)| {
-        f64::from(goals) / f64::from((goals + against).max(1))
-    };
-    let ladder: Vec<(usize, u32, u32)> = (1..=5).map(against_the_human).collect();
+    let share = |s: &Standing| s.share();
+    let ladder: Vec<Standing> = (1..=5)
+        .map(|l| against_human(Difficulty::preset(l).unwrap(), 40))
+        .collect();
     for (level, row) in (1..=5).zip(&ladder) {
         eprintln!(
             "level {level}: won {} of 40, goals {}:{}, share {:.2}",
-            row.0,
-            row.1,
-            row.2,
-            share(*row)
+            row.won,
+            row.mine,
+            row.theirs,
+            share(row)
         );
     }
-    assert!(ladder[0].0 <= 10, "the human model must beat level 1");
-    assert!(ladder[1].0 >= 24, "level 2 must win most matches");
+    assert!(ladder[0].won <= 10, "the human model must beat level 1");
+    assert!(ladder[1].won >= 24, "level 2 must win most matches");
     assert!(
-        share(ladder[1]) <= 0.85,
+        share(&ladder[1]) <= 0.85,
         "the human model must still score on level 2"
     );
     for pair in ladder.windows(2) {
         assert!(
-            share(pair[1]) > share(pair[0]),
+            share(&pair[1]) > share(&pair[0]),
             "a level is not stronger than the one below: {pair:?}"
         );
     }
     assert!(
-        share(ladder[4]) >= share(ladder[1]) + 0.1,
+        share(&ladder[4]) >= share(&ladder[1]) + 0.1,
         "level 5 is not clearly above level 2"
     );
 }

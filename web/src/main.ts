@@ -5,6 +5,7 @@ import { countdown } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { again, finish, first, start, watch, type Screen } from "./screens.ts";
 import { GAMES, gameById } from "./games/index.ts";
+import { parseComparison, parseResults, renderComparison } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
 const TICK_CAP = 12;
@@ -65,6 +66,7 @@ function show(next: Screen) {
   }
   if (screen.name === "level") {
     $<HTMLInputElement>("nick").value = screen.nick;
+    void loadComparison(screen.nick);
   }
   if (screen.name === "result") {
     const [you, bot] = screen.score;
@@ -161,6 +163,29 @@ function frame(now: number) {
     }
   }
   requestAnimationFrame(frame);
+}
+
+async function loadComparison(nick: string) {
+  const holder = $("compare");
+  try {
+    const measured = await fetch("./compare.json");
+    const comparison = measured.ok ? parseComparison(await measured.json()) : null;
+    if (!comparison) {
+      holder.hidden = true;
+      return;
+    }
+    let results = parseResults([]);
+    try {
+      const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
+      results = mine.ok ? parseResults(await mine.json()) : results;
+    } catch {
+      results = parseResults([]);
+    }
+    renderComparison(holder, comparison, results, (id) => gameById(id)?.name ?? id);
+    holder.hidden = false;
+  } catch {
+    holder.hidden = true;
+  }
 }
 
 async function fetchTicket(): Promise<Ticket | null> {

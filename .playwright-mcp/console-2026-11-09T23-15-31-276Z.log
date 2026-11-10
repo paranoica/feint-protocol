@@ -1,1 +1,0 @@
-[  103367ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8790/api/matches?nick=probe&ticket=94a3979f1973afc3f48826396b3a4093:0

@@ -53,6 +53,17 @@ pub struct Upload<'a> {
     pub profile: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResultRow {
+    pub game: String,
+    pub level: u8,
+    pub matches: u32,
+    pub won: u32,
+    pub lost: u32,
+    pub mine: u32,
+    pub theirs: u32,
+}
+
 pub struct Staged {
     rec: PathBuf,
     parquet: PathBuf,
@@ -217,6 +228,30 @@ impl Store {
             )
             .optional()?
             .ok_or(StoreError::Profile)
+    }
+
+    pub fn results(&self, nick: &str) -> Result<Vec<ResultRow>, StoreError> {
+        let mut query = self.conn.prepare(
+            "SELECT m.game, m.level, COUNT(*),
+                    SUM(m.score_human > m.score_bot), SUM(m.score_human < m.score_bot),
+                    SUM(m.score_human), SUM(m.score_bot)
+             FROM matches m JOIN players p ON p.id = m.player_id
+             WHERE p.nick = ?1 AND m.finished = 1
+             GROUP BY m.game, m.level ORDER BY m.game, m.level",
+        )?;
+        let count = |v: i64| u32::try_from(v).unwrap_or(u32::MAX);
+        let rows = query.query_map([nick], |r| {
+            Ok(ResultRow {
+                game: r.get(0)?,
+                level: u8::try_from(r.get::<_, i64>(1)?).unwrap_or(u8::MAX),
+                matches: count(r.get(2)?),
+                won: count(r.get(3)?),
+                lost: count(r.get(4)?),
+                mine: count(r.get(5)?),
+                theirs: count(r.get(6)?),
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     #[must_use]

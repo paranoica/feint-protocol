@@ -7,6 +7,7 @@ pub mod playbook;
 pub mod reaction;
 pub mod record;
 pub mod runner;
+pub mod standing;
 
 pub use bot::{Bot, BotError, InsightView, OPPONENT_REACTION_MS, REPLAN_HZ, SIMULATION_BUDGET};
 pub use difficulty::{Difficulty, LongGame, Memory};
@@ -18,3 +19,4 @@ pub use record::{
     MAX_RECORD_BYTES, RecordError, decode_profile, decode_record, encode_profile, encode_record,
 };
 pub use runner::{Record, RunHeader, RunReport, Runner, replay, replay_record, run_match};
+pub use standing::Standing;

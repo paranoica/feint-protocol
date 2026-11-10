@@ -98,3 +98,36 @@ fn a_version_two_database_keeps_its_rows_as_hockey() {
         "a second open migrates nothing"
     );
 }
+
+#[test]
+fn results_count_a_draw_as_neither_and_skip_unfinished_matches() {
+    let root = std::env::temp_dir().join(format!("feint-store-results-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = Store::open(&root).unwrap();
+    store
+        .connection()
+        .execute_batch(
+            "INSERT INTO players (id, nick) VALUES (1, 'ann'), (2, 'bob');
+             INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks, finished, digest, created) VALUES
+               (1, 'duel', 3, 1, 5, 2, 10, 1, 'a', 1),
+               (1, 'duel', 3, 2, 0, 0, 10, 1, 'b', 1),
+               (1, 'duel', 3, 3, 1, 5, 10, 1, 'c', 1),
+               (1, 'duel', 3, 4, 4, 0, 10, 0, 'd', 1),
+               (2, 'duel', 3, 5, 5, 0, 10, 1, 'e', 1);",
+        )
+        .unwrap();
+    let rows = store.results("ann").unwrap();
+    assert_eq!(
+        rows,
+        vec![feint_arena::ResultRow {
+            game: "duel".into(),
+            level: 3,
+            matches: 3,
+            won: 1,
+            lost: 1,
+            mine: 6,
+            theirs: 7,
+        }]
+    );
+    assert!(store.results("carl").unwrap().is_empty());
+}
