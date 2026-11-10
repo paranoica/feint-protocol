@@ -34,6 +34,7 @@ pub(crate) struct Insight<S> {
     away: u32,
     since: Option<S>,
     own_prev: Option<S>,
+    their_signals: Vec<u8>,
     pub(crate) gate_open: bool,
     pub(crate) fake_pending: bool,
     pub(crate) twitch: Option<u8>,
@@ -53,6 +54,7 @@ impl<S: Clone> Insight<S> {
             away: 0,
             since: None,
             own_prev: None,
+            their_signals: Vec::new(),
             gate_open: false,
             fake_pending: false,
             twitch: None,
@@ -76,6 +78,7 @@ impl<S: Clone> Insight<S> {
         self.away = 0;
         self.since = None;
         self.own_prev = None;
+        self.their_signals.clear();
         self.gate_open = false;
         self.fake_pending = false;
         self.twitch = None;
@@ -112,10 +115,11 @@ impl<S: Clone> Insight<S> {
                 .iter()
                 .zip(&self.prev_score)
                 .any(|(now, before)| now > before);
-            if let (Some(model), Some(shot)) =
-                (&mut self.model, playbook.read(prev, state, them).shot)
-            {
-                model.record_shot(shot);
+            if let Some(shot) = playbook.read(prev, state, them).shot {
+                if let Some(model) = &mut self.model {
+                    model.record_shot_after(shot, &self.their_signals);
+                }
+                self.their_signals.clear();
             }
             let reference = self.since.as_ref().unwrap_or(prev);
             let covered = (had || possession.is_some())
@@ -144,6 +148,12 @@ impl<S: Clone> Insight<S> {
             self.end_attempt();
             self.twitch = None;
             self.since = Some(state.clone());
+            self.their_signals.clear();
+        }
+        if let Some(signal) = playbook.signal(state, them)
+            && !self.their_signals.contains(&signal)
+        {
+            self.their_signals.push(signal);
         }
         if possession.is_some() {
             self.away = 0;
@@ -215,13 +225,18 @@ impl<S: Clone> Insight<S> {
         }
     }
 
-    pub(crate) fn stance(&self, depth: u8, choice: &Choice) -> Stance {
+    pub(crate) fn stance(&self, depth: u8, choice: &Choice, signal: Option<u8>) -> Stance {
         if depth == 0 {
             return Stance::Still;
         }
         let Some(model) = &self.model else {
             return Stance::Naive;
         };
+        if depth >= 2
+            && let Some(real) = signal.and_then(|s| model.likely_their_real(s))
+        {
+            return Stance::Shoot(real);
+        }
         let habit = model.likely_shot().map_or(Stance::Naive, Stance::Shoot);
         let read_me = choice.shown.and_then(|s| model.likely_cover(s));
         let know_me = choice.shown.and_then(|s| model.likely_real(s));

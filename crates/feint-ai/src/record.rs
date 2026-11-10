@@ -105,6 +105,8 @@ pub fn encode_profile(profile: &Profile) -> Vec<u8> {
     p.mine_events = Some(profile.mine_events.clone());
     p.fake_tries = profile.fake_tries;
     p.fake_wins = profile.fake_wins;
+    p.theirs = Some(profile.theirs.clone());
+    p.theirs_events = Some(profile.theirs_events.clone());
     encode(&MessageT::Profile(Box::new(p)))
 }
 
@@ -121,6 +123,8 @@ pub fn decode_profile(bytes: &[u8]) -> Result<Profile, RecordError> {
             mine_events: p.mine_events.unwrap_or_default(),
             fake_tries: p.fake_tries,
             fake_wins: p.fake_wins,
+            theirs: p.theirs.unwrap_or_default(),
+            theirs_events: p.theirs_events.unwrap_or_default(),
         }),
         _ => Err(RecordError::Order),
     }

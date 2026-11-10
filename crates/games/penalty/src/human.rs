@@ -7,8 +7,10 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 const DELAY_TICKS: usize = 72;
-const HONEST_LEAN: f32 = 0.45;
+const HONEST_LEAN: f32 = 0.35;
 const FAKE_LEAN: f32 = 0.45;
+const STRAIGHTEN: f32 = 0.25;
+const STRAIGHTEN_AT: f32 = 1.0;
 const EARLY_GUESS: f32 = 0.5;
 
 pub struct Human {
@@ -17,6 +19,7 @@ pub struct Human {
     rng: ChaCha8Rng,
     corner: f32,
     tell: f32,
+    straightens: bool,
     guesses: bool,
     noise: f32,
     kick_seen: f32,
@@ -31,6 +34,7 @@ impl Human {
             rng: ChaCha8Rng::seed_from_u64(0),
             corner: 0.0,
             tell: 1.0,
+            straightens: false,
             guesses: false,
             noise: 0.0,
             kick_seen: -1.0,
@@ -83,6 +87,7 @@ impl Controller<Penalty> for Human {
             } else {
                 0.0
             };
+            self.straightens = self.unit() < STRAIGHTEN;
             self.guesses = self.unit() < EARLY_GUESS;
             self.noise = (self.unit() - 0.5) * 1.0;
         }
@@ -102,7 +107,12 @@ impl Controller<Penalty> for Human {
                 [0.0, 0.0, 0.0, 0.0]
             }
         } else {
-            let lean = self.tell * self.corner.signum() * 0.8;
+            let late = self.straightens && dist < STRAIGHTEN_AT;
+            let lean = if late {
+                0.0
+            } else {
+                self.tell * self.corner.signum() * 0.8
+            };
             let at_ball = phase == 1.0 || dist < 0.2;
             [
                 lean,

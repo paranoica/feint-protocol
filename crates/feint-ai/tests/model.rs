@@ -84,6 +84,7 @@ fn trained() -> OpponentModel {
         m.record_attempt(Some(s), Some(r), Some(c), s != r, c != r);
     }
     m.record_shot(1);
+    m.record_shot_after(2, &[0]);
     m
 }
 
@@ -102,7 +103,7 @@ fn profile_round_trips() {
 fn profile_import_rejects_bad_data() {
     let good = trained().export("airhockey");
     let mut target = OpponentModel::new(3, 0.6);
-    let broken: [(Breaker, ProfileError); 6] = [
+    let broken: [(Breaker, ProfileError); 9] = [
         (|p| p.game_id = "poker".into(), ProfileError::OtherGame),
         (|p| p.classes = 4, ProfileError::WrongSize),
         (
@@ -112,6 +113,12 @@ fn profile_import_rejects_bad_data() {
         (|p| p.shots[0] = f64::NAN, ProfileError::BadCount),
         (|p| p.mine[1] = -1.0, ProfileError::BadCount),
         (|p| p.fake_tries = 1.0e9, ProfileError::BadCount),
+        (
+            |p| p.theirs.pop().map(drop).unwrap_or(()),
+            ProfileError::WrongSize,
+        ),
+        (|p| p.theirs_events.clear(), ProfileError::WrongSize),
+        (|p| p.theirs[3] = f64::INFINITY, ProfileError::BadCount),
     ];
     for (i, (breaks, why)) in broken.iter().enumerate() {
         let mut p = good.clone();
@@ -237,4 +244,58 @@ fn a_loaded_profile_starts_the_theories_afresh() {
         !learner.knowing_beats_reading(),
         "the theory that fitted the last opponent was kept for the next one"
     );
+}
+
+#[test]
+fn the_opponents_signals_are_tied_to_where_it_really_went() {
+    let mut m = OpponentModel::new(3, 0.0);
+    assert_eq!(m.likely_their_real(0), None);
+    for _ in 0..2 {
+        m.record_shot_after(2, &[0]);
+    }
+    assert_eq!(m.likely_their_real(0), None, "two kicks are not evidence");
+    m.record_shot_after(2, &[0, 1]);
+    assert_eq!(
+        m.likely_their_real(0),
+        Some(2),
+        "showing left, it kicks right"
+    );
+    assert_eq!(m.likely_their_real(1), None);
+    assert_eq!(
+        m.likely_their_real(2),
+        None,
+        "nothing was shown on the right"
+    );
+    assert_eq!(m.likely_shot(), Some(2), "every one of them is also a shot");
+    m.record_shot_after(0, &[]);
+    assert_eq!(
+        m.export("pick").theirs_events,
+        vec![3, 1, 0],
+        "a shot with nothing shown ties no signal"
+    );
+    m.record_shot_after(1, &[7]);
+    assert_eq!(m.export("pick").theirs_events, vec![3, 1, 0]);
+}
+
+#[test]
+fn a_profile_from_before_the_signal_table_still_loads() {
+    let mut old = trained().export("airhockey");
+    old.theirs.clear();
+    old.theirs_events.clear();
+    let mut target = trained();
+    target
+        .import(&old, "airhockey")
+        .expect("an older profile loads");
+    let back = target.export("airhockey");
+    assert_eq!(back.theirs, vec![0.0; 9]);
+    assert_eq!(back.theirs_events, vec![0; 3]);
+    assert_eq!(back.bite, old.bite);
+}
+
+#[test]
+fn old_signals_fade_like_every_other_count() {
+    let mut m = OpponentModel::new(3, 1.0);
+    m.record_shot_after(2, &[0]);
+    m.record_shot(1);
+    assert!(close(m.export("pick").theirs[2], 0.9));
 }

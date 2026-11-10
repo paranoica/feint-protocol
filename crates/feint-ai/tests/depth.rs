@@ -7,7 +7,8 @@ use feint_ai::{
 use feint_protocol::{GameAdapter, ObservationT};
 use line_game::{Line, LinePlaybook, line_spec};
 use penalty_game::{
-    HabitStriker, KEEPER, Keeper, KeeperRule, Penalty, PenaltyPlaybook, STRIKER, penalty_spec,
+    HabitStriker, KEEPER, Keeper, KeeperRule, Penalty, PenaltyPlaybook, STRIKER, SignalStriker,
+    penalty_spec,
 };
 
 fn thinker(depth: u8, deception: f64, memory: Memory) -> Difficulty {
@@ -141,6 +142,30 @@ fn depth_one_defends_the_opponents_habit() {
         reading.score[0]
     );
     assert_eq!(KEEPER, 1);
+}
+
+fn saves(depth: u8, lies: bool) -> u32 {
+    let mut game = Penalty::new(40);
+    let mut striker = SignalStriker { lies };
+    let mut keeper = penalty_bot(thinker(depth, 0.0, Memory::Match));
+    let report = run_match(&mut game, [&mut striker, &mut keeper], header(5), 200).unwrap();
+    u32::try_from(report.score[usize::from(KEEPER)]).unwrap()
+}
+
+#[test]
+fn from_depth_two_a_keeper_learns_whether_the_shown_side_is_the_real_one() {
+    for lies in [true, false] {
+        let saved = saves(2, lies);
+        assert!(
+            saved >= 34,
+            "lies {lies}: depth 2 saved only {saved} of 40 alternating kicks"
+        );
+    }
+    let blind = saves(1, true);
+    assert!(
+        blind <= 26,
+        "depth 1 reads only habits, yet saved {blind} of 40 from a liar"
+    );
 }
 
 #[test]

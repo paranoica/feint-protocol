@@ -34,6 +34,7 @@ struct Committed {
     choice: Choice,
     since: u64,
     aim: [f64; 2],
+    signal: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -173,7 +174,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    fn commit(&mut self, choice: Choice, now: u64, importance: f64) {
+    fn commit(&mut self, choice: Choice, now: u64, importance: f64, signal: Option<u8>) {
         self.insight.start_attempt(&choice);
         self.plan.committed(&choice, importance);
         let spread = self.difficulty.spread;
@@ -185,6 +186,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             choice,
             since: now,
             aim,
+            signal,
         });
     }
 

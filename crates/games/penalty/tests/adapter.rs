@@ -350,3 +350,100 @@ fn the_kick_stays_the_plan_until_the_ball_lands() {
         }
     }
 }
+
+struct Straightener {
+    me: u8,
+}
+
+impl feint_ai::Controller<Penalty> for Straightener {
+    fn new_match(&mut self, _spec: &feint_protocol::GameSpecT, me: u8, _seed: u64) {
+        self.me = me;
+    }
+
+    fn on_tick(&mut self, game: &Penalty, obs: &ObservationT) -> Option<ActionT> {
+        let s = game.live();
+        if s.shooter() != self.me {
+            return Some(act(obs.tick, self.me, [0.0, 0.0, 0.0, 0.0]));
+        }
+        let side = if (s.kicks / 2).is_multiple_of(2) {
+            -1.0
+        } else {
+            1.0
+        };
+        let lean = if s.dist > 1.2 { 0.8 * side } else { 0.0 };
+        let fire = s.dist < 0.6;
+        Some(act(
+            obs.tick,
+            self.me,
+            [lean, 1.0, f32::from(u8::from(fire)), -2.8 * side],
+        ))
+    }
+}
+
+fn lean_dives(memory: &mut Option<feint_ai::Profile>, seed: u64) -> (u32, u32) {
+    let mut game = Penalty::new(Params::default(), 5);
+    let spec = game.spec();
+    let five = Difficulty::preset(5).unwrap();
+    let mut keeper = Bot::new(five, PenaltyPlaybook::new(Params::default()), &spec).unwrap();
+    if let Some(p) = memory.as_ref() {
+        keeper.load_profile(p, "penalty").unwrap();
+    }
+    let mut shooter = Straightener { me: 0 };
+    let header = RunHeader {
+        game_id: "penalty".into(),
+        game_version: penalty::GAME_VERSION,
+        seed,
+        bodies: vec![body(9.0, 4.0), five.body(&spec)],
+        levels: [0, 5],
+    };
+    let mut runner =
+        feint_ai::Runner::start(&mut game, [&mut shooter, &mut keeper], header).unwrap();
+    let (mut kicks, mut fooled) = (0, 0);
+    let mut prev = game.live().clone();
+    loop {
+        let more = runner.step(
+            &mut game,
+            [
+                &mut shooter as &mut dyn feint_ai::Controller<Penalty>,
+                &mut keeper,
+            ],
+        );
+        let s = game.live().clone();
+        if s.shooter() == 0 && s.phase == Phase::Strike && prev.phase != Phase::Strike {
+            kicks += 1;
+        }
+        if s.shooter() == 0 && s.dived && !prev.dived {
+            let side = if (s.kicks / 2).is_multiple_of(2) {
+                -1.0
+            } else {
+                1.0
+            };
+            if s.dive.is_some_and(|d| d.target * side > 0.0) {
+                fooled += 1;
+            }
+        }
+        prev = s;
+        if !more || runner.ticks() > 240 * 900 {
+            break;
+        }
+    }
+    *memory = keeper.profile("penalty");
+    (fooled, kicks)
+}
+
+#[test]
+fn a_keeper_stops_following_a_lean_that_keeps_lying() {
+    let mut memory = None;
+    let early: Vec<(u32, u32)> = (1..3).map(|seed| lean_dives(&mut memory, seed)).collect();
+    for seed in 3..5 {
+        lean_dives(&mut memory, seed);
+    }
+    let late: Vec<(u32, u32)> = (5..9).map(|seed| lean_dives(&mut memory, seed)).collect();
+    let fooled: u32 = late.iter().map(|x| x.0).sum();
+    let kicks: u32 = late.iter().map(|x| x.1).sum();
+    assert!(kicks >= 10, "{late:?}");
+    assert!(
+        fooled * 10 <= kicks,
+        "after four shootouts the keeper still dived with the lying lean: {late:?} (first two {early:?})"
+    );
+}

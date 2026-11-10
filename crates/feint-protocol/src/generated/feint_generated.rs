@@ -2492,6 +2492,8 @@ impl<'a> Profile<'a> {
   pub const VT_MINE_EVENTS: ::flatbuffers::VOffsetT = 18;
   pub const VT_FAKE_TRIES: ::flatbuffers::VOffsetT = 20;
   pub const VT_FAKE_WINS: ::flatbuffers::VOffsetT = 22;
+  pub const VT_THEIRS: ::flatbuffers::VOffsetT = 24;
+  pub const VT_THEIRS_EVENTS: ::flatbuffers::VOffsetT = 26;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -2505,6 +2507,8 @@ impl<'a> Profile<'a> {
     let mut builder = ProfileBuilder::new(_fbb);
     builder.add_fake_wins(args.fake_wins);
     builder.add_fake_tries(args.fake_tries);
+    if let Some(x) = args.theirs_events { builder.add_theirs_events(x); }
+    if let Some(x) = args.theirs { builder.add_theirs(x); }
     if let Some(x) = args.mine_events { builder.add_mine_events(x); }
     if let Some(x) = args.mine { builder.add_mine(x); }
     builder.add_shot_events(args.shot_events);
@@ -2539,6 +2543,12 @@ impl<'a> Profile<'a> {
     });
     let fake_tries = self.fake_tries();
     let fake_wins = self.fake_wins();
+    let theirs = self.theirs().map(|x| {
+      x.into_iter().collect()
+    });
+    let theirs_events = self.theirs_events().map(|x| {
+      x.into_iter().collect()
+    });
     ProfileT {
       game_id,
       classes,
@@ -2550,6 +2560,8 @@ impl<'a> Profile<'a> {
       mine_events,
       fake_tries,
       fake_wins,
+      theirs,
+      theirs_events,
     }
   }
 
@@ -2623,6 +2635,20 @@ impl<'a> Profile<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<f64>(Profile::VT_FAKE_WINS, Some(0.0)).unwrap()}
   }
+  #[inline]
+  pub fn theirs(&self) -> Option<::flatbuffers::Vector<'a, f64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f64>>>(Profile::VT_THEIRS, None)}
+  }
+  #[inline]
+  pub fn theirs_events(&self) -> Option<::flatbuffers::Vector<'a, u32>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u32>>>(Profile::VT_THEIRS_EVENTS, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Profile<'_> {
@@ -2641,6 +2667,8 @@ impl ::flatbuffers::Verifiable for Profile<'_> {
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("mine_events", Self::VT_MINE_EVENTS, false)?
      .visit_field::<f64>("fake_tries", Self::VT_FAKE_TRIES, false)?
      .visit_field::<f64>("fake_wins", Self::VT_FAKE_WINS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f64>>>("theirs", Self::VT_THEIRS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u32>>>("theirs_events", Self::VT_THEIRS_EVENTS, false)?
      .finish();
     Ok(())
   }
@@ -2656,6 +2684,8 @@ pub struct ProfileArgs<'a> {
     pub mine_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
     pub fake_tries: f64,
     pub fake_wins: f64,
+    pub theirs: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f64>>>,
+    pub theirs_events: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u32>>>,
 }
 impl<'a> Default for ProfileArgs<'a> {
   #[inline]
@@ -2671,6 +2701,8 @@ impl<'a> Default for ProfileArgs<'a> {
       mine_events: None,
       fake_tries: 0.0,
       fake_wins: 0.0,
+      theirs: None,
+      theirs_events: None,
     }
   }
 }
@@ -2721,6 +2753,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ProfileBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<f64>(Profile::VT_FAKE_WINS, fake_wins, 0.0);
   }
   #[inline]
+  pub fn add_theirs(&mut self, theirs: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_THEIRS, theirs);
+  }
+  #[inline]
+  pub fn add_theirs_events(&mut self, theirs_events: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u32>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Profile::VT_THEIRS_EVENTS, theirs_events);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ProfileBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ProfileBuilder {
@@ -2748,6 +2788,8 @@ impl ::core::fmt::Debug for Profile<'_> {
       ds.field("mine_events", &self.mine_events());
       ds.field("fake_tries", &self.fake_tries());
       ds.field("fake_wins", &self.fake_wins());
+      ds.field("theirs", &self.theirs());
+      ds.field("theirs_events", &self.theirs_events());
       ds.finish()
   }
 }
@@ -2764,6 +2806,8 @@ pub struct ProfileT {
   pub mine_events: Option<alloc::vec::Vec<u32>>,
   pub fake_tries: f64,
   pub fake_wins: f64,
+  pub theirs: Option<alloc::vec::Vec<f64>>,
+  pub theirs_events: Option<alloc::vec::Vec<u32>>,
 }
 impl Default for ProfileT {
   fn default() -> Self {
@@ -2778,6 +2822,8 @@ impl Default for ProfileT {
       mine_events: None,
       fake_tries: 0.0,
       fake_wins: 0.0,
+      theirs: None,
+      theirs_events: None,
     }
   }
 }
@@ -2808,6 +2854,12 @@ impl ProfileT {
     });
     let fake_tries = self.fake_tries;
     let fake_wins = self.fake_wins;
+    let theirs = self.theirs.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    let theirs_events = self.theirs_events.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
     Profile::create(_fbb, &ProfileArgs{
       game_id,
       classes,
@@ -2819,6 +2871,8 @@ impl ProfileT {
       mine_events,
       fake_tries,
       fake_wins,
+      theirs,
+      theirs_events,
     })
   }
 }

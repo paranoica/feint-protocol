@@ -72,6 +72,11 @@ pub trait Playbook<A: GameAdapter> {
         Read::default()
     }
 
+    fn signal(&self, state: &A::State, them: PlayerId) -> Option<u8> {
+        let _ = (state, them);
+        None
+    }
+
     fn importance(&self, state: &A::State, me: PlayerId) -> f64 {
         let _ = (state, me);
         0.0

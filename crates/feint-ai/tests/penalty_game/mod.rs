@@ -333,6 +333,10 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         }
     }
 
+    fn signal(&self, s: &PenaltyState, them: PlayerId) -> Option<u8> {
+        (them == STRIKER).then_some(s.shown).flatten()
+    }
+
     fn importance(&self, s: &PenaltyState, _me: PlayerId) -> f64 {
         if s.round + 1 >= s.rounds { 1.0 } else { 0.0 }
     }
@@ -416,6 +420,27 @@ impl Controller<Penalty> for HabitStriker {
         a.tick = obs.tick;
         a.player = STRIKER;
         a.discrete = encode_kick(self.0, self.0);
+        Some(a)
+    }
+}
+
+pub struct SignalStriker {
+    pub lies: bool,
+}
+
+impl Controller<Penalty> for SignalStriker {
+    fn new_match(&mut self, _spec: &GameSpecT, _me: PlayerId, _seed: u64) {}
+
+    fn on_tick(&mut self, game: &Penalty, obs: &ObservationT) -> Option<ActionT> {
+        if obs.to_act != STRIKER as i8 {
+            return None;
+        }
+        let shown = u8::try_from(game.live().round % 2).unwrap_or(0);
+        let real = if self.lies { 1 - shown } else { shown };
+        let mut a = ActionT::default();
+        a.tick = obs.tick;
+        a.player = STRIKER;
+        a.discrete = encode_kick(shown, real);
         Some(a)
     }
 }

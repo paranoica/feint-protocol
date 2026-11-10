@@ -259,7 +259,7 @@ impl Playbook<Penalty> for PenaltyPlaybook {
                 _ => by_lean,
             };
             let run = !matches!(stance, Stance::Still);
-            return self.shoot(s, them, class, class, run, 0.0);
+            return self.shoot(s, them, by_lean, class, run, 0.0);
         }
         match stance {
             Stance::Cover(k) => {
@@ -318,6 +318,15 @@ impl Playbook<Penalty> for PenaltyPlaybook {
             read.shot = after.aim.map(Self::class_of);
         }
         read
+    }
+
+    fn signal(&self, s: &Shootout, them: PlayerId) -> Option<u8> {
+        let open = matches!(s.phase, Phase::RunUp | Phase::AtBall | Phase::Strike);
+        (them == s.shooter() && open && s.lean.abs() > READ_LEAN).then_some(if s.lean < 0.0 {
+            0
+        } else {
+            2
+        })
     }
 
     fn importance(&self, s: &Shootout, _me: PlayerId) -> f64 {
