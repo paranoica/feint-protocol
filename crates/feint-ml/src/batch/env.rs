@@ -231,19 +231,25 @@ impl Env {
         self.start(ranges, params);
     }
 
+    fn close(&mut self, ranges: &Ranges, params: &Params) {
+        self.end(ranges, params);
+        self.ready = [false; 2];
+        self.obs = [[0.0; FEATURES]; 2];
+    }
+
     pub(super) fn advance(&mut self, ranges: &Ranges, params: &Params) {
         while self.error.is_none() {
             if self.game.result().is_some() {
                 self.terminated = true;
-                self.end(ranges, params);
-                continue;
+                self.close(ranges, params);
+                return;
             }
             let any = self.sense();
             if self.runner.ticks() >= ranges.cap {
                 self.truncated = true;
                 self.final_obs = self.obs;
-                self.end(ranges, params);
-                continue;
+                self.close(ranges, params);
+                return;
             }
             if any {
                 return;
