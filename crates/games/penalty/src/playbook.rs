@@ -317,8 +317,8 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         if them == after.keeper() && after.dived && !before.dived {
             read.covered = after.dive.map(|d| Self::class_of(d.target));
         }
-        if them == after.shooter() && after.phase == Phase::Flight && before.phase != Phase::Flight
-        {
+        let aimed = |x: &Shootout| x.phase == Phase::Flight && x.aim.is_some();
+        if them == after.shooter() && aimed(after) && !aimed(before) {
             read.shot = after.aim.map(Self::class_of);
         }
         read
