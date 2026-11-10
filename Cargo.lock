@@ -465,6 +465,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "feint-ml"
+version = "0.1.0"
+dependencies = [
+ "airhockey",
+ "feint-ai",
+ "feint-protocol",
+ "rand_chacha",
+]
+
+[[package]]
 name = "feint-protocol"
 version = "0.1.0"
 dependencies = [

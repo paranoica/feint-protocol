@@ -146,3 +146,25 @@ fn a_finished_runner_steps_no_more_and_reports_no_stale_events() {
     assert!(!runner.step(&mut game, [&mut a, &mut b]));
     assert!(runner.events().is_empty());
 }
+
+#[test]
+fn forgetting_actions_empties_the_log_and_leaves_the_play_alone() {
+    let play = |forget: bool| {
+        let mut game = Line::new(0.0, 0.3);
+        let (mut a, mut b) = (bot(2, &game), bot(3, &game));
+        let mut runner = Runner::start(&mut game, [&mut a, &mut b], header(4)).unwrap();
+        let mut kept = 0;
+        while runner.ticks() < 1_000 && runner.step(&mut game, [&mut a, &mut b]) {
+            if forget && runner.ticks().is_multiple_of(100) {
+                kept = kept.max(runner.actions().len());
+                runner.forget_actions();
+                assert!(runner.actions().is_empty());
+            }
+        }
+        (game.digest(&game.state), kept)
+    };
+    let (kept_digest, _) = play(false);
+    let (forgot_digest, most) = play(true);
+    assert_eq!(forgot_digest, kept_digest);
+    assert!(most > 0 && most < 100, "{most} actions held between clears");
+}

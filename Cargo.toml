@@ -11,7 +11,9 @@ members = [
     "crates/feint-arena",
     "crates/feint-ffi",
     "crates/feint-compare",
+    "crates/feint-ml",
 ]
+exclude = ["crates/feint-gym"]
 
 [workspace.package]
 version = "0.1.0"
@@ -23,6 +25,7 @@ publish = false
 [workspace.dependencies]
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
+feint-ml = { path = "crates/feint-ml" }
 penalty = { path = "crates/games/penalty" }
 duel = { path = "crates/games/duel" }
 flatbuffers = "=25.12.19"
