@@ -221,6 +221,7 @@ pub struct LinePlaybook {
     pub shoots: bool,
     pub shots_at: Option<u8>,
     pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
+    pub signal: std::cell::Cell<Option<u8>>,
 }
 
 impl LinePlaybook {
@@ -238,6 +239,7 @@ impl LinePlaybook {
             shoots: false,
             shots_at: None,
             twitches: std::cell::RefCell::new(Vec::new()),
+            signal: std::cell::Cell::new(None),
         }
     }
 }
@@ -316,6 +318,10 @@ impl Playbook<Line> for LinePlaybook {
                 .then_some(self.shots_at.or(self.shoots.then_some(1)))
                 .flatten(),
         }
+    }
+
+    fn signal(&self, _s: &LineState, _them: PlayerId) -> Option<u8> {
+        self.signal.get()
     }
 
     fn possession(&self, s: &LineState, _me: PlayerId) -> Option<u64> {

@@ -108,7 +108,7 @@ impl Controller<Penalty> for Human {
             }
         } else {
             let late = self.straightens && dist < STRAIGHTEN_AT;
-            let lean = if late {
+            let lean = if late || self.corner == 0.0 {
                 0.0
             } else {
                 self.tell * self.corner.signum() * 0.8

@@ -283,6 +283,40 @@ fn a_fake_committed_with_the_gate_shut_is_held_for_ten_replans() {
 }
 
 #[test]
+fn a_new_signal_reopens_the_plan_once_and_then_the_plan_holds_again() {
+    let mut playbook = LinePlaybook::new(&[0.0, 1.0], 240);
+    playbook.flat = true;
+    playbook.margin = 10.0;
+    let mut game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 0.0), playbook, 3);
+    drive(&mut game, &mut bot, 1);
+    let plan = bot.current().expect("a plan").id;
+    let rollouts = |bot: &Bot<Line, LinePlaybook>| bot.playbook().replies.get();
+    let held = rollouts(&bot);
+    drive(&mut game, &mut bot, 24);
+    assert_eq!(
+        rollouts(&bot),
+        held,
+        "a young plan is weighed again with nothing new"
+    );
+    bot.playbook().signal.set(Some(0));
+    drive(&mut game, &mut bot, 24);
+    let reopened = rollouts(&bot);
+    assert!(reopened > held, "a new signal did not reopen the plan");
+    assert_eq!(
+        bot.current().map(|c| c.id),
+        Some(plan),
+        "within the margin the plan stays"
+    );
+    drive(&mut game, &mut bot, 24);
+    assert_eq!(
+        rollouts(&bot),
+        reopened,
+        "the same signal kept the plan open on every replan"
+    );
+}
+
+#[test]
 fn the_gate_is_rolled_once_per_possession() {
     let mut outcomes = Vec::new();
     for seed in 0..40 {

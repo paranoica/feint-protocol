@@ -167,6 +167,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             let attempt = u64::from(cur.choice.horizon_ticks.max(1));
             if now.saturating_sub(cur.since) >= attempt {
                 self.commit(offer, now, importance, signal);
+            } else if let Some(held) = &mut self.current {
+                held.signal = signal;
             }
             return;
         }
