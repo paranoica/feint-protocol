@@ -87,6 +87,8 @@ table Profile {
   mine_events: [uint];
   fake_tries: double;
   fake_wins: double;
+  theirs: [double];
+  theirs_events: [uint];
 }
 
 union Message { GameSpec, Observation, Action, Event, MatchHeader, MatchResult, Profile }

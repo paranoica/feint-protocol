@@ -164,9 +164,10 @@ fn a_profile_round_trips_exactly_through_bytes() {
             i % 2 == 0,
             i % 3 == 0,
         );
-        m.record_shot(i % 3);
+        m.record_shot_after(i % 3, &[(i + 2) % 3]);
     }
     let profile = m.export("airhockey");
+    assert!(profile.theirs.iter().any(|v| *v > 0.0));
     assert!(
         profile.bite.iter().any(|v| v.fract() != 0.0),
         "decayed counts are not whole"

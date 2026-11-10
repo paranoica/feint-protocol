@@ -60,7 +60,8 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         elapsed: u64,
     ) -> f64 {
         let horizon = choice.horizon_ticks.clamp(1, cap);
-        let stance = self.insight.stance(self.difficulty.depth, choice);
+        let signal = self.playbook.signal(state, self.opponent());
+        let stance = self.insight.stance(self.difficulty.depth, choice, signal);
         let mut state = state.clone();
         let mut theirs = self.playbook.opponent_move(&state, self.opponent(), stance);
         let mut next_reply = self.reply_every;
@@ -100,6 +101,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             &mut options,
         );
         let importance = self.playbook.importance(state, self.me);
+        let signal = self.playbook.signal(state, self.opponent());
         let current = self.current;
         let depth = self.difficulty.depth;
         let held = current.map(|c| c.choice.id);
@@ -108,7 +110,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             if !fakes.is_empty() {
                 self.insight.fake_pending = false;
                 let pick = ((self.unit() * fakes.len() as f64) as usize).min(fakes.len() - 1);
-                self.commit(fakes[pick], now, importance);
+                self.commit(fakes[pick], now, importance, signal);
                 self.options = options;
                 return;
             }
@@ -121,6 +123,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         let offered = |id: u16| options.iter().any(|c| c.id == id);
         if let Some(cur) = current
             && offered(cur.choice.id)
+            && cur.signal == signal
             && now.saturating_sub(cur.since) < u64::from(cur.choice.horizon_ticks / 2)
         {
             self.options = options;
@@ -163,7 +166,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         {
             let attempt = u64::from(cur.choice.horizon_ticks.max(1));
             if now.saturating_sub(cur.since) >= attempt {
-                self.commit(offer, now, importance);
+                self.commit(offer, now, importance, signal);
+            } else if let Some(held) = &mut self.current {
+                held.signal = signal;
             }
             return;
         }
@@ -183,7 +188,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             near.get(i).copied()
         };
         if let Some(choice) = pick {
-            self.commit(choice, now, importance);
+            self.commit(choice, now, importance, signal);
         }
     }
 }

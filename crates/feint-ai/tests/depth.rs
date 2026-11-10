@@ -7,7 +7,8 @@ use feint_ai::{
 use feint_protocol::{GameAdapter, ObservationT};
 use line_game::{Line, LinePlaybook, line_spec};
 use penalty_game::{
-    HabitStriker, KEEPER, Keeper, KeeperRule, Penalty, PenaltyPlaybook, STRIKER, penalty_spec,
+    HabitStriker, KEEPER, Keeper, KeeperRule, Penalty, PenaltyPlaybook, STRIKER, SignalStriker,
+    penalty_spec,
 };
 
 fn thinker(depth: u8, deception: f64, memory: Memory) -> Difficulty {
@@ -143,6 +144,30 @@ fn depth_one_defends_the_opponents_habit() {
     assert_eq!(KEEPER, 1);
 }
 
+fn saves(depth: u8, lies: bool) -> u32 {
+    let mut game = Penalty::new(40);
+    let mut striker = SignalStriker { lies };
+    let mut keeper = penalty_bot(thinker(depth, 0.0, Memory::Match));
+    let report = run_match(&mut game, [&mut striker, &mut keeper], header(5), 200).unwrap();
+    u32::try_from(report.score[usize::from(KEEPER)]).unwrap()
+}
+
+#[test]
+fn from_depth_two_a_keeper_learns_whether_the_shown_side_is_the_real_one() {
+    for lies in [true, false] {
+        let saved = saves(2, lies);
+        assert!(
+            saved >= 34,
+            "lies {lies}: depth 2 saved only {saved} of 40 alternating kicks"
+        );
+    }
+    let blind = saves(1, true);
+    assert!(
+        blind <= 26,
+        "depth 1 reads only habits, yet saved {blind} of 40 from a liar"
+    );
+}
+
 #[test]
 fn the_model_counts_each_kick_once() {
     let mut game = Penalty::new(10);
@@ -255,6 +280,40 @@ fn a_fake_committed_with_the_gate_shut_is_held_for_ten_replans() {
             "dropped at replan {replan}"
         );
     }
+}
+
+#[test]
+fn a_new_signal_reopens_the_plan_once_and_then_the_plan_holds_again() {
+    let mut playbook = LinePlaybook::new(&[0.0, 1.0], 240);
+    playbook.flat = true;
+    playbook.margin = 10.0;
+    let mut game = Line::new(0.5, 0.0);
+    let mut bot = line_bot(realtime(1, 0.0), playbook, 3);
+    drive(&mut game, &mut bot, 1);
+    let plan = bot.current().expect("a plan").id;
+    let rollouts = |bot: &Bot<Line, LinePlaybook>| bot.playbook().replies.get();
+    let held = rollouts(&bot);
+    drive(&mut game, &mut bot, 24);
+    assert_eq!(
+        rollouts(&bot),
+        held,
+        "a young plan is weighed again with nothing new"
+    );
+    bot.playbook().signal.set(Some(0));
+    drive(&mut game, &mut bot, 24);
+    let reopened = rollouts(&bot);
+    assert!(reopened > held, "a new signal did not reopen the plan");
+    assert_eq!(
+        bot.current().map(|c| c.id),
+        Some(plan),
+        "within the margin the plan stays"
+    );
+    drive(&mut game, &mut bot, 24);
+    assert_eq!(
+        rollouts(&bot),
+        reopened,
+        "the same signal kept the plan open on every replan"
+    );
 }
 
 #[test]

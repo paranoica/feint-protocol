@@ -13,6 +13,8 @@ pub struct Profile {
     pub mine_events: Vec<u32>,
     pub fake_tries: f64,
     pub fake_wins: f64,
+    pub theirs: Vec<f64>,
+    pub theirs_events: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,6 +39,8 @@ pub struct OpponentModel {
     fake_wins: f64,
     knowing: f64,
     reading: f64,
+    theirs: Vec<f64>,
+    theirs_events: Vec<u32>,
 }
 
 impl OpponentModel {
@@ -56,6 +60,8 @@ impl OpponentModel {
             fake_wins: 0.0,
             knowing: 0.0,
             reading: 0.0,
+            theirs: vec![0.0; n * n],
+            theirs_events: vec![0; n],
         }
     }
 
@@ -70,6 +76,7 @@ impl OpponentModel {
             .iter_mut()
             .chain(self.shots.iter_mut())
             .chain(self.mine.iter_mut())
+            .chain(self.theirs.iter_mut())
         {
             *count *= keep;
         }
@@ -127,12 +134,21 @@ impl OpponentModel {
     }
 
     pub fn record_shot(&mut self, class: u8) {
+        self.record_shot_after(class, &[]);
+    }
+
+    pub fn record_shot_after(&mut self, class: u8, shown: &[u8]) {
         let Some(c) = self.class(Some(class)) else {
             return;
         };
         self.decay();
         Self::bump(&mut self.shots[c]);
         self.shot_events = self.shot_events.saturating_add(1);
+        let n = self.classes;
+        for s in shown.iter().map(|&s| usize::from(s)).filter(|&s| s < n) {
+            Self::bump(&mut self.theirs[s * n + c]);
+            self.theirs_events[s] = self.theirs_events[s].saturating_add(1);
+        }
     }
 
     fn bump(count: &mut f64) {
@@ -183,6 +199,14 @@ impl OpponentModel {
     }
 
     #[must_use]
+    pub fn likely_their_real(&self, shown: u8) -> Option<u8> {
+        let s = self.class(Some(shown))?;
+        (self.theirs_events[s] >= MIN_EVIDENCE)
+            .then(|| Self::argmax(Self::row(&self.theirs, self.classes, s), s))
+            .flatten()
+    }
+
+    #[must_use]
     pub fn likely_shot(&self) -> Option<u8> {
         (self.shot_events >= MIN_EVIDENCE)
             .then(|| Self::argmax(&self.shots, 0))
@@ -220,6 +244,8 @@ impl OpponentModel {
             mine_events: self.mine_events.clone(),
             fake_tries: self.fake_tries,
             fake_wins: self.fake_wins,
+            theirs: self.theirs.clone(),
+            theirs_events: self.theirs_events.clone(),
         }
     }
 
@@ -234,7 +260,10 @@ impl OpponentModel {
             && profile.shots.len() == n
             && profile.bite_events.len() == n
             && profile.mine_events.len() == n;
-        if !sizes_match {
+        let older = profile.theirs.is_empty() && profile.theirs_events.is_empty();
+        let theirs_match =
+            older || (profile.theirs.len() == n * n && profile.theirs_events.len() == n);
+        if !sizes_match || !theirs_match {
             return Err(ProfileError::WrongSize);
         }
         let valid = |x: &f64| x.is_finite() && (0.0..=COUNT_CAP).contains(x);
@@ -243,6 +272,7 @@ impl OpponentModel {
             .iter()
             .chain(&profile.shots)
             .chain(&profile.mine)
+            .chain(&profile.theirs)
             .chain([&profile.fake_tries, &profile.fake_wins])
             .all(valid)
             && profile.fake_wins <= profile.fake_tries;
@@ -257,6 +287,13 @@ impl OpponentModel {
         self.mine_events.clone_from(&profile.mine_events);
         self.fake_tries = profile.fake_tries;
         self.fake_wins = profile.fake_wins;
+        if older {
+            self.theirs.fill(0.0);
+            self.theirs_events.fill(0);
+        } else {
+            self.theirs.clone_from(&profile.theirs);
+            self.theirs_events.clone_from(&profile.theirs_events);
+        }
         self.knowing = 0.0;
         self.reading = 0.0;
         Ok(())

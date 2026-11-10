@@ -68,6 +68,10 @@ impl PenaltyPlaybook {
         }
     }
 
+    fn lean_class(lean: f64) -> Option<u8> {
+        (lean.abs() > READ_LEAN).then_some(if lean < 0.0 { 0 } else { 2 })
+    }
+
     fn near_kick(&self, s: &Shootout, lead: f64) -> bool {
         matches!(s.phase, Phase::AtBall | Phase::Strike)
             || (s.phase == Phase::RunUp
@@ -253,13 +257,13 @@ impl Playbook<Penalty> for PenaltyPlaybook {
 
     fn opponent_move(&self, s: &Shootout, them: PlayerId, stance: Stance) -> ActionT {
         if them == s.shooter() {
-            let by_lean = Self::class_of(s.lean * AIM);
+            let by_lean = Self::lean_class(s.lean).unwrap_or(1);
             let class = match stance {
                 Stance::Shoot(k) => k,
                 _ => by_lean,
             };
             let run = !matches!(stance, Stance::Still);
-            return self.shoot(s, them, class, class, run, 0.0);
+            return self.shoot(s, them, by_lean, class, run, 0.0);
         }
         match stance {
             Stance::Cover(k) => {
@@ -318,6 +322,11 @@ impl Playbook<Penalty> for PenaltyPlaybook {
             read.shot = after.aim.map(Self::class_of);
         }
         read
+    }
+
+    fn signal(&self, s: &Shootout, them: PlayerId) -> Option<u8> {
+        let open = matches!(s.phase, Phase::RunUp | Phase::AtBall | Phase::Strike);
+        Self::lean_class(s.lean).filter(|_| them == s.shooter() && open)
     }
 
     fn importance(&self, s: &Shootout, _me: PlayerId) -> f64 {

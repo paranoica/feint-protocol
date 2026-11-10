@@ -350,3 +350,185 @@ fn the_kick_stays_the_plan_until_the_ball_lands() {
         }
     }
 }
+
+struct Straightener {
+    me: u8,
+}
+
+impl feint_ai::Controller<Penalty> for Straightener {
+    fn new_match(&mut self, _spec: &feint_protocol::GameSpecT, me: u8, _seed: u64) {
+        self.me = me;
+    }
+
+    fn on_tick(&mut self, game: &Penalty, obs: &ObservationT) -> Option<ActionT> {
+        let s = game.live();
+        if s.shooter() != self.me {
+            return Some(act(obs.tick, self.me, [0.0, 0.0, 0.0, 0.0]));
+        }
+        let side = if (s.kicks / 2).is_multiple_of(2) {
+            -1.0
+        } else {
+            1.0
+        };
+        let lean = if s.dist > 1.2 { 0.8 * side } else { 0.0 };
+        let fire = s.dist < 0.6;
+        Some(act(
+            obs.tick,
+            self.me,
+            [lean, 1.0, f32::from(u8::from(fire)), -2.8 * side],
+        ))
+    }
+}
+
+fn lean_dives(memory: &mut Option<feint_ai::Profile>, seed: u64) -> (u32, u32) {
+    let mut game = Penalty::new(Params::default(), 5);
+    let spec = game.spec();
+    let five = Difficulty::preset(5).unwrap();
+    let mut keeper = Bot::new(five, PenaltyPlaybook::new(Params::default()), &spec).unwrap();
+    if let Some(p) = memory.as_ref() {
+        keeper.load_profile(p, "penalty").unwrap();
+    }
+    let mut shooter = Straightener { me: 0 };
+    let header = RunHeader {
+        game_id: "penalty".into(),
+        game_version: penalty::GAME_VERSION,
+        seed,
+        bodies: vec![body(9.0, 4.0), five.body(&spec)],
+        levels: [0, 5],
+    };
+    let mut runner =
+        feint_ai::Runner::start(&mut game, [&mut shooter, &mut keeper], header).unwrap();
+    let (mut kicks, mut fooled) = (0, 0);
+    let mut prev = game.live().clone();
+    loop {
+        let more = runner.step(
+            &mut game,
+            [
+                &mut shooter as &mut dyn feint_ai::Controller<Penalty>,
+                &mut keeper,
+            ],
+        );
+        let s = game.live().clone();
+        if s.shooter() == 0 && s.phase == Phase::Strike && prev.phase != Phase::Strike {
+            kicks += 1;
+        }
+        if s.shooter() == 0 && s.dived && !prev.dived {
+            let side = if (s.kicks / 2).is_multiple_of(2) {
+                -1.0
+            } else {
+                1.0
+            };
+            if s.dive.is_some_and(|d| d.target * side > 0.0) {
+                fooled += 1;
+            }
+        }
+        prev = s;
+        if !more || runner.ticks() > 240 * 900 {
+            break;
+        }
+    }
+    *memory = keeper.profile("penalty");
+    (fooled, kicks)
+}
+
+#[test]
+fn a_keeper_stops_following_a_lean_that_keeps_lying() {
+    let mut memory = None;
+    let early: Vec<(u32, u32)> = (1..3).map(|seed| lean_dives(&mut memory, seed)).collect();
+    for seed in 3..5 {
+        lean_dives(&mut memory, seed);
+    }
+    let late: Vec<(u32, u32)> = (5..9).map(|seed| lean_dives(&mut memory, seed)).collect();
+    let fooled: u32 = late.iter().map(|x| x.0).sum();
+    let kicks: u32 = late.iter().map(|x| x.1).sum();
+    assert!(kicks >= 10, "{late:?}");
+    assert!(
+        fooled * 10 <= kicks,
+        "after four shootouts the keeper still dived with the lying lean: {late:?} (first two {early:?})"
+    );
+}
+
+#[test]
+fn the_modelled_shooter_keeps_every_lean_that_counts_as_a_signal() {
+    use feint_ai::{Playbook, Stance};
+    let book = PenaltyPlaybook::new(Params::default());
+    let mut s = fresh().live().clone();
+    let shooter = s.shooter();
+    for (lean, signal) in [
+        (0.31, Some(2)),
+        (-0.31, Some(0)),
+        (0.29, None),
+        (0.9, Some(2)),
+    ] {
+        s.lean = lean;
+        assert_eq!(book.signal(&s, shooter), signal, "lean {lean}");
+        let shown = book
+            .opponent_move(&s, shooter, Stance::Shoot(1))
+            .values
+            .unwrap()[0];
+        let kept = match signal {
+            Some(0) => shown < 0.0,
+            Some(_) => shown > 0.0,
+            None => shown == 0.0,
+        };
+        assert!(
+            kept,
+            "lean {lean} read as {signal:?}, yet modelled as {shown}"
+        );
+    }
+}
+
+#[test]
+fn the_human_model_shows_no_lean_for_a_kick_down_the_middle() {
+    let mut middles = 0;
+    for seed in 0..12 {
+        let mut game = Penalty::new(Params::default(), 1);
+        let spec = game.spec();
+        let mut human = penalty::human::Human::new();
+        let mut keeper = Bot::new(
+            Difficulty::preset(1).unwrap(),
+            PenaltyPlaybook::new(Params::default()),
+            &spec,
+        )
+        .unwrap();
+        let header = RunHeader {
+            game_id: "penalty".into(),
+            game_version: penalty::GAME_VERSION,
+            seed,
+            bodies: vec![
+                penalty::human::human_body(&game),
+                Difficulty::preset(1).unwrap().body(&spec),
+            ],
+            levels: [0, 1],
+        };
+        let mut runner =
+            feint_ai::Runner::start(&mut game, [&mut human, &mut keeper], header).unwrap();
+        let mut prev = game.live().clone();
+        loop {
+            let more = runner.step(
+                &mut game,
+                [
+                    &mut human as &mut dyn feint_ai::Controller<Penalty>,
+                    &mut keeper,
+                ],
+            );
+            let s = game.live().clone();
+            if s.shooter() == 0 && s.phase == Phase::Strike && prev.phase != Phase::Strike {
+                let aim = s.aim.unwrap();
+                if aim.abs() < 1.4 {
+                    middles += 1;
+                    assert!(
+                        s.lean.abs() <= 0.3,
+                        "seed {seed}: a kick at {aim} went with a lean of {}",
+                        s.lean
+                    );
+                }
+            }
+            prev = s;
+            if !more || runner.ticks() > 240 * 900 {
+                break;
+            }
+        }
+    }
+    assert!(middles >= 5, "only {middles} middle kicks to look at");
+}
