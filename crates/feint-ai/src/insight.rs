@@ -184,6 +184,10 @@ impl<S: Clone> Insight<S> {
     }
 
     pub(crate) fn start_attempt(&mut self, choice: &Choice) {
+        let quiet = choice.shown.is_none() && !choice.deceptive;
+        if quiet && self.attempt.is_some() {
+            return;
+        }
         self.since.clone_from(&self.prev);
         if self.attempt.is_some_and(|a| a.fired) {
             return;

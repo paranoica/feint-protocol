@@ -404,3 +404,23 @@ fn the_insight_view_predicts_a_habitual_shot() {
     }
     assert_eq!(b.insight().likely_shot, Some(2));
 }
+
+#[test]
+fn an_attempt_stays_open_through_a_quiet_commit_until_its_outcome() {
+    let mut p = reading();
+    p.fakes = vec![0.0];
+    let mut game = Line::new(0.5, 0.0);
+    let mut b = bot(difficulty(1, 1.0), p);
+    drive_score(&mut game, &mut b, 1, [0, 0]);
+    assert!(b.current().is_some_and(|c| c.deceptive));
+    b.playbook().retreat.set(true);
+    drive_score(&mut game, &mut b, 30, [0, 0]);
+    assert_eq!(b.current().map(|c| c.id), Some(99), "the bot fell back");
+    drive_score(&mut game, &mut b, 4, [1, 0]);
+    let profile = b.profile("line").unwrap();
+    assert_eq!(
+        (profile.fake_tries, profile.fake_wins),
+        (1.0, 1.0),
+        "the fake scored after the bot fell back, yet was recorded as lost"
+    );
+}

@@ -222,6 +222,7 @@ pub struct LinePlaybook {
     pub shots_at: Option<u8>,
     pub twitches: std::cell::RefCell<Vec<Option<u8>>>,
     pub signal: std::cell::Cell<Option<u8>>,
+    pub retreat: std::cell::Cell<bool>,
 }
 
 impl LinePlaybook {
@@ -240,6 +241,7 @@ impl LinePlaybook {
             shots_at: None,
             twitches: std::cell::RefCell::new(Vec::new()),
             signal: std::cell::Cell::new(None),
+            retreat: std::cell::Cell::new(false),
         }
     }
 }
@@ -248,6 +250,18 @@ impl Playbook<Line> for LinePlaybook {
     fn options(&self, _s: &LineState, _me: PlayerId, _rep: u8, cue: &Cue, out: &mut Vec<Choice>) {
         out.clear();
         self.twitches.borrow_mut().push(cue.twitch);
+        if self.retreat.get() {
+            out.push(Choice {
+                id: 99,
+                intent: 2,
+                deceptive: false,
+                horizon_ticks: self.horizon,
+                param: [0.0, 0.0],
+                shown: None,
+                real: None,
+            });
+            return;
+        }
         out.extend(self.targets.iter().enumerate().map(|(i, &x)| Choice {
             id: i as u16,
             intent: 1,
