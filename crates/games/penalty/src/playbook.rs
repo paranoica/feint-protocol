@@ -13,6 +13,9 @@ const STUTTER_AT: f64 = 1.2;
 const STUTTER_TICKS: u64 = 96;
 const GUESS_LEAD: f64 = 0.15;
 const LEAN_READ_LEAD: f64 = 0.1;
+const OPPONENT_REACTION: f64 = 0.3;
+const ROOKIE_MIDDLE: f64 = 0.045;
+const ROOKIE: u8 = 3;
 
 pub struct PenaltyPlaybook {
     params: Params,
@@ -109,11 +112,16 @@ impl PenaltyPlaybook {
     }
 
     fn keep(&self, s: &Shootout, me: PlayerId, early: Option<f64>) -> ActionT {
+        self.keep_after(s, me, early, 0)
+    }
+
+    fn keep_after(&self, s: &Shootout, me: PlayerId, early: Option<f64>, delay: u32) -> ActionT {
         if let Some(target) = early.filter(|_| !s.dived) {
             return Self::action(me, [0.0, 0.0, 1.0, target]);
         }
         let react = self
             .predicted_aim(s)
+            .filter(|_| s.t >= delay)
             .filter(|aim| (aim - s.keeper_y).abs() > self.params.keeper_reach * 0.5 && !s.dived);
         match react {
             Some(aim) => Self::action(me, [0.0, 0.0, 1.0, aim]),
@@ -176,8 +184,14 @@ impl Playbook<Penalty> for PenaltyPlaybook {
             &Self::STRIKES
         };
         for (k, &id) in strikes.iter().enumerate() {
-            let class = if repertoire == 0 { 1 } else { k as u8 };
-            out.push(choice(id, 1, horizon, Some(class), Some(class)));
+            if repertoire == 0 {
+                out.push(Choice {
+                    param: [f32::from(ROOKIE), 0.0],
+                    ..choice(id, 1, horizon, None, None)
+                });
+            } else {
+                out.push(choice(id, 1, horizon, Some(k as u8), Some(k as u8)));
+            }
         }
         if repertoire >= 2 {
             for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
@@ -199,7 +213,13 @@ impl Playbook<Penalty> for PenaltyPlaybook {
 
     fn act(&self, s: &Shootout, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
         let noise = aim[1] * AIM_SCALE;
-        let real = c.real.unwrap_or(1);
+        let rookie = c.param[0] as u8 == ROOKIE && c.real.is_none();
+        let real = match c.real {
+            _ if rookie && aim[0] < -ROOKIE_MIDDLE => 0,
+            _ if rookie && aim[0] > ROOKIE_MIDDLE => 2,
+            Some(k) => k,
+            None => 1,
+        };
         match c.id {
             id if Self::STRIKES.contains(&id) || Self::FAKES.contains(&id) => {
                 self.shoot(s, me, c.shown.unwrap_or(real), real, true, noise)
@@ -241,7 +261,10 @@ impl Playbook<Penalty> for PenaltyPlaybook {
                 self.keep(s, them, early)
             }
             Stance::Still => Self::action(them, [s.keeper_y, 0.0, 0.0, 0.0]),
-            _ => self.keep(s, them, None),
+            _ => {
+                let delay = (OPPONENT_REACTION * f64::from(self.params.tick_hz)) as u32;
+                self.keep_after(s, them, None, delay)
+            }
         }
     }
 

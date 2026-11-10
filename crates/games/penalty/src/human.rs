@@ -63,6 +63,14 @@ impl Controller<Penalty> for Human {
         }
         let v = self.seen.front()?.state.clone()?;
         let (keeper, phase, t, dist, lean, kicks) = (v[0] >= 0.5, v[1], v[2], v[3], v[4], v[13]);
+        let now_kicks = obs.state.as_ref().and_then(|s| s.get(13)).copied();
+        if now_kicks != Some(kicks) {
+            let mut idle = ActionT::default();
+            idle.tick = obs.tick;
+            idle.player = self.me;
+            idle.values = Some(vec![0.0, 1.0, 0.0, 0.0]);
+            return Some(idle);
+        }
         if kicks != self.kick_seen {
             self.kick_seen = kicks;
             let pick = (self.unit() * 3.0).min(2.0).floor();
@@ -120,12 +128,17 @@ pub fn human_body(game: &Penalty) -> BodyParamsT {
 #[must_use]
 pub fn against_human(d: Difficulty, matches: u64) -> Standing {
     let mut standing = Standing::default();
+    let mut memory: Option<feint_ai::Profile> = None;
     for seed in 0..matches {
         let me = (seed % 2) as usize;
         let mut game = Penalty::new(Params::default(), 3);
         let spec = game.spec();
         let mut bot = Bot::new(d, PenaltyPlaybook::new(Params::default()), &spec)
             .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+        if let Some(profile) = memory.as_ref() {
+            bot.load_profile(profile, "penalty")
+                .unwrap_or_else(|e| panic!("a profile of this game loads: {e:?}"));
+        }
         let mut human = Human::new();
         let bodies = if me == 0 {
             vec![d.body(&spec), human_body(&game)]
@@ -146,6 +159,9 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
         }
         .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
         standing.add(&report, me);
+        if d.memory == feint_ai::Memory::MatchAndProfile {
+            memory = bot.profile("penalty");
+        }
     }
     standing
 }

@@ -1,3 +1,5 @@
+pub mod attacks;
+
 use std::fmt::Write;
 
 use feint_ai::{Difficulty, LongGame, Standing};
@@ -9,6 +11,7 @@ pub struct GameReport {
     pub id: &'static str,
     pub ladder: Vec<Standing>,
     pub honest: Standing,
+    pub attacks: attacks::Study,
 }
 
 impl GameReport {
@@ -43,6 +46,7 @@ pub fn measure(id: &'static str, matches: u64) -> GameReport {
         id,
         ladder: (1..=5).map(|l| run(id, preset(l), matches)).collect(),
         honest: run(id, honest(preset(5)), matches),
+        attacks: attacks::attacks(id, matches),
     }
 }
 
@@ -75,7 +79,18 @@ pub fn to_json(matches: u64, games: &[GameReport]) -> String {
         }
         out.push_str("],\"honest\":");
         row(&mut out, 5, &g.honest);
-        let _ = write!(out, ",\"payoff\":{:.4}}}", g.payoff());
+        let (h, f) = (&g.attacks.honest, &g.attacks.fake);
+        let _ = write!(
+            out,
+            ",\"payoff\":{:.4},\"attacks\":{{\"honest\":{{\"count\":{},\"scored\":{}}},\"fake\":{{\"count\":{},\"scored\":{},\"answered\":{},\"bitten\":{}}}}}}}",
+            g.payoff(),
+            h.attempts,
+            h.scored,
+            f.attempts,
+            f.scored,
+            f.read,
+            f.bit
+        );
     }
     out.push_str("]}");
     out
