@@ -146,7 +146,9 @@ fn depth_one_defends_the_opponents_habit() {
 
 fn saves(depth: u8, lies: bool) -> u32 {
     let mut game = Penalty::new(40);
-    let mut striker = SignalStriker { lies };
+    let mut striker = SignalStriker {
+        lies_in_ten: if lies { 10 } else { 0 },
+    };
     let mut keeper = penalty_bot(thinker(depth, 0.0, Memory::Match));
     let report = run_match(&mut game, [&mut striker, &mut keeper], header(5), 200).unwrap();
     u32::try_from(report.score[usize::from(KEEPER)]).unwrap()
@@ -165,6 +167,32 @@ fn from_depth_two_a_keeper_learns_whether_the_shown_side_is_the_real_one() {
     assert!(
         blind <= 26,
         "depth 1 reads only habits, yet saved {blind} of 40 from a liar"
+    );
+}
+
+#[test]
+fn a_keeper_unsure_of_the_lie_waits_for_the_ball_instead_of_guessing() {
+    let mut game = Penalty::new(60);
+    let mut striker = SignalStriker { lies_in_ten: 7 };
+    let playbook = PenaltyPlaybook {
+        watches: true,
+        ..PenaltyPlaybook::default()
+    };
+    let mut keeper = Bot::new(thinker(2, 0.0, Memory::Match), playbook, &penalty_spec()).unwrap();
+    let report = run_match(&mut game, [&mut striker, &mut keeper], header(6), 300).unwrap();
+    let guesses = report
+        .actions
+        .iter()
+        .filter(|a| a.player == KEEPER && a.discrete != i32::from(penalty_game::WATCH))
+        .count();
+    assert!(
+        guesses <= 6,
+        "a keeper who sees the ball in time guessed {guesses} of 60 kicks"
+    );
+    assert!(
+        report.score[usize::from(KEEPER)] >= 54,
+        "{:?}",
+        report.score
     );
 }
 
@@ -360,6 +388,43 @@ fn near_ties_are_random_from_depth_one() {
     assert!(picks(0).iter().all(|&id| id == 0));
     let random = picks(1);
     assert!(random.contains(&0) && random.contains(&1), "{random:?}");
+}
+
+#[test]
+fn weighing_the_odds_never_cuts_a_rollout_short_of_its_horizon() {
+    let mut playbook = LinePlaybook::new(&[-0.5, 0.0, 0.5], 700);
+    playbook.shots_at = Some(2);
+    let mut game = Line::new(-0.9, 0.0);
+    let mut bot = line_bot(realtime(2, 0.0), playbook, 1);
+    bot.playbook().signal.set(Some(0));
+    for _ in 0..3 {
+        game.state.ball = -0.9;
+        game.state.ball_v = 0.0;
+        drive(&mut game, &mut bot, 8);
+        game.state.ball_v = 0.1;
+        drive(&mut game, &mut bot, 8);
+    }
+    game.state.ball_v = 0.0;
+    bot.playbook().signal.set(None);
+    drive(&mut game, &mut bot, 48);
+    bot.playbook().signal.set(Some(0));
+    game.simulated.set(0);
+    drive(&mut game, &mut bot, 24);
+    let simulated = game.simulated.get();
+    assert!(simulated > 0, "the new signal did not reopen the plan");
+    assert!(
+        simulated <= u64::from(feint_ai::SIMULATION_BUDGET),
+        "{simulated}"
+    );
+    assert_eq!(
+        simulated % 700,
+        0,
+        "{simulated} simulated ticks: some rollout stopped before its 700-tick horizon"
+    );
+    assert!(
+        simulated >= 2 * 3 * 700,
+        "fewer than two outcomes weighed: {simulated}"
+    );
 }
 
 #[test]

@@ -225,18 +225,22 @@ impl<S: Clone> Insight<S> {
         }
     }
 
-    pub(crate) fn stance(&self, depth: u8, choice: &Choice, signal: Option<u8>) -> Stance {
+    pub(crate) fn odds(&self, depth: u8, signal: Option<u8>) -> Option<Vec<(Stance, f64)>> {
+        let odds = self.model.as_ref()?.their_odds(signal?)?;
+        (depth >= 2).then(|| {
+            odds.into_iter()
+                .map(|(real, p)| (Stance::Shoot(real), p))
+                .collect()
+        })
+    }
+
+    pub(crate) fn stance(&self, depth: u8, choice: &Choice) -> Stance {
         if depth == 0 {
             return Stance::Still;
         }
         let Some(model) = &self.model else {
             return Stance::Naive;
         };
-        if depth >= 2
-            && let Some(real) = signal.and_then(|s| model.likely_their_real(s))
-        {
-            return Stance::Shoot(real);
-        }
         let habit = model.likely_shot().map_or(Stance::Naive, Stance::Shoot);
         let read_me = choice.shown.and_then(|s| model.likely_cover(s));
         let know_me = choice.shown.and_then(|s| model.likely_real(s));

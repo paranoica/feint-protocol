@@ -8,6 +8,7 @@ use feint_protocol::{
 
 pub const STRIKER: PlayerId = 0;
 pub const KEEPER: PlayerId = 1;
+pub const WATCH: u8 = 2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Kick {
@@ -139,8 +140,13 @@ impl GameAdapter for Penalty {
         } else {
             let cover = u8::try_from(action.discrete)
                 .ok()
-                .filter(|&c| c < 2)
+                .filter(|&c| c <= WATCH)
                 .ok_or(AdapterError::BadAction("cover"))?;
+            let cover = if cover == WATCH {
+                self.state.real.unwrap_or(0)
+            } else {
+                cover
+            };
             self.state.cover(cover, None);
         }
         Ok(())
@@ -171,7 +177,7 @@ impl GameAdapter for Penalty {
         ]);
         out.score = Some(state.score.iter().map(|&s| i64::from(s)).collect());
         let mine = !state.over() && state.to_act() == player;
-        let n = if player == STRIKER { 4 } else { 2 };
+        let n = if player == STRIKER { 4 } else { 3 };
         out.legal = Some(vec![u8::from(mine); n]);
     }
 
@@ -210,7 +216,12 @@ impl GameAdapter for Penalty {
                         next.kick(shown, real);
                     }
                 } else if let Ok(cover) = u8::try_from(action.discrete) {
-                    next.cover(cover.min(1), predicted);
+                    let cover = if cover == WATCH {
+                        next.real.or(predicted).unwrap_or(0)
+                    } else {
+                        cover.min(1)
+                    };
+                    next.cover(cover, predicted);
                 }
             }
         }
@@ -242,6 +253,7 @@ impl GameAdapter for Penalty {
 #[derive(Default)]
 pub struct PenaltyPlaybook {
     pub paces: std::cell::RefCell<Vec<f32>>,
+    pub watches: bool,
 }
 
 pub const COVER_IDS: u16 = 10;
@@ -277,6 +289,14 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         } else {
             for side in 0..2u8 {
                 out.push(choice(COVER_IDS + u16::from(side), None, Some(side), false));
+            }
+            if self.watches {
+                out.push(choice(
+                    COVER_IDS + u16::from(WATCH),
+                    None,
+                    Some(WATCH),
+                    false,
+                ));
             }
         }
     }
@@ -331,6 +351,10 @@ impl Playbook<Penalty> for PenaltyPlaybook {
                 shot: Some(kick.real),
             }
         }
+    }
+
+    fn signal_classes(&self) -> u8 {
+        2
     }
 
     fn signal(&self, s: &PenaltyState, them: PlayerId) -> Option<u8> {
@@ -425,7 +449,7 @@ impl Controller<Penalty> for HabitStriker {
 }
 
 pub struct SignalStriker {
-    pub lies: bool,
+    pub lies_in_ten: u32,
 }
 
 impl Controller<Penalty> for SignalStriker {
@@ -435,8 +459,10 @@ impl Controller<Penalty> for SignalStriker {
         if obs.to_act != STRIKER as i8 {
             return None;
         }
-        let shown = u8::try_from(game.live().round % 2).unwrap_or(0);
-        let real = if self.lies { 1 - shown } else { shown };
+        let round = game.live().round;
+        let shown = u8::try_from(round % 2).unwrap_or(0);
+        let lies = (round / 2) % 10 < self.lies_in_ten;
+        let real = if lies { 1 - shown } else { shown };
         let mut a = ActionT::default();
         a.tick = obs.tick;
         a.player = STRIKER;

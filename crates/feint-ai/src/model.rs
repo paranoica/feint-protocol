@@ -1,5 +1,6 @@
 pub const MIN_EVIDENCE: u32 = 3;
 pub const COUNT_CAP: f64 = 1.0e6;
+pub const ODDS_FLOOR: f64 = 0.1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Profile {
@@ -204,6 +205,24 @@ impl OpponentModel {
         (self.theirs_events[s] >= MIN_EVIDENCE)
             .then(|| Self::argmax(Self::row(&self.theirs, self.classes, s), s))
             .flatten()
+    }
+
+    #[must_use]
+    pub fn their_odds(&self, shown: u8) -> Option<Vec<(u8, f64)>> {
+        let s = self.class(Some(shown))?;
+        if self.theirs_events[s] < MIN_EVIDENCE {
+            return None;
+        }
+        let row = Self::row(&self.theirs, self.classes, s);
+        let total = row.iter().sum::<f64>() + self.classes as f64;
+        let kept: Vec<(u8, f64)> = row
+            .iter()
+            .enumerate()
+            .filter(|&(_, &v)| v > 0.0 || (v + 1.0) / total >= ODDS_FLOOR)
+            .filter_map(|(k, &v)| Some((u8::try_from(k).ok()?, (v + 1.0) / total)))
+            .collect();
+        let mass: f64 = kept.iter().map(|&(_, p)| p).sum();
+        (mass > 0.0).then(|| kept.into_iter().map(|(k, p)| (k, p / mass)).collect())
     }
 
     #[must_use]
