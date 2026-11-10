@@ -7,14 +7,17 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 const DELAY_TICKS: usize = 72;
+const HONEST_LEAN: f32 = 0.45;
+const FAKE_LEAN: f32 = 0.45;
+const EARLY_GUESS: f32 = 0.5;
 
 pub struct Human {
     me: PlayerId,
     seen: VecDeque<ObservationT>,
     rng: ChaCha8Rng,
     corner: f32,
-    honest: bool,
-    reads: bool,
+    tell: f32,
+    guesses: bool,
     noise: f32,
     kick_seen: f32,
 }
@@ -27,8 +30,8 @@ impl Human {
             seen: VecDeque::new(),
             rng: ChaCha8Rng::seed_from_u64(0),
             corner: 0.0,
-            honest: true,
-            reads: false,
+            tell: 1.0,
+            guesses: false,
             noise: 0.0,
             kick_seen: -1.0,
         }
@@ -64,18 +67,25 @@ impl Controller<Penalty> for Human {
             self.kick_seen = kicks;
             let pick = (self.unit() * 3.0).min(2.0).floor();
             self.corner = (pick - 1.0) * 2.7;
-            self.honest = self.unit() < 0.6;
-            self.reads = self.unit() < 0.5;
+            let tell = self.unit();
+            self.tell = if tell < HONEST_LEAN {
+                1.0
+            } else if tell < HONEST_LEAN + FAKE_LEAN {
+                -1.0
+            } else {
+                0.0
+            };
+            self.guesses = self.unit() < EARLY_GUESS;
             self.noise = (self.unit() - 0.5) * 1.0;
         }
         let mut a = ActionT::default();
         a.tick = obs.tick;
         a.player = self.me;
         let values = if keeper {
-            let near = phase == 1.0 || (phase == 0.0 && dist < 1.6);
+            let planted = phase == 5.0;
             let flying = phase == 2.0 && t > 0.0;
-            if self.reads && near && lean.abs() > 0.3 {
-                [0.0, 0.0, 1.0, 2.8 * lean.signum() + self.noise]
+            if self.guesses && planted && lean.abs() > 0.3 {
+                [0.0, 0.0, 1.0, -2.8 * lean.signum() + self.noise]
             } else if flying {
                 let f = 106.0 / 240.0;
                 let aim = v[6] * f / t.min(f);
@@ -84,11 +94,7 @@ impl Controller<Penalty> for Human {
                 [0.0, 0.0, 0.0, 0.0]
             }
         } else {
-            let lean = if self.honest {
-                self.corner.signum() * 0.8
-            } else {
-                0.0
-            };
+            let lean = self.tell * self.corner.signum() * 0.8;
             let at_ball = phase == 1.0 || dist < 0.2;
             [
                 lean,
