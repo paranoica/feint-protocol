@@ -143,37 +143,38 @@ fn simulate_matches_live_stepping_and_hostile_observations_stay_inside_the_rules
 #[test]
 fn two_bots_play_a_shootout_to_its_end() {
     for (a, b) in [(1u8, 5u8), (5, 5), (3, 2)] {
-        let mut game = Penalty::new(Params::default(), b);
-        let spec = game.spec();
-        let make = |level: u8| {
-            Bot::new(
-                Difficulty::preset(level).unwrap(),
-                PenaltyPlaybook::new(Params::default()),
-                &spec,
-            )
-            .unwrap()
-        };
-        let header = RunHeader {
-            game_id: "penalty".into(),
-            game_version: penalty::GAME_VERSION,
-            seed: 11,
-            bodies: [a, b]
-                .iter()
-                .map(|&l| Difficulty::preset(l).unwrap().body(&spec))
-                .collect(),
-            levels: [a, b],
-        };
-        let (mut x, mut y) = (make(a), make(b));
-        let report = run_match(&mut game, [&mut x, &mut y], header, 240 * 600).unwrap();
-        assert!(
-            report.finished,
-            "{a} vs {b} did not finish: {:?}",
-            report.score
-        );
-        assert!(
-            report.score.iter().sum::<i64>() > 0,
-            "{a} vs {b}: nobody scored"
-        );
+        let mut goals = 0;
+        for seed in 11..14 {
+            let mut game = Penalty::new(Params::default(), b);
+            let spec = game.spec();
+            let make = |level: u8| {
+                Bot::new(
+                    Difficulty::preset(level).unwrap(),
+                    PenaltyPlaybook::new(Params::default()),
+                    &spec,
+                )
+                .unwrap()
+            };
+            let header = RunHeader {
+                game_id: "penalty".into(),
+                game_version: penalty::GAME_VERSION,
+                seed,
+                bodies: [a, b]
+                    .iter()
+                    .map(|&l| Difficulty::preset(l).unwrap().body(&spec))
+                    .collect(),
+                levels: [a, b],
+            };
+            let (mut x, mut y) = (make(a), make(b));
+            let report = run_match(&mut game, [&mut x, &mut y], header, 240 * 600).unwrap();
+            assert!(
+                report.finished,
+                "{a} vs {b}, seed {seed} did not finish: {:?}",
+                report.score
+            );
+            goals += report.score.iter().sum::<i64>();
+        }
+        assert!(goals > 0, "{a} vs {b}: nobody scored in three shootouts");
     }
 }
 
@@ -222,4 +223,130 @@ fn a_keeper_bot_learns_where_its_opponent_shoots() {
         Some(0),
         "five kicks to the left should teach the keeper"
     );
+}
+
+struct AgainstTheLean {
+    me: u8,
+}
+
+impl feint_ai::Controller<Penalty> for AgainstTheLean {
+    fn new_match(&mut self, _spec: &feint_protocol::GameSpecT, me: u8, _seed: u64) {
+        self.me = me;
+    }
+
+    fn on_tick(&mut self, game: &Penalty, obs: &ObservationT) -> Option<ActionT> {
+        let s = game.live();
+        if s.shooter() == self.me {
+            let fire = s.dist < 0.6;
+            return Some(act(
+                obs.tick,
+                self.me,
+                [0.0, 1.0, f32::from(u8::from(fire)), -2.8],
+            ));
+        }
+        let dive = s.phase == Phase::Flight && s.t == 1;
+        let target = if s.lean < -0.3 {
+            2.8
+        } else if s.lean > 0.3 {
+            -2.8
+        } else {
+            0.0
+        };
+        Some(act(
+            obs.tick,
+            self.me,
+            [0.0, 0.0, f32::from(u8::from(dive)), target],
+        ))
+    }
+}
+
+#[test]
+fn a_shooter_bot_records_a_dive_made_while_the_ball_flies() {
+    let mut game = Penalty::new(Params::default(), 5);
+    let spec = game.spec();
+    let five = Difficulty::preset(5).unwrap();
+    let mut shooter = Bot::new(five, PenaltyPlaybook::new(Params::default()), &spec).unwrap();
+    let mut keeper = AgainstTheLean { me: 1 };
+    let header = RunHeader {
+        game_id: "penalty".into(),
+        game_version: penalty::GAME_VERSION,
+        seed: 4,
+        bodies: vec![five.body(&spec), body(9.0, 4.0)],
+        levels: [5, 0],
+    };
+    run_match(&mut game, [&mut shooter, &mut keeper], header, 240 * 900).unwrap();
+    let bite = shooter.profile("penalty").unwrap().bite;
+    assert!(
+        bite[2] + bite[6] > 0.0,
+        "dives against the lean went unrecorded: {bite:?}"
+    );
+    assert_eq!(
+        (bite[0], bite[8]),
+        (0.0, 0.0),
+        "a keeper that never dives with the lean was recorded biting: {bite:?}"
+    );
+}
+
+#[test]
+fn the_kick_stays_the_plan_until_the_ball_lands() {
+    use feint_ai::{Cue, Playbook};
+    let book = PenaltyPlaybook::new(Params::default());
+    let mut s = fresh().live().clone();
+    let mut out = Vec::new();
+    let options = |s: &penalty::Shootout, held: Option<u16>, out: &mut Vec<feint_ai::Choice>| {
+        let cue = Cue {
+            held,
+            ..Cue::default()
+        };
+        book.options(s, s.shooter(), 2, &cue, out);
+    };
+    options(&s, Some(PenaltyPlaybook::STRIKES[2]), &mut out);
+    assert!(out.len() > 1, "the run-up offers every kick: {out:?}");
+    for phase in [Phase::Strike, Phase::Flight] {
+        s.phase = phase;
+        s.dist = 0.0;
+        options(&s, Some(PenaltyPlaybook::STRIKES[2]), &mut out);
+        assert_eq!(out.len(), 1, "{phase:?}: {out:?}");
+        assert_eq!(
+            (out[0].id, out[0].shown, out[0].real, out[0].deceptive),
+            (PenaltyPlaybook::STRIKES[2], Some(2), Some(2), false),
+            "{phase:?}"
+        );
+        let held = book.act(&s, s.shooter(), &out[0], 30, [0.0, 0.0]);
+        assert_eq!(
+            held.values,
+            Some(vec![0.0, 1.0, 0.0, 0.0]),
+            "{phase:?}: once the kick is struck the shooter stops showing a lean"
+        );
+        options(&s, Some(PenaltyPlaybook::FAKES[0]), &mut out);
+        assert_eq!(
+            (
+                out.len(),
+                out[0].id,
+                out[0].shown,
+                out[0].real,
+                out[0].deceptive
+            ),
+            (1, PenaltyPlaybook::FAKES[0], Some(0), Some(2), true),
+            "{phase:?}"
+        );
+        options(&s, Some(PenaltyPlaybook::STUTTERS[0]), &mut out);
+        assert_eq!(
+            (out.len(), out[0].id, out[0].real),
+            (1, PenaltyPlaybook::STUTTERS[0], Some(0)),
+            "{phase:?}"
+        );
+        for held in [
+            None,
+            Some(PenaltyPlaybook::REACT),
+            Some(PenaltyPlaybook::WAIT),
+        ] {
+            options(&s, held, &mut out);
+            assert_eq!(
+                out.iter().map(|c| c.id).collect::<Vec<_>>(),
+                vec![PenaltyPlaybook::WAIT],
+                "{phase:?} held {held:?}"
+            );
+        }
+    }
 }

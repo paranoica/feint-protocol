@@ -35,6 +35,8 @@ pub struct OpponentModel {
     mine_events: Vec<u32>,
     fake_tries: f64,
     fake_wins: f64,
+    knowing: f64,
+    reading: f64,
 }
 
 impl OpponentModel {
@@ -52,6 +54,8 @@ impl OpponentModel {
             mine_events: vec![0; n],
             fake_tries: 0.0,
             fake_wins: 0.0,
+            knowing: 0.0,
+            reading: 0.0,
         }
     }
 
@@ -71,6 +75,8 @@ impl OpponentModel {
         }
         self.fake_tries *= keep;
         self.fake_wins *= keep;
+        self.knowing *= keep;
+        self.reading *= keep;
     }
 
     pub fn record_attempt(
@@ -86,7 +92,24 @@ impl OpponentModel {
         if !counted && !deceptive {
             return;
         }
+        let named = shown
+            .zip(covered)
+            .and_then(|(s, c)| Some((u8::try_from(s).ok()?, u8::try_from(c).ok()?)))
+            .map(|(s, c)| {
+                (
+                    self.likely_real(s) == Some(c),
+                    self.likely_cover(s) == Some(c),
+                )
+            });
         self.decay();
+        if let Some((knew, read)) = named {
+            if knew {
+                Self::bump(&mut self.knowing);
+            }
+            if read {
+                Self::bump(&mut self.reading);
+            }
+        }
         if let (Some(s), Some(c)) = (shown, covered) {
             Self::bump(&mut self.bite[s * self.classes + c]);
             self.bite_events[s] = self.bite_events[s].saturating_add(1);
@@ -164,6 +187,11 @@ impl OpponentModel {
         (self.shot_events >= MIN_EVIDENCE)
             .then(|| Self::argmax(&self.shots, 0))
             .flatten()
+    }
+
+    #[must_use]
+    pub fn knowing_beats_reading(&self) -> bool {
+        self.knowing > self.reading
     }
 
     #[must_use]

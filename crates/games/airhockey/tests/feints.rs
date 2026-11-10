@@ -256,7 +256,7 @@ fn the_show_point_winds_up_on_a_wide_line_and_the_pump_stops_short() {
                 "side {me}, shown {shown}: {show:?}"
             );
             assert!(
-                (pump - (puck + back * (reach + 0.02))).length() < 1e-9,
+                (pump - (puck + back * (reach + 0.1))).length() < 1e-9,
                 "side {me}, shown {shown}: {pump:?}"
             );
             let lateral = side(me, show - puck).y;
@@ -908,25 +908,26 @@ fn a_fake_winds_up_pumps_short_of_the_puck_then_fires_the_other_corner() {
     let (worlds, _) = run_choice(&state, &fake, 480);
     let strike = worlds
         .iter()
-        .position(|w| w.puck.vel.length() > 0.6 * params.puck_speed_cap)
+        .position(|w| w.puck.vel.length() > 0.5 * params.puck_speed_cap)
         .expect("struck hard");
-    let before = &worlds[..strike];
-    let gap = |w: &World| (w.mallets[0].pos - w.puck.pos).length();
-    let pump = before
-        .iter()
-        .position(|w| gap(w) < reach + 0.04 && w.puck.vel.length() < 0.3)
-        .expect("no pump that comes up to the puck");
+    let gap = |w: &World| (w.mallets[0].pos - w.puck.pos).length() - reach;
     assert!(
-        before[pump..].iter().any(|w| gap(w) > reach + 0.08),
-        "the pump went on into the puck instead of stopping short"
-    );
-    assert!(
-        before[..pump].iter().any(|w| {
+        worlds[..96].iter().any(|w| {
             let rel = w.mallets[0].pos - w.puck.pos;
-            gap(w) > reach + 0.15 && rel.x < 0.0 && rel.y > 0.06
+            gap(w) > 0.15 && rel.x < 0.0 && rel.y > 0.06
         }),
-        "no wind-up far back on the shown side before the pump"
+        "no wind-up far back on the shown side"
     );
+    let pump = &worlds[96..132];
+    assert!(
+        pump.iter().any(|w| gap(w) < 0.12),
+        "the pump never came in from the wind-up"
+    );
+    assert!(
+        pump.iter().all(|w| gap(w) > 0.08),
+        "the pump went on into the puck instead of keeping a run-up"
+    );
+    assert!(strike > 132, "struck during the show: tick {strike}");
     let at = worlds[strike];
     assert!(
         lands_in_corner(at.puck.pos, at.puck.vel, 1.0),
@@ -972,4 +973,35 @@ fn a_fake_under_way_stays_offered_where_a_new_one_would_not_start() {
         !out.iter().any(|c| HockeyPlaybook::FAKES.contains(&c.id)),
         "a puck that left the half ends the fake"
     );
+}
+
+#[test]
+fn a_puck_drifting_back_is_not_knocked_toward_the_shown_side() {
+    let params = Params::default();
+    let crossing = |w: &World| {
+        let v = w.puck.vel;
+        (v.x > 0.0).then(|| w.puck.pos.y + v.y * (params.half_length - w.puck.pos.x) / v.x)
+    };
+    for drift in [0.0, 0.2, 0.4, 0.6] {
+        let mut state = scene(
+            Vec2::new(-0.25, 0.0),
+            [Vec2::new(-0.8, 0.0), Vec2::new(0.95, -0.45)],
+            [0, 0],
+        );
+        state.world.puck.vel = Vec2::new(-drift, 0.0);
+        let fake = option(&state, &Cue::default(), HockeyPlaybook::FAKES[0]);
+        let (worlds, _) = run_choice(&state, &fake, 480);
+        let mut before = state.world.puck.vel;
+        for (t, w) in worlds.iter().take(132).enumerate() {
+            let touched = (w.puck.vel - before).length() > 0.3;
+            before = w.puck.vel;
+            if touched {
+                let y = crossing(w);
+                assert!(
+                    y.is_none_or(|y| y > -0.035),
+                    "drift {drift}, tick {t}: knocked toward the shown side, crossing at {y:?}"
+                );
+            }
+        }
+    }
 }

@@ -174,10 +174,7 @@ impl Playbook<Penalty> for PenaltyPlaybook {
             }
             return;
         }
-        if matches!(s.phase, Phase::Strike | Phase::Flight) {
-            out.push(choice(Self::WAIT, 0, 24, None, None));
-            return;
-        }
+        let kicked = matches!(s.phase, Phase::Strike | Phase::Flight);
         let strikes: &[u16] = if repertoire == 0 {
             &Self::STRIKES[..1]
         } else {
@@ -209,9 +206,18 @@ impl Playbook<Penalty> for PenaltyPlaybook {
                 }
             }
         }
+        if kicked {
+            out.retain(|c| cue.held == Some(c.id));
+            if out.is_empty() {
+                out.push(choice(Self::WAIT, 0, 24, None, None));
+            }
+        }
     }
 
     fn act(&self, s: &Shootout, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
+        if me == s.shooter() && matches!(s.phase, Phase::Strike | Phase::Flight) {
+            return Self::action(me, [0.0, 1.0, 0.0, 0.0]);
+        }
         let noise = aim[1] * AIM_SCALE;
         let rookie = c.param[0] as u8 == ROOKIE && c.real.is_none();
         let real = match c.real {

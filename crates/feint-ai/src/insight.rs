@@ -228,7 +228,8 @@ impl<S: Clone> Insight<S> {
         match depth {
             1 => habit,
             2 => read_me.map_or(habit, Stance::Cover),
-            _ => know_me.or(read_me).map_or(habit, Stance::Cover),
+            _ if model.knowing_beats_reading() => know_me.or(read_me).map_or(habit, Stance::Cover),
+            _ => read_me.or(know_me).map_or(habit, Stance::Cover),
         }
     }
 
