@@ -450,6 +450,7 @@ dependencies = [
  "airhockey",
  "duel",
  "feint-ai",
+ "feint-protocol",
  "penalty",
 ]
 
