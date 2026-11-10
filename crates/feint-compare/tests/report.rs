@@ -1,4 +1,4 @@
-use feint_ai::{Difficulty, Standing};
+use feint_ai::{Difficulty, LongGame, Standing};
 use feint_compare::{GameReport, honest, measure, to_json};
 
 fn standing(mine: u32, theirs: u32, fakes: u32) -> Standing {
@@ -8,6 +8,7 @@ fn standing(mine: u32, theirs: u32, fakes: u32) -> Standing {
         mine,
         theirs,
         fakes,
+        unfinished: 0,
     }
 }
 
@@ -33,20 +34,26 @@ fn the_report_names_each_game_its_ladder_and_the_payoff_of_deception() {
 }
 
 #[test]
-fn the_honest_level_five_differs_only_in_deception_and_never_fakes() {
+fn the_honest_level_five_loses_only_its_fakes_and_its_long_game_breaks() {
     let five = Difficulty::preset(5).unwrap();
     let plain = honest(five);
-    assert_eq!(plain.deception, 0.0);
+    assert_eq!((plain.deception, plain.long_game), (0.0, LongGame::None));
     assert_eq!(
         Difficulty {
             deception: five.deception,
+            long_game: five.long_game,
             ..plain
         },
         five
     );
-    let report = measure("duel", 2);
-    assert_eq!(report.ladder.len(), 5);
-    assert_eq!(report.honest.fakes, 0, "no fakes without deception");
-    assert!(report.ladder.iter().all(|s| s.matches == 2));
-    assert!(report.ladder[4].mine + report.ladder[4].theirs > 0);
+    for id in feint_compare::GAMES {
+        let report = measure(id, 4);
+        assert_eq!(report.ladder.len(), 5);
+        assert_eq!(
+            report.honest.fakes, 0,
+            "{id}: no deceptive move without deception"
+        );
+        assert!(report.ladder[4].fakes > 0, "{id}: level 5 does fake");
+        assert!(report.ladder.iter().all(|s| s.matches == 4), "{id}");
+    }
 }

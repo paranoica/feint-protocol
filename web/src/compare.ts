@@ -161,7 +161,7 @@ export function renderComparison(
     line.textContent = verdict(g.payoff);
     const detail = document.createElement("p");
     detail.className = "hint";
-    detail.textContent = `level 5: ${(five.share * 100).toFixed(0)}% with fakes (${five.fakes.toFixed(1)} per match), ${(g.honest.share * 100).toFixed(0)}% with fakes switched off`;
+    detail.textContent = `level 5: ${(five.share * 100).toFixed(0)}% with fakes (${five.fakes.toFixed(1)} deceptive moves per match), ${(g.honest.share * 100).toFixed(0)}% with fakes and long-game breaks switched off`;
     card.append(head, bars, line, detail);
     holder.append(card);
   }

@@ -42,14 +42,14 @@ fn a_standing_counts_wins_points_and_each_fake_once_for_its_own_seat() {
         (1, 1, 7, 3, 2)
     );
     s.add(&report([5, 5], true, vec![]), 0);
-    s.add(&report([9, 1], false, vec![]), 0);
+    s.add(&report([9, 1], false, vec![action(0, true)]), 0);
     assert_eq!(
-        (s.matches, s.won, s.mine, s.theirs),
-        (3, 1, 21, 9),
-        "a level or unfinished match is no win"
+        (s.matches, s.won, s.mine, s.theirs, s.fakes, s.unfinished),
+        (3, 1, 21, 9, 3, 1),
+        "a level or unfinished match is no win, but its points and fakes still count"
     );
     assert!((s.share() - 21.0 / 30.0).abs() < 1e-12);
-    assert!((s.fakes_per_match() - 2.0 / 3.0).abs() < 1e-12);
+    assert!((s.fakes_per_match() - 1.0).abs() < 1e-12);
     assert_eq!(Standing::default().share(), 0.0);
     assert_eq!(Standing::default().fakes_per_match(), 0.0);
 }

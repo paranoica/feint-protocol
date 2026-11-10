@@ -127,7 +127,7 @@ impl Controller<QuickDraw> for Human {
 #[must_use]
 pub fn human_body(game: &QuickDraw) -> BodyParamsT {
     let spec = game.spec();
-    let dims = spec.body_params.unwrap();
+    let dims = spec.body_params.unwrap_or_default();
     let mut b = BodyParamsT::default();
     b.values = Some(dims.iter().map(|d| d.max).collect());
     b

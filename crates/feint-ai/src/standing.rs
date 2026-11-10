@@ -7,6 +7,7 @@ pub struct Standing {
     pub mine: u32,
     pub theirs: u32,
     pub fakes: u32,
+    pub unfinished: u32,
 }
 
 impl Standing {
@@ -19,6 +20,7 @@ impl Standing {
         };
         let (mine, theirs) = (points(me), points(1 - me));
         self.matches += 1;
+        self.unfinished += u32::from(!report.finished);
         self.won += u32::from(report.finished && mine > theirs);
         self.mine += mine;
         self.theirs += theirs;

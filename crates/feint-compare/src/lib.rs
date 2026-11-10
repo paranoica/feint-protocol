@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use feint_ai::{Difficulty, Standing};
+use feint_ai::{Difficulty, LongGame, Standing};
 
 pub const GAMES: [&str; 3] = ["airhockey", "penalty", "duel"];
 
@@ -22,6 +22,7 @@ impl GameReport {
 pub fn honest(d: Difficulty) -> Difficulty {
     Difficulty {
         deception: 0.0,
+        long_game: LongGame::None,
         ..d
     }
 }
