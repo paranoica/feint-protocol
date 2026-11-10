@@ -7,6 +7,9 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 const DELAY_TICKS: usize = 72;
+const ANTICIPATE: f32 = 0.6;
+const ANTICIPATE_SPREAD: f32 = 0.15;
+const LEAD_SPREAD: f32 = 0.8;
 
 pub struct Human {
     me: PlayerId,
@@ -19,6 +22,9 @@ pub struct Human {
     wait: f32,
     noise: f32,
     loaded_for: u32,
+    their_loaded_seen: bool,
+    phase_seen: f32,
+    step_at: Option<u64>,
 }
 
 impl Human {
@@ -35,6 +41,17 @@ impl Human {
             wait: 0.0,
             noise: 0.0,
             loaded_for: 0,
+            their_loaded_seen: true,
+            phase_seen: 0.0,
+            step_at: None,
+        }
+    }
+
+    fn plan_step(&mut self, now: u64, after: u32) {
+        if self.unit() < ANTICIPATE {
+            let jitter = (self.unit() * ANTICIPATE_SPREAD * 240.0) as u64;
+            let delay = u64::from(after).saturating_sub(DELAY_TICKS as u64);
+            self.step_at = Some(now + delay + jitter);
         }
     }
 
@@ -56,6 +73,9 @@ impl Controller<QuickDraw> for Human {
         self.rng = ChaCha8Rng::seed_from_u64(seed ^ 0x48_554d_414e);
         self.cycle = -1.0;
         self.loaded_for = 0;
+        self.their_loaded_seen = true;
+        self.phase_seen = 0.0;
+        self.step_at = None;
     }
 
     fn on_tick(&mut self, _game: &QuickDraw, obs: &ObservationT) -> Option<ActionT> {
@@ -71,22 +91,36 @@ impl Controller<QuickDraw> for Human {
         let cycle = v[28] * 1000.0 + their_shots;
         if cycle != self.cycle {
             self.cycle = cycle;
-            self.bites = self.unit() < 0.7;
-            self.left = self.unit() < 0.65;
-            self.fake = self.unit() < 0.2;
-            self.wait = 0.2 + 0.8 * self.unit();
+            self.bites = self.unit() < 0.6;
+            self.left = self.unit() < 0.5;
+            self.fake = self.unit() < 0.03;
+            self.wait = 0.0;
             let guess = self.unit();
-            let lead = if guess < 0.5 {
+            let lead = if guess < 0.7 {
                 0.0
-            } else if guess < 0.75 {
+            } else if guess < 0.85 {
                 -1.0
             } else {
                 1.0
             };
-            self.noise = lead + (self.unit() - 0.5) * 0.3;
+            let size = 1.0 + (self.unit() - 0.5) * LEAD_SPREAD;
+            self.noise = lead * size + (self.unit() - 0.5) * 0.3;
         }
+        let params = Params::default();
+        if self.their_loaded_seen && !their_loaded {
+            self.plan_step(obs.tick, params.reload_ticks);
+        }
+        if v[26] == 0.0 && self.phase_seen != 0.0 {
+            self.plan_step(obs.tick, params.ready_ticks);
+        }
+        self.their_loaded_seen = their_loaded;
+        self.phase_seen = v[26];
         let threatened = their_loaded && their_hand > 0.3;
-        let roll = if live && my_recovery == 0.0 && self.bites && threatened {
+        let guessed = self.step_at.is_some_and(|t| obs.tick >= t);
+        if guessed {
+            self.step_at = None;
+        }
+        let roll = if live && my_recovery == 0.0 && (guessed || self.bites && threatened) {
             let room_left = my_x > -1.4;
             let room_right = my_x < 1.4;
             if (self.left && room_left) || !room_right {
@@ -102,10 +136,10 @@ impl Controller<QuickDraw> for Human {
         } else {
             self.loaded_for = 0;
         }
-        let waited = self.loaded_for as f32 / 240.0 > self.wait;
-        let hold = if !my_loaded || !waited {
+        let waited = self.loaded_for as f32 / 240.0 >= self.wait || !my_loaded;
+        let hold = if !waited {
             false
-        } else if self.fake {
+        } else if self.fake && my_loaded {
             if my_hand >= 0.4 {
                 self.fake = false;
                 self.wait += 0.6;
