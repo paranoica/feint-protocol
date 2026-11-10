@@ -2,7 +2,7 @@
 name = "feint-train"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["feint-gym", "numpy"]
+dependencies = ["feint-gym", "numpy", "safetensors", "tensorboard", "torch==2.14.1"]
 
 [dependency-groups]
 dev = ["black", "pytest", "ruff"]
@@ -12,6 +12,12 @@ package = false
 
 [tool.uv.sources]
 feint-gym = { path = "../crates/feint-gym" }
+torch = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.black]
 line-length = 100

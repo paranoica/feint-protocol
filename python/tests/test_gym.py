@@ -193,3 +193,14 @@ def test_another_thread_never_deadlocks_a_step() -> None:
     assert not other.is_alive()
     assert len(batch) == 64
     assert answers
+
+
+def test_scales_bring_every_feature_near_unit_range() -> None:
+    scales = np.array(HockeyBatch.scales, dtype=np.float32)
+    assert scales.shape == (18,) and (scales > 0).all()
+    batch = HockeyBatch(MIX * 4, seed=9, threads=2)
+    out = batch.reset()
+    for _ in range(300):
+        out = batch.step(policy(out))
+        scaled = out["obs"][out["ready"]] / scales
+        assert np.abs(scaled).max() <= 1.0 + 1e-6
