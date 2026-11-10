@@ -91,7 +91,7 @@ fn main() -> ExitCode {
             if bot_draw.is_some() && s.bullets[1].is_none() && pbot.loaded && !bot.loaded {
                 bot_draw = None;
             }
-            if me.loaded && !pme.loaded || (me.loaded && ready_since.is_none()) {
+            if me.loaded && (!pme.loaded || ready_since.is_none()) {
                 ready_since = Some(tick);
             }
             if me.hand > 0.0 && pme.hand == 0.0 && me.loaded {
