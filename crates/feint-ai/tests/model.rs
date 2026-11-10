@@ -324,9 +324,13 @@ fn the_odds_of_a_signal_are_smoothed_and_drop_what_is_too_rare() {
     let odds = m.their_odds(0).unwrap();
     assert_eq!(
         odds.iter().map(|&(k, _)| k).collect::<Vec<_>>(),
-        vec![2],
-        "a class under the floor is dropped: {odds:?}"
+        vec![0, 2],
+        "an unseen class under the floor is dropped, a seen one stays however rare: {odds:?}"
     );
-    assert!(close(odds[0].1, 1.0), "what is kept sums to one");
+    assert!(odds[0].1 < 0.1, "{odds:?}");
+    assert!(
+        close(odds[0].1 + odds[1].1, 1.0),
+        "what is kept sums to one"
+    );
     assert_eq!(m.their_odds(7), None);
 }

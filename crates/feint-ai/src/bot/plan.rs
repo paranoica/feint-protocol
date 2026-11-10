@@ -133,7 +133,23 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             self.options = options;
             return;
         }
-        let odds = self.insight.odds(depth, signal);
+        let longest = options
+            .iter()
+            .map(|c| c.horizon_ticks.max(1))
+            .max()
+            .unwrap_or(1);
+        let fits = SIMULATION_BUDGET
+            / longest
+                .saturating_mul(u32::try_from(options.len()).unwrap_or(u32::MAX))
+                .max(1);
+        let odds = self.insight.odds(depth, signal).map(|mut odds| {
+            odds.sort_by(|a, b| b.1.total_cmp(&a.1));
+            odds.truncate(usize::try_from(fits).unwrap_or(usize::MAX).max(1));
+            let mass: f64 = odds.iter().map(|&(_, p)| p).sum();
+            odds.into_iter()
+                .map(|(s, p)| (s, p / mass))
+                .collect::<Vec<_>>()
+        });
         let outcomes = odds.as_ref().map_or(1, Vec::len).max(1);
         let rollouts = options.len().saturating_mul(outcomes);
         let cap = (SIMULATION_BUDGET / u32::try_from(rollouts).unwrap_or(u32::MAX)).max(1);

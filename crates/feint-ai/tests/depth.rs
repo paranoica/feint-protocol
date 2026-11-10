@@ -391,6 +391,43 @@ fn near_ties_are_random_from_depth_one() {
 }
 
 #[test]
+fn weighing_the_odds_never_cuts_a_rollout_short_of_its_horizon() {
+    let mut playbook = LinePlaybook::new(&[-0.5, 0.0, 0.5], 700);
+    playbook.shots_at = Some(2);
+    let mut game = Line::new(-0.9, 0.0);
+    let mut bot = line_bot(realtime(2, 0.0), playbook, 1);
+    bot.playbook().signal.set(Some(0));
+    for _ in 0..3 {
+        game.state.ball = -0.9;
+        game.state.ball_v = 0.0;
+        drive(&mut game, &mut bot, 8);
+        game.state.ball_v = 0.1;
+        drive(&mut game, &mut bot, 8);
+    }
+    game.state.ball_v = 0.0;
+    bot.playbook().signal.set(None);
+    drive(&mut game, &mut bot, 48);
+    bot.playbook().signal.set(Some(0));
+    game.simulated.set(0);
+    drive(&mut game, &mut bot, 24);
+    let simulated = game.simulated.get();
+    assert!(simulated > 0, "the new signal did not reopen the plan");
+    assert!(
+        simulated <= u64::from(feint_ai::SIMULATION_BUDGET),
+        "{simulated}"
+    );
+    assert_eq!(
+        simulated % 700,
+        0,
+        "{simulated} simulated ticks: some rollout stopped before its 700-tick horizon"
+    );
+    assert!(
+        simulated >= 2 * 3 * 700,
+        "fewer than two outcomes weighed: {simulated}"
+    );
+}
+
+#[test]
 fn pruning_keeps_the_simulation_budget() {
     let targets: Vec<f32> = (0..12).map(|i| -0.9 + 0.15 * i as f32).collect();
     let game = Line::new(0.3, 0.0);

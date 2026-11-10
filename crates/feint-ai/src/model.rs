@@ -218,8 +218,8 @@ impl OpponentModel {
         let kept: Vec<(u8, f64)> = row
             .iter()
             .enumerate()
+            .filter(|&(_, &v)| v > 0.0 || (v + 1.0) / total >= ODDS_FLOOR)
             .filter_map(|(k, &v)| Some((u8::try_from(k).ok()?, (v + 1.0) / total)))
-            .filter(|&(_, p)| p >= ODDS_FLOOR)
             .collect();
         let mass: f64 = kept.iter().map(|&(_, p)| p).sum();
         (mass > 0.0).then(|| kept.into_iter().map(|(k, p)| (k, p / mass)).collect())

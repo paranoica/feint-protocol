@@ -353,6 +353,10 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         }
     }
 
+    fn signal_classes(&self) -> u8 {
+        2
+    }
+
     fn signal(&self, s: &PenaltyState, them: PlayerId) -> Option<u8> {
         (them == STRIKER).then_some(s.shown).flatten()
     }
