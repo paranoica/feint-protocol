@@ -60,8 +60,8 @@ impl Ledger {
         }
     }
 
-    pub fn chose(&mut self, intent: u8, deceptive: bool, shown: Option<u8>) -> bool {
-        let Some(e) = self.open() else {
+    pub fn chose(&mut self, tick: u64, intent: u8, deceptive: bool, shown: Option<u8>) -> bool {
+        let Some(e) = self.open().filter(|e| e.start < tick) else {
             return false;
         };
         e.struck |= intent == STRIKE_INTENT;
@@ -87,7 +87,7 @@ impl Ledger {
             .entries
             .iter_mut()
             .rev()
-            .find(|e| e.start <= tick)
+            .find(|e| e.start < tick)
             .filter(|e| e.end.is_none_or(|end| tick <= end + OUTCOME_TICKS));
         if let Some(e) = latest {
             if mine {
@@ -187,7 +187,7 @@ fn study<A, P>(
             possession = now_possession;
         }
         if let Some(c) = bot.current()
-            && out.chose(c.intent, c.deceptive, c.shown)
+            && out.chose(tick, c.intent, c.deceptive, c.shown)
         {
             reference = state.clone();
         }

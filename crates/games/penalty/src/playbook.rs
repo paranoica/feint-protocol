@@ -184,8 +184,14 @@ impl Playbook<Penalty> for PenaltyPlaybook {
             &Self::STRIKES
         };
         for (k, &id) in strikes.iter().enumerate() {
-            let class = if repertoire == 0 { ROOKIE } else { k as u8 };
-            out.push(choice(id, 1, horizon, Some(class), Some(class)));
+            if repertoire == 0 {
+                out.push(Choice {
+                    param: [f32::from(ROOKIE), 0.0],
+                    ..choice(id, 1, horizon, None, None)
+                });
+            } else {
+                out.push(choice(id, 1, horizon, Some(k as u8), Some(k as u8)));
+            }
         }
         if repertoire >= 2 {
             for (&id, shown) in Self::FAKES.iter().zip([0u8, 2]) {
@@ -207,11 +213,12 @@ impl Playbook<Penalty> for PenaltyPlaybook {
 
     fn act(&self, s: &Shootout, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
         let noise = aim[1] * AIM_SCALE;
+        let rookie = c.param[0] as u8 == ROOKIE && c.real.is_none();
         let real = match c.real {
-            Some(ROOKIE) if aim[0] < -ROOKIE_MIDDLE => 0,
-            Some(ROOKIE) if aim[0] > ROOKIE_MIDDLE => 2,
-            Some(ROOKIE) | None => 1,
+            _ if rookie && aim[0] < -ROOKIE_MIDDLE => 0,
+            _ if rookie && aim[0] > ROOKIE_MIDDLE => 2,
             Some(k) => k,
+            None => 1,
         };
         match c.id {
             id if Self::STRIKES.contains(&id) || Self::FAKES.contains(&id) => {
