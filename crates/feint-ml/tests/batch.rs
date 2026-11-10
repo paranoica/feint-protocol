@@ -345,3 +345,28 @@ fn a_seat_still_warming_up_after_a_new_episode_sees_nothing() {
     }
     assert!(warming > 20, "{warming} warming seats seen");
 }
+
+#[test]
+fn a_match_that_ends_before_the_learner_decides_comes_back_as_a_bare_terminal() {
+    let mut spec = BatchSpec::new(vec![[Seat::Level(5), Seat::Learner]], 3);
+    spec.reaction_ms = [60_000, 60_000];
+    spec.params.goals_to_win = 1;
+    let mut batch = HockeyBatch::new(spec).expect("a valid batch");
+    let mut out = batch.reset().expect("resets").clone();
+    let mut bare = 0;
+    for _ in 0..4 {
+        if out.terminated[0] {
+            bare += 1;
+            assert_eq!(out.ready, [false, false]);
+            assert!(out.obs.iter().all(|&v| v == 0.0));
+            assert_eq!([out.score[0], out.score[1]], [1, 0]);
+            assert_eq!(out.reward, [1.0, -1.0]);
+            assert!(batch.ticks(0).expect("env 0") < 10);
+        }
+        out = batch.step(&still(1, [0.0, 0.0])).expect("steps").clone();
+    }
+    assert!(
+        bare >= 3,
+        "{bare} matches ended before a 60 s reaction passed"
+    );
+}
