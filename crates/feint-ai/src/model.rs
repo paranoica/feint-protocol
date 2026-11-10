@@ -257,6 +257,8 @@ impl OpponentModel {
         self.mine_events.clone_from(&profile.mine_events);
         self.fake_tries = profile.fake_tries;
         self.fake_wins = profile.fake_wins;
+        self.knowing = 0.0;
+        self.reading = 0.0;
         Ok(())
     }
 }

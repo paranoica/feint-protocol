@@ -220,3 +220,21 @@ fn the_theory_that_named_the_cover_more_often_wins() {
         "attempts nobody answered say nothing"
     );
 }
+
+#[test]
+fn a_loaded_profile_starts_the_theories_afresh() {
+    let mut learner = OpponentModel::new(3, 1.0);
+    for _ in 0..3 {
+        learner.record_attempt(Some(0), Some(0), Some(1), false, false);
+    }
+    for _ in 0..6 {
+        learner.record_attempt(Some(0), Some(0), Some(0), false, false);
+    }
+    assert!(learner.knowing_beats_reading());
+    let other = OpponentModel::new(3, 1.0).export("pick");
+    learner.import(&other, "pick").unwrap();
+    assert!(
+        !learner.knowing_beats_reading(),
+        "the theory that fitted the last opponent was kept for the next one"
+    );
+}
