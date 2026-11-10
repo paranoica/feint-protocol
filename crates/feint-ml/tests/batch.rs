@@ -211,10 +211,13 @@ fn the_cap_is_a_truncation_not_a_terminal() {
     }
     let last = &out.final_obs[..FEATURES];
     assert!(last.iter().any(|&v| v != 0.0));
-    assert_ne!(last, &out.obs[..FEATURES]);
-    assert!(batch.ticks(0).expect("env 0") < 200);
+    assert!(out.obs.iter().all(|&v| v == 0.0));
+    assert_eq!(out.ready, [false, false]);
+    assert_eq!(batch.ticks(0), Some(0));
     assert_ne!(batch.episode(0).expect("env 0").seed, first.seed);
-    assert!(out.ready[0]);
+    out = batch.step(&still(1, [-0.9, 0.9])).expect("steps").clone();
+    assert!(out.ready[0] && !out.truncated[0]);
+    assert!(out.final_obs.iter().all(|&v| v == 0.0));
 }
 
 #[test]
@@ -242,7 +245,8 @@ fn a_finished_match_is_a_terminal_and_its_rewards_sum_to_the_score() {
     assert_eq!(rewards, [2.0, -2.0]);
     assert!(out.final_obs.iter().all(|&v| v == 0.0));
     assert_ne!(batch.episode(0).expect("env 0").seed, first);
-    assert!(batch.ticks(0).expect("env 0") < 200);
+    assert_eq!(batch.ticks(0), Some(0));
+    assert_eq!(out.ready, [false, false]);
 }
 
 #[test]
@@ -285,7 +289,7 @@ fn malformed_batches_and_actions_are_refused() {
     let mut tight = HockeyBatch::new(s).expect("the least cap is valid");
     let mut out = tight.reset().expect("resets").clone();
     for _ in 0..30 {
-        assert!(out.ready[0]);
+        assert!(out.ready[0] != out.truncated[0]);
         out = tight.step(&still(1, [0.0, 0.0])).expect("steps").clone();
     }
     let mut s = spec(vec![[Seat::Learner, Seat::Human]]);
@@ -368,5 +372,38 @@ fn a_match_that_ends_before_the_learner_decides_comes_back_as_a_bare_terminal() 
     assert!(
         bare >= 3,
         "{bare} matches ended before a 60 s reaction passed"
+    );
+}
+
+#[test]
+fn every_terminal_carries_exactly_its_own_matchs_goals_and_score() {
+    let mut spec = BatchSpec::new(vec![[Seat::Level(5), Seat::Learner]; 8], 6);
+    spec.reaction_ms = [0, 4_000];
+    spec.params.goals_to_win = 1;
+    spec.threads = 4;
+    let mut batch = HockeyBatch::new(spec).expect("a valid batch");
+    let mut out = batch.reset().expect("resets").clone();
+    let mut since = [0.0_f32; 8];
+    let mut after_decision = 0;
+    let mut decided = [false; 8];
+    for _ in 0..600 {
+        for env in 0..8 {
+            since[env] += out.reward[env * 2 + 1];
+            decided[env] |= out.ready[env * 2 + 1];
+            if out.terminated[env] || out.truncated[env] {
+                let difference = (out.score[env * 2 + 1] - out.score[env * 2]) as f32;
+                assert_eq!(since[env], difference, "env {env}");
+                assert!(out.score[env * 2].max(out.score[env * 2 + 1]) <= 1);
+                assert!(!out.ready[env * 2] && !out.ready[env * 2 + 1]);
+                after_decision += usize::from(decided[env]);
+                since[env] = 0.0;
+                decided[env] = false;
+            }
+        }
+        out = batch.step(&still(8, [0.0, 0.0])).expect("steps").clone();
+    }
+    assert!(
+        after_decision >= 10,
+        "{after_decision} terminals after a decision"
     );
 }
