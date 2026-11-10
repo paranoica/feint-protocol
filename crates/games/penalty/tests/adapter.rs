@@ -588,3 +588,41 @@ fn a_keeper_reads_every_kick_whatever_ticks_it_samples() {
     }
     assert!(kicks >= 3, "only {kicks} kicks");
 }
+
+#[test]
+fn a_reacting_keeper_dives_with_a_human_error() {
+    use feint_ai::{Cue, Playbook};
+    let book = PenaltyPlaybook::new(Params::default());
+    let mut s = fresh().live().clone();
+    s.phase = Phase::Flight;
+    s.t = 20;
+    s.aim = Some(2.5);
+    s.ball_y = 2.5 * 20.0 / f64::from(s.params.flight_ticks);
+    let keeper = 1 - s.shooter();
+    let mut out = Vec::new();
+    book.options(&s, keeper, 2, &Cue::default(), &mut out);
+    let react = *out
+        .iter()
+        .find(|c| c.id == PenaltyPlaybook::REACT)
+        .expect("a keeper may wait for the ball");
+    let dive = |noise: [f64; 2]| {
+        let a = book.act(&s, keeper, &react, 0, noise);
+        let v = a.values.unwrap();
+        assert!(v[2] >= 0.5, "no dive at {noise:?}");
+        f64::from(v[3])
+    };
+    assert!((dive([0.0, 0.0]) - 2.5).abs() < 1e-5, "no noise, no error");
+    for (noise, miss) in [
+        ([0.01, 0.0], 1.5),
+        ([-0.003, 0.0], -1.5),
+        ([-0.01, 0.01], -0.75),
+        ([0.0, 0.05], 0.0),
+    ] {
+        assert!(
+            (dive(noise) - (2.5 + miss)).abs() < 1e-5,
+            "noise {noise:?}: dived to {}, wanted {}",
+            dive(noise),
+            2.5 + miss
+        );
+    }
+}

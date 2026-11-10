@@ -16,6 +16,7 @@ const LEAN_READ_LEAD: f64 = 0.1;
 const OPPONENT_REACTION: f64 = 0.3;
 const ROOKIE_MIDDLE: f64 = 0.045;
 const ROOKIE: u8 = 3;
+const KEEP_MISS: f64 = 1.5;
 
 pub struct PenaltyPlaybook {
     params: Params,
@@ -131,6 +132,16 @@ impl PenaltyPlaybook {
             Some(aim) => Self::action(me, [0.0, 0.0, 1.0, aim]),
             None => Self::action(me, [0.0, 0.0, 0.0, 0.0]),
         }
+    }
+
+    fn keep_off(&self, s: &Shootout, me: PlayerId, miss: f64) -> ActionT {
+        let mut action = self.keep(s, me, None);
+        if let Some(values) = action.values.as_mut()
+            && values[2] >= 0.5
+        {
+            values[3] = (f64::from(values[3]) + miss) as f32;
+        }
+        action
     }
 
     fn kick_horizon(&self, s: &Shootout) -> u32 {
@@ -250,7 +261,15 @@ impl Playbook<Penalty> for PenaltyPlaybook {
                     .then(|| AIM * s.lean.signum());
                 self.keep(s, me, early)
             }
-            Self::REACT => self.keep(s, me, None),
+            Self::REACT => {
+                let spread = aim[0].abs() + aim[1].abs();
+                let miss = if spread > 0.0 {
+                    KEEP_MISS * aim[0] / spread
+                } else {
+                    0.0
+                };
+                self.keep_off(s, me, miss)
+            }
             _ => Self::action(me, [0.0, 1.0, 0.0, 0.0]),
         }
     }
