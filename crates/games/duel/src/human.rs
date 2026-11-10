@@ -170,12 +170,17 @@ pub fn human_body(game: &QuickDraw) -> BodyParamsT {
 #[must_use]
 pub fn against_human(d: Difficulty, matches: u64) -> Standing {
     let mut standing = Standing::default();
+    let mut memory: Option<feint_ai::Profile> = None;
     for seed in 0..matches {
         let me = (seed % 2) as usize;
         let mut game = QuickDraw::new(Params::default(), 3);
         let spec = game.spec();
         let mut bot = Bot::new(d, DuelPlaybook::new(Params::default()), &spec)
             .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+        if let Some(profile) = memory.as_ref() {
+            bot.load_profile(profile, "duel")
+                .unwrap_or_else(|e| panic!("a profile of this game loads: {e:?}"));
+        }
         let mut human = Human::new();
         let bodies = if me == 0 {
             vec![d.body(&spec), human_body(&game)]
@@ -196,6 +201,9 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
         }
         .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
         standing.add(&report, me);
+        if d.memory == feint_ai::Memory::MatchAndProfile {
+            memory = bot.profile("duel");
+        }
     }
     standing
 }

@@ -265,12 +265,17 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
         ..Params::default()
     };
     let mut standing = Standing::default();
+    let mut memory: Option<feint_ai::Profile> = None;
     for seed in 0..matches {
         let me = (seed % 2) as usize;
         let mut game = AirHockey::new(params.clone(), 1);
         let spec = game.spec();
         let mut bot = Bot::new(d, HockeyPlaybook::new(params.clone()), &spec)
             .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+        if let Some(profile) = memory.as_ref() {
+            bot.load_profile(profile, "airhockey")
+                .unwrap_or_else(|e| panic!("a profile of this game loads: {e:?}"));
+        }
         let mut human = Human::new(params.clone(), HUMAN_NOISE);
         let human_body = Difficulty::preset(5)
             .unwrap_or_else(|| panic!("level 5 exists"))
@@ -294,6 +299,9 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
         }
         .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
         standing.add(&report, me);
+        if d.memory == feint_ai::Memory::MatchAndProfile {
+            memory = bot.profile("airhockey");
+        }
     }
     standing
 }
