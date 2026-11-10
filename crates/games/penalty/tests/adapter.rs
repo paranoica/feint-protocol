@@ -532,3 +532,59 @@ fn the_human_model_shows_no_lean_for_a_kick_down_the_middle() {
     }
     assert!(middles >= 5, "only {middles} middle kicks to look at");
 }
+
+#[test]
+fn a_keeper_reads_every_kick_whatever_ticks_it_samples() {
+    use feint_ai::Playbook;
+    let mut game = Penalty::new(Params::default(), 5);
+    let spec = game.spec();
+    let five = Difficulty::preset(5).unwrap();
+    let mut shooter = LeftFooter { me: 0 };
+    let mut keeper = Bot::new(five, PenaltyPlaybook::new(Params::default()), &spec).unwrap();
+    let header = RunHeader {
+        game_id: "penalty".into(),
+        game_version: penalty::GAME_VERSION,
+        seed: 3,
+        bodies: vec![body(9.0, 4.0), five.body(&spec)],
+        levels: [0, 5],
+    };
+    let mut runner =
+        feint_ai::Runner::start(&mut game, [&mut shooter, &mut keeper], header).unwrap();
+    let mut seen = Vec::new();
+    let mut kicks = 0;
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
+    loop {
+        let more = runner.step(
+            &mut game,
+            [
+                &mut shooter as &mut dyn feint_ai::Controller<Penalty>,
+                &mut keeper,
+            ],
+        );
+        let mut obs = ObservationT::default();
+        game.observe(game.live(), 1, &mut obs);
+        seen.push(game.state_from_observation(&obs, &mut rng));
+        if game.live().shooter() == 0 && game.live().phase == Phase::Flight && game.live().t == 1 {
+            kicks += 1;
+        }
+        if !more || runner.ticks() > 240 * 900 {
+            break;
+        }
+    }
+    let book = PenaltyPlaybook::new(Params::default());
+    for stride in [1, 4, 6] {
+        for offset in 0..stride {
+            let samples: Vec<_> = seen.iter().skip(offset).step_by(stride).collect();
+            let shots: Vec<u8> = samples
+                .windows(2)
+                .filter_map(|w| book.read(w[0], w[1], 0).shot)
+                .collect();
+            assert_eq!(
+                shots,
+                vec![0; kicks],
+                "every {stride} ticks from {offset}: the left-footer's kicks"
+            );
+        }
+    }
+    assert!(kicks >= 3, "only {kicks} kicks");
+}
