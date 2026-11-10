@@ -13,6 +13,7 @@ members = [
     "crates/feint-compare",
     "crates/feint-ml",
 ]
+exclude = ["crates/feint-gym"]
 
 [workspace.package]
 version = "0.1.0"

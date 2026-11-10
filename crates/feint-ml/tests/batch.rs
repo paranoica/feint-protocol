@@ -68,6 +68,8 @@ fn same_seed_same_trajectory_whatever_the_threads() {
 fn ready_seats_see_their_reaction_and_body_and_the_rest_see_nothing() {
     let mut batch = HockeyBatch::new(BatchSpec::new(mixed(), 2)).expect("a valid batch");
     let out = batch.reset().expect("resets").clone();
+    assert_eq!(batch.seats(2), Some([Seat::Human, Seat::Learner]));
+    assert_eq!(batch.seats(8), None);
     let seeds: Vec<u64> = (0..8).map(|env| batch.episode(env).unwrap().seed).collect();
     assert_ne!(
         seeds[0], seeds[4],

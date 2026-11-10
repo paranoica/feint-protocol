@@ -458,6 +458,11 @@ impl HockeyBatch {
     }
 
     #[must_use]
+    pub fn seats(&self, env: usize) -> Option<[Seat; 2]> {
+        self.envs.get(env).map(|e| e.seats)
+    }
+
+    #[must_use]
     pub fn ticks(&self, env: usize) -> Option<u64> {
         self.envs.get(env).map(|e| e.runner.ticks())
     }

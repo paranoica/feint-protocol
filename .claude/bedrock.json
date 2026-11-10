@@ -86,6 +86,14 @@
     },
     "skills": {
       "run": "python3 plugins/bedrock/scripts/skillcheck.py --root plugins/bedrock --strict"
+    },
+    "gym-check": {
+      "run": "scripts/gym-check.sh",
+      "heavy": true
+    },
+    "gym-throughput": {
+      "run": "cd python && uv run python -m feint_train.throughput --threads 6 8",
+      "heavy": true
     }
   },
   "critical_zones": [

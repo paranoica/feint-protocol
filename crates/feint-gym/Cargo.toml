@@ -1,0 +1,19 @@
+[package]
+name = "feint-gym"
+description = "Python bindings of the Feint hockey batch for training; built by maturin, outside the workspace"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[lib]
+name = "feint_gym"
+crate-type = ["cdylib"]
+
+[dependencies]
+feint-ml = { path = "../feint-ml" }
+numpy = "=0.30.0"
+pyo3 = "=0.30.1"
