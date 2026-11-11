@@ -60,11 +60,11 @@ def seats(config: TrainConfig) -> list[tuple[str, str]]:
 
 class Stats:
     def __init__(self, window: int = 400) -> None:
-        self.results: dict[str, deque[int]] = defaultdict(lambda: deque(maxlen=window))
+        self.results: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=window))
         self.goals: deque[float] = deque(maxlen=window)
 
     def record(self, opponent: str, mine: int, theirs: int, finished: bool) -> None:
-        self.results[opponent].append(1 if finished and mine > theirs else 0)
+        self.results[opponent].append(match_value(mine, theirs, finished))
         self.goals.append(mine - theirs)
 
 
@@ -236,14 +236,20 @@ class Trainer:
         self.collector.credit(out, values, final_values)
         for env in np.flatnonzero(out["terminated"] | out["truncated"]):
             me = 0 if self.table[env][0] == "learner" else 1
-            mine, theirs = int(out["score"][env, me]), int(out["score"][env, 1 - me])
-            finished = bool(out["terminated"][env])
-            opponent = self.opponent_of[env]
-            if self.league is not None and self.league.find(opponent) is not None:
-                self.league.record(opponent, match_value(mine, theirs, finished))
-                opponent = "frozen"
-            self.stats.record(opponent, mine, theirs, finished)
+            self.account(
+                self.opponent_of[env],
+                int(out["score"][env, me]),
+                int(out["score"][env, 1 - me]),
+                bool(out["terminated"][env]),
+            )
         self.out = out
+
+    def account(self, opponent: str, mine: int, theirs: int, finished: bool) -> None:
+        if opponent.startswith("snap-"):
+            if self.league is not None:
+                self.league.record(opponent, match_value(mine, theirs, finished))
+            opponent = "frozen"
+        self.stats.record(opponent, mine, theirs, finished)
 
     def iteration(self, progress: float) -> None:
         config = self.config

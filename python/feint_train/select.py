@@ -6,7 +6,7 @@ import numpy as np
 from safetensors.numpy import load_file, save_file
 
 from feint_train.evaluate import Result, evaluate
-from feint_train.export import forward, metadata
+from feint_train.export import loaded, metadata
 
 SELECTION_SEED = 31_337
 
@@ -47,10 +47,10 @@ def select(
     threads: int = 6,
 ) -> str:
     scored: dict[str, Result] = {}
-    for name in candidates(logdir, top):
-        path = logdir / f"{name}.safetensors"
+    for name in candidates(logdir, top, opponent):
+        policy = loaded(logdir / f"{name}.safetensors")
         scored[name] = evaluate(
-            lambda obs, path=path: np.clip(forward(path, obs), -1.0, 1.0),
+            lambda obs, policy=policy: np.clip(policy(obs), -1.0, 1.0),
             opponent,
             matches,
             SELECTION_SEED,

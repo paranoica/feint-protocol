@@ -68,8 +68,13 @@ def test_select_exports_the_winner_with_its_evaluation(tmp_path: Path) -> None:
         shutil.copy(CHECKPOINT, tmp_path / f"{name}.safetensors")
     write_evals(
         tmp_path,
-        [("policy-00010", "level:5", 3, 9, 1), ("policy-final", "level:5", 2, 8, 2)],
+        [
+            ("policy-00010", "level:1", 3, 9, 1),
+            ("policy-final", "level:1", 2, 8, 2),
+            ("policy-00020", "level:5", 99, 99, 0),
+        ],
     )
+    (tmp_path / "policy-00020.safetensors").write_bytes(b"not loaded unless it is a candidate")
     chosen = select(tmp_path, top=2, matches=2, opponent="level:1", threads=2)
     assert chosen in ("policy-00010", "policy-final")
     meta = metadata(tmp_path / "best.safetensors")

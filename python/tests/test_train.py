@@ -237,3 +237,25 @@ def test_a_killed_run_resumes_from_its_last_checkpoint(tmp_path: Path) -> None:
     assert final["spent"] >= 1.2 * 60
     assert final["generation"] > killed["generation"]
     assert (tmp_path / "policy-final.safetensors").exists()
+
+
+def test_stats_value_capped_matches_by_the_lead() -> None:
+    from feint_train.train import Stats
+
+    stats = Stats()
+    stats.record("frozen", 3, 1, finished=False)
+    stats.record("frozen", 1, 3, finished=False)
+    stats.record("frozen", 7, 2, finished=True)
+    assert list(stats.results["frozen"]) == [0.75, 0.25, 1.0]
+
+
+def test_results_against_an_evicted_snapshot_go_to_the_frozen_bucket(tmp_path: Path) -> None:
+    trainer = Trainer(league_config(), tmp_path)
+    trainer.snapshot()
+    kept = trainer.league.ids()[0]
+    trainer.account(kept, 3, 1, finished=False)
+    trainer.league.archive.clear()
+    trainer.account(kept, 1, 3, finished=False)
+    trainer.account("level:5", 0, 7, finished=True)
+    assert set(trainer.stats.results) == {"frozen", "level:5"}
+    assert list(trainer.stats.results["frozen"]) == [0.75, 0.25]

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -40,10 +41,18 @@ def metadata(path: Path) -> dict[str, str]:
         return dict(f.metadata() or {})
 
 
-def forward(path: Path, obs: np.ndarray) -> np.ndarray:
+def loaded(path: Path) -> Callable[[np.ndarray], np.ndarray]:
     t = load_file(str(path))
     inverse = np.array(metadata(path)["inv_scales"].split(","), dtype=np.float32)
-    x = obs.astype(np.float32) * inverse
-    x = np.maximum(x @ t["layer0.weight"].T + t["layer0.bias"], 0.0)
-    x = np.maximum(x @ t["layer1.weight"].T + t["layer1.bias"], 0.0)
-    return x @ t["layer2.weight"].T + t["layer2.bias"]
+
+    def run(obs: np.ndarray) -> np.ndarray:
+        x = obs.astype(np.float32) * inverse
+        x = np.maximum(x @ t["layer0.weight"].T + t["layer0.bias"], 0.0)
+        x = np.maximum(x @ t["layer1.weight"].T + t["layer1.bias"], 0.0)
+        return x @ t["layer2.weight"].T + t["layer2.bias"]
+
+    return run
+
+
+def forward(path: Path, obs: np.ndarray) -> np.ndarray:
+    return loaded(path)(obs)
