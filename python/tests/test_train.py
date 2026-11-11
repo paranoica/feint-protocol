@@ -1,10 +1,12 @@
 import os
+import warnings
 from pathlib import Path
 
 import pytest
 import torch
 
 from feint_train.train import TrainConfig, Trainer, hide_gpu_for
+from feint_train.update import UpdateStats
 
 DECISION_HZ = 60
 
@@ -53,3 +55,13 @@ def test_cpu_training_hides_the_gpu_and_gpu_training_leaves_it(
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
     hide_gpu_for("cpu")
     assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+
+
+def test_logging_an_update_raises_no_warnings(tmp_path: Path) -> None:
+    trainer = Trainer(small(), tmp_path)
+    stats = UpdateStats(
+        policy_loss=0.0, value_loss=0.0, entropy=0.0, approx_kl=0.0, clip_fraction=0.0
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        trainer.log(stats, rollout=1.0, update=1.0, transitions=10)

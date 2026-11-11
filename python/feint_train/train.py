@@ -202,7 +202,7 @@ class Trainer:
         speed = self.envs * self.config.steps / (rollout + update)
         for name, number in asdict(result).items():
             w.add_scalar(f"loss/{name}", number, n)
-        w.add_scalar("policy/std", float(self.agent.log_std.exp().mean()), n)
+        w.add_scalar("policy/std", float(self.agent.log_std.detach().exp().mean()), n)
         w.add_scalar("speed/env_steps_per_s", speed, n)
         w.add_scalar("speed/update_s", update, n)
         w.add_scalar("speed/rollout_s", rollout, n)
