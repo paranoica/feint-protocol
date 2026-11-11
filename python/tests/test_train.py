@@ -1,11 +1,17 @@
 import os
 import pickle
+import signal
+import subprocess
+import sys
+import time
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
+from feint_train.league import League
 from feint_train.train import TrainConfig, Trainer, hide_gpu_for
 from feint_train.update import UpdateStats
 
@@ -126,3 +132,108 @@ def test_a_checkpoint_carrying_arbitrary_objects_is_refused_even_when_torch_is_t
     monkeypatch.setenv("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     with pytest.raises(pickle.UnpicklingError):
         Trainer(small(), tmp_path / "b", **{flag: planted})
+
+
+def league_config(seed: int = 1) -> TrainConfig:
+    return TrainConfig(
+        envs=10,
+        threads=1,
+        torch_threads=1,
+        seed=seed,
+        steps=8,
+        league=True,
+        eval_opponents=["level:1"],
+    )
+
+
+def test_resume_carries_the_clock_updates_league_and_rng(tmp_path: Path) -> None:
+    first = Trainer(league_config(), tmp_path)
+    first_seed = first.batch_seed
+    first.iteration(0.0)
+    first.snapshot()
+    first.league.record(first.league.ids()[0], 0.75)
+    first.next_generation_now()
+    first.iteration(0.0)
+    first.start -= 600.0
+    first.save()
+    saved = torch.load(tmp_path / "checkpoint.pt", weights_only=True)
+    torch_state = torch.get_rng_state()
+    numpy_state = first.rng.bit_generator.state
+
+    again = Trainer(league_config(), tmp_path, resume=tmp_path / "checkpoint.pt")
+    assert again.updates == first.updates == 2
+    assert again.elapsed() >= 600.0
+    assert again.league.ids() == first.league.ids()
+    assert again.league.rate(first.league.ids()[0]) == first.league.rate(first.league.ids()[0])
+    assert again.generation == saved["generation"] + 1
+    assert again.batch_seed not in (first_seed, first.batch_seed)
+    assert torch.equal(torch.get_rng_state(), torch_state)
+    replay = np.random.default_rng()
+    replay.bit_generator.state = numpy_state
+    expected = League.from_state(saved["league"]).table(10, replay)
+    assert again.table == expected.seats
+    assert again.rng.bit_generator.state == replay.bit_generator.state
+    assert again.next_snapshot == saved["next_snapshot"]
+    assert again.next_eval == saved["next_eval"]
+
+
+def test_a_generation_rebuilds_the_batch_with_a_new_seed_and_frozen_seats(tmp_path: Path) -> None:
+    trainer = Trainer(league_config(), tmp_path)
+    seen = {trainer.batch_seed}
+    trainer.iteration(0.0)
+    trainer.snapshot()
+    trainer.next_generation_now()
+    assert trainer.batch_seed not in seen
+    assert any(s.startswith("frozen:") for pair in trainer.table for s in pair)
+    trainer.iteration(0.0)
+    assert trainer.updates == 2
+
+
+def test_a_killed_run_resumes_from_its_last_checkpoint(tmp_path: Path) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "feint_train.train",
+        "--logdir",
+        str(tmp_path),
+        "--league",
+        "--minutes",
+        "1.2",
+        "--envs",
+        "10",
+        "--threads",
+        "1",
+        "--torch-threads",
+        "1",
+        "--steps",
+        "8",
+        "--generation-minutes",
+        "0.15",
+        "--snapshot-minutes",
+        "0.15",
+        "--eval-every",
+        "100",
+        "--eval-matches",
+        "2",
+        "--resume",
+        "auto",
+    ]
+    env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
+    run = subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    checkpoint = tmp_path / "checkpoint.pt"
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        if checkpoint.exists() and torch.load(checkpoint, weights_only=True)["generation"] >= 2:
+            break
+        time.sleep(0.5)
+    run.send_signal(signal.SIGKILL)
+    run.wait()
+    killed = torch.load(checkpoint, weights_only=True)
+    assert killed["generation"] >= 2 and killed["league"]["archive"]
+    finished = subprocess.run(command, env=env, capture_output=True, timeout=300)
+    assert finished.returncode == 0, finished.stderr.decode()[-2000:]
+    final = torch.load(checkpoint, weights_only=True)
+    assert final["updates"] > killed["updates"]
+    assert final["spent"] >= 1.2 * 60
+    assert final["generation"] > killed["generation"]
+    assert (tmp_path / "policy-final.safetensors").exists()

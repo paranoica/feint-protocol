@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from feint_train.agent import Agent
 from feint_train.evaluate import evaluate
 from feint_train.export import export
+from feint_train.league import League, match_value
 from feint_train.rollout import Collector
 from feint_train.update import UpdateConfig, UpdateStats, ppo_update
 
@@ -37,6 +38,10 @@ class TrainConfig:
     eval_matches: int = 50
     eval_opponents: list[str] = field(default_factory=lambda: ["level:1"])
     eval_seed: int = 77
+    league: bool = False
+    archive_size: int = 12
+    generation_minutes: float = 15.0
+    snapshot_minutes: float = 30.0
     update: UpdateConfig = field(default_factory=UpdateConfig)
 
 
@@ -79,21 +84,25 @@ class Trainer:
         self.config = config
         self.logdir = logdir
         self.rng = np.random.default_rng(config.seed)
-        self.table = seats(config)
-        self.batch = HockeyBatch(self.table, seed=config.seed, threads=config.threads)
-        self.envs = len(self.table)
+        self.envs = config.envs
         self.slots = self.envs * 2
         scales = np.array(HockeyBatch.scales, dtype=np.float32)
         self.agent = Agent(scales, std=config.std).to(torch.device(config.device))
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=config.lr, eps=1e-5)
+        self.league = League(archive_size=config.archive_size) if config.league else None
         spent = 0.0
         self.updates = 0
+        self.generation = 0
+        state = None
         if resume is not None:
             state = torch.load(resume, map_location=config.device, weights_only=True)
             self.agent.load_state_dict(state["agent"])
             self.optimizer.load_state_dict(state["optimizer"])
             spent = state["spent"]
             self.updates = state["updates"]
+            self.generation = state.get("generation", 0) + 1
+            if self.league is not None and state.get("league") is not None:
+                self.league = League.from_state(state["league"])
         if init is not None:
             weights = torch.load(init, map_location=config.device, weights_only=True)["agent"]
             self.agent.load_state_dict(weights)
@@ -103,14 +112,53 @@ class Trainer:
             slots=self.slots, gamma=config.gamma, potential_scale=float(scales[0])
         )
         self.stats = Stats()
-        self.opponent_of = [b if a == "learner" else a for a, b in self.table]
         self.start = time.perf_counter() - spent
+        now = self.elapsed()
+        self.next_eval = now + config.eval_every_minutes * 60.0
+        self.next_generation = now + config.generation_minutes * 60.0
+        self.next_snapshot = now + config.snapshot_minutes * 60.0
+        if state is not None:
+            self.next_eval = state.get("next_eval", self.next_eval)
+            self.next_snapshot = state.get("next_snapshot", self.next_snapshot)
+            if "numpy_rng" in state:
+                self.rng.bit_generator.state = state["numpy_rng"]
+        self.build_batch()
+        if state is not None and "torch_rng" in state:
+            torch.set_rng_state(state["torch_rng"])
+
+    def build_batch(self) -> None:
+        self.batch_seed = self.config.seed + 7919 * self.generation
+        if self.league is not None:
+            table = self.league.table(self.envs, self.rng)
+            self.table = table.seats
+            self.opponent_of = table.opponents
+            frozen = table.frozen
+        else:
+            self.table = seats(self.config)
+            self.opponent_of = [b if a == "learner" else a for a, b in self.table]
+            frozen = []
+        self.batch = HockeyBatch(
+            self.table, seed=self.batch_seed, threads=self.config.threads, frozen=frozen
+        )
         self.out = self.batch.reset()
+
+    def next_generation_now(self) -> None:
+        self.generation += 1
+        self.build_batch()
+        self.next_generation = self.elapsed() + self.config.generation_minutes * 60.0
+
+    def snapshot(self) -> None:
+        if self.league is None:
+            return
+        name = f"snap-{self.updates:05d}"
+        path = self.logdir / "archive" / f"{name}.safetensors"
+        export(self.agent, path)
+        self.league.add(name, path)
 
     def elapsed(self) -> float:
         return time.perf_counter() - self.start
 
-    def checkpoint(self, name: str) -> None:
+    def save(self) -> None:
         path = self.logdir / "checkpoint.pt"
         partial = path.with_suffix(".pt.partial")
         torch.save(
@@ -119,11 +167,20 @@ class Trainer:
                 "optimizer": self.optimizer.state_dict(),
                 "spent": self.elapsed(),
                 "updates": self.updates,
+                "generation": self.generation,
+                "next_eval": self.next_eval,
+                "next_snapshot": self.next_snapshot,
+                "league": None if self.league is None else self.league.state(),
+                "torch_rng": torch.get_rng_state(),
+                "numpy_rng": self.rng.bit_generator.state,
                 "config": asdict(self.config),
             },
             partial,
         )
         partial.replace(path)
+
+    def checkpoint(self, name: str) -> None:
+        self.save()
         export(self.agent, self.logdir / f"{name}.safetensors")
 
     def evaluate(self) -> None:
@@ -175,12 +232,13 @@ class Trainer:
         self.collector.credit(out, values, final_values)
         for env in np.flatnonzero(out["terminated"] | out["truncated"]):
             me = 0 if self.table[env][0] == "learner" else 1
-            self.stats.record(
-                self.opponent_of[env],
-                int(out["score"][env, me]),
-                int(out["score"][env, 1 - me]),
-                bool(out["terminated"][env]),
-            )
+            mine, theirs = int(out["score"][env, me]), int(out["score"][env, 1 - me])
+            finished = bool(out["terminated"][env])
+            opponent = self.opponent_of[env]
+            if self.league is not None and self.league.find(opponent) is not None:
+                self.league.record(opponent, match_value(mine, theirs, finished))
+                opponent = "frozen"
+            self.stats.record(opponent, mine, theirs, finished)
         self.out = out
 
     def iteration(self, progress: float) -> None:
@@ -228,17 +286,22 @@ class Trainer:
             )
 
     def run(self) -> Agent:
-        budget = self.config.minutes * 60.0
-        every = self.config.eval_every_minutes * 60.0
-        next_eval = self.elapsed() + every
+        config = self.config
+        budget = config.minutes * 60.0
         evaluated = -1
         while self.elapsed() < budget:
             self.iteration(self.elapsed() / budget)
-            if self.elapsed() >= next_eval:
+            if self.elapsed() >= self.next_eval:
                 self.evaluate()
                 evaluated = self.updates
+                self.next_eval += config.eval_every_minutes * 60.0
                 self.checkpoint(f"policy-{self.updates:05d}")
-                next_eval += every
+            if self.league is not None and self.elapsed() >= self.next_snapshot:
+                self.snapshot()
+                self.next_snapshot += config.snapshot_minutes * 60.0
+            if self.league is not None and self.elapsed() >= self.next_generation:
+                self.next_generation_now()
+                self.save()
         if evaluated != self.updates:
             self.evaluate()
         self.checkpoint("policy-final")
@@ -272,14 +335,22 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=TrainConfig.gamma)
     parser.add_argument("--shaping", type=float, default=TrainConfig.shaping)
-    parser.add_argument("--resume", type=Path)
+    parser.add_argument("--resume")
     parser.add_argument("--init", type=Path)
+    parser.add_argument("--hours", type=float)
+    parser.add_argument("--lr", type=float, default=TrainConfig.lr)
+    parser.add_argument("--steps", type=int, default=TrainConfig.steps)
+    parser.add_argument("--league", action="store_true")
+    parser.add_argument("--generation-minutes", type=float, default=TrainConfig.generation_minutes)
+    parser.add_argument("--snapshot-minutes", type=float, default=TrainConfig.snapshot_minutes)
     args = parser.parse_args()
     hide_gpu_for(args.device)
+    resume = resolve_resume(args.resume, args.logdir)
+    init = None if resume is not None else args.init
     config = TrainConfig(
         opponents=args.opponents.split(","),
         eval_opponents=args.eval_opponents.split(","),
-        minutes=args.minutes,
+        minutes=args.hours * 60.0 if args.hours is not None else args.minutes,
         envs=args.envs,
         threads=args.threads,
         torch_threads=args.torch_threads,
@@ -289,8 +360,22 @@ def main() -> None:
         seed=args.seed,
         gamma=args.gamma,
         shaping=args.shaping,
+        lr=args.lr,
+        steps=args.steps,
+        league=args.league,
+        generation_minutes=args.generation_minutes,
+        snapshot_minutes=args.snapshot_minutes,
     )
-    train(config, args.logdir, args.resume, args.init)
+    train(config, args.logdir, resume, init)
+
+
+def resolve_resume(resume: str | None, logdir: Path) -> Path | None:
+    if resume is None:
+        return None
+    if resume == "auto":
+        path = logdir / "checkpoint.pt"
+        return path if path.exists() else None
+    return Path(resume)
 
 
 if __name__ == "__main__":
