@@ -51,6 +51,10 @@
       "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored && cargo test --release --locked -q -p penalty --test strength -- --ignored && cargo test --release --locked -q -p duel --test strength -- --ignored && cargo test --release --locked -q -p feint-compare -- --ignored",
       "heavy": true
     },
+    "bar": {
+      "run": "cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
+      "heavy": true
+    },
     "compare": {
       "run": "cargo run --release --locked -q -p feint-compare -- web/public/compare.json 40",
       "heavy": true
