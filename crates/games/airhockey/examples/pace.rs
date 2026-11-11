@@ -103,6 +103,7 @@ fn play(p: &Params, levels: [u8; 2], seed: u64, stats: &mut Stats) {
             })
             .collect(),
         levels,
+        opponent: feint_ai::Opponent::HandMade,
     };
     let side = |l: u8| -> Box<dyn Controller<AirHockey>> {
         if l == 0 {

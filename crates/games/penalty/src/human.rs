@@ -161,6 +161,7 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
             seed,
             bodies,
             levels: if me == 0 { [3, 0] } else { [0, 3] },
+            opponent: feint_ai::Opponent::HandMade,
         };
         let report: RunReport = if me == 0 {
             run_match(&mut game, [&mut bot, &mut human], header, 240 * 900)

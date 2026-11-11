@@ -6,6 +6,8 @@ enum TimeMode : byte { Realtime = 0, TurnBased = 1 }
 
 enum EventKind : byte { Score = 0, RoundEnd = 1, Pause = 2, Resume = 3 }
 
+enum BotKind : ubyte { HandMade = 0, Trained = 1 }
+
 table Dim {
   name: string;
   min: float;
@@ -67,6 +69,8 @@ table MatchHeader {
   seed: ulong;
   level: ubyte;
   bodies: [BodyParams];
+  bot: BotKind = HandMade;
+  checkpoint: ulong;
 }
 
 table MatchResult {

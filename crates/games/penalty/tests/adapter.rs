@@ -164,6 +164,7 @@ fn two_bots_play_a_shootout_to_its_end() {
                     .map(|&l| Difficulty::preset(l).unwrap().body(&spec))
                     .collect(),
                 levels: [a, b],
+                opponent: feint_ai::Opponent::HandMade,
             };
             let (mut x, mut y) = (make(a), make(b));
             let report = run_match(&mut game, [&mut x, &mut y], header, 240 * 600).unwrap();
@@ -216,6 +217,7 @@ fn a_keeper_bot_learns_where_its_opponent_shoots() {
         seed: 2,
         bodies: vec![body(9.0, 4.0), Difficulty::preset(3).unwrap().body(&spec)],
         levels: [0, 3],
+        opponent: feint_ai::Opponent::HandMade,
     };
     run_match(&mut game, [&mut shooter, &mut keeper], header, 240 * 900).unwrap();
     assert_eq!(
@@ -273,6 +275,7 @@ fn a_shooter_bot_records_a_dive_made_while_the_ball_flies() {
         seed: 4,
         bodies: vec![five.body(&spec), body(9.0, 4.0)],
         levels: [5, 0],
+        opponent: feint_ai::Opponent::HandMade,
     };
     run_match(&mut game, [&mut shooter, &mut keeper], header, 240 * 900).unwrap();
     let bite = shooter.profile("penalty").unwrap().bite;
@@ -331,6 +334,7 @@ fn lean_dives(memory: &mut Option<feint_ai::Profile>, seed: u64) -> (u32, u32) {
         seed,
         bodies: vec![body(9.0, 4.0), five.body(&spec)],
         levels: [0, 5],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let mut runner =
         feint_ai::Runner::start(&mut game, [&mut shooter, &mut keeper], header).unwrap();
@@ -436,6 +440,7 @@ fn the_human_model_shows_no_lean_for_a_kick_down_the_middle() {
                 Difficulty::preset(1).unwrap().body(&spec),
             ],
             levels: [0, 1],
+            opponent: feint_ai::Opponent::HandMade,
         };
         let mut runner =
             feint_ai::Runner::start(&mut game, [&mut human, &mut keeper], header).unwrap();
@@ -483,6 +488,7 @@ fn a_keeper_reads_every_kick_whatever_ticks_it_samples() {
         seed: 3,
         bodies: vec![body(9.0, 4.0), five.body(&spec)],
         levels: [0, 5],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let mut runner =
         feint_ai::Runner::start(&mut game, [&mut shooter, &mut keeper], header).unwrap();

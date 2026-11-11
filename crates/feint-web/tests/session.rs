@@ -1,5 +1,5 @@
 use airhockey::{AirHockey, HockeyPlaybook, Params};
-use feint_ai::{Bot, Controller, Difficulty, decode_record, replay_record, run_match};
+use feint_ai::{Bot, Controller, Difficulty, Opponent, decode_record, replay_record, run_match};
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 use feint_web::{Pointer, Replayer, Session, SessionError};
 
@@ -36,7 +36,7 @@ fn a_session_plays_the_same_match_as_run_match() {
         session.advance(1);
     }
     let mut game = AirHockey::new(Params::default(), 3);
-    let header = Session::header(3, 41, &game).unwrap();
+    let header = Session::header(3, 41, Opponent::HandMade, &game).unwrap();
     let mut human = Scripted(Pointer::new());
     let mut bot = Bot::new(
         Difficulty::preset(3).unwrap(),
@@ -104,7 +104,13 @@ fn the_human_mallet_reaches_the_human_maxima_and_no_more() {
         vec![params.max_body_speed as f32, params.max_body_accel as f32]
     );
     assert_eq!(header.levels, [0, 2]);
-    let direct = Session::header(2, 3, &AirHockey::new(Params::default(), 2)).unwrap();
+    let direct = Session::header(
+        2,
+        3,
+        Opponent::HandMade,
+        &AirHockey::new(Params::default(), 2),
+    )
+    .unwrap();
     assert_eq!(direct.levels, [0, 2], "seat 0 is the human");
 }
 

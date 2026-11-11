@@ -23,3 +23,6 @@ rand_chacha.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+feint-ml = { path = "../feint-ml" }

@@ -12,6 +12,7 @@ members = [
     "crates/feint-ffi",
     "crates/feint-compare",
     "crates/feint-ml",
+    "crates/feint-ml-check",
 ]
 exclude = ["crates/feint-gym"]
 

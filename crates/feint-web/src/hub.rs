@@ -2,9 +2,10 @@ use std::collections::VecDeque;
 
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
 use feint_ai::{Controller, Playbook};
+use feint_ml::trained::{TrainedError, trained_pilot};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 
-use crate::session::Pointer;
+use crate::session::{Pointer, SessionError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Column {
@@ -49,6 +50,13 @@ pub trait HubGame: GameAdapter + Sized + 'static {
     fn view(&self) -> Vec<f32>;
     fn layout(&self) -> Vec<f32>;
     fn class_point(book: &Self::Book, attacker: u8, class: u8) -> [f32; 2];
+    fn trained(
+        _level: u8,
+        _checkpoint: u64,
+        _spec: &GameSpecT,
+    ) -> Result<Box<dyn Controller<Self>>, SessionError> {
+        Err(SessionError::Unsupported)
+    }
     fn frame(&self) -> Vec<Option<f64>>;
 }
 
@@ -143,6 +151,18 @@ impl HubGame for AirHockey {
 
     fn build(level: u8) -> Self {
         AirHockey::new(Params::default(), level)
+    }
+
+    fn trained(
+        level: u8,
+        checkpoint: u64,
+        spec: &GameSpecT,
+    ) -> Result<Box<dyn Controller<Self>>, SessionError> {
+        match trained_pilot(level, checkpoint, spec) {
+            Ok(pilot) => Ok(Box::new(pilot)),
+            Err(TrainedError::Level) => Err(SessionError::Level),
+            Err(_) => Err(SessionError::Checkpoint),
+        }
     }
 
     fn book() -> Self::Book {

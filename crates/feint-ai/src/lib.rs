@@ -22,5 +22,7 @@ pub use reaction::{BadCadence, Cadence, ReactionBuffer, delay_ticks};
 pub use record::{
     MAX_RECORD_BYTES, RecordError, decode_profile, decode_record, encode_profile, encode_record,
 };
-pub use runner::{Record, RunHeader, RunReport, Runner, replay, replay_record, run_match};
+pub use runner::{
+    Opponent, Record, RunHeader, RunReport, Runner, replay, replay_record, run_match,
+};
 pub use standing::Standing;

@@ -44,6 +44,7 @@ pub fn schema(columns: &[Column]) -> Arc<Schema> {
     fields.push(Field::new("deceptive", DataType::Boolean, true));
     fields.push(Field::new("level", DataType::UInt8, false));
     fields.push(Field::new("seed", DataType::UInt64, false));
+    fields.push(Field::new("checkpoint", DataType::UInt64, false));
     Arc::new(Schema::new(fields))
 }
 
@@ -52,6 +53,7 @@ fn batch(
     columns: &[Column],
     level: u8,
     seed: u64,
+    checkpoint: u64,
     schema: &Arc<Schema>,
 ) -> Result<RecordBatch, ParquetError> {
     let mut tick = UInt64Builder::with_capacity(frames.len());
@@ -67,6 +69,7 @@ fn batch(
     let mut deceptive = BooleanBuilder::with_capacity(frames.len());
     let mut levels = UInt8Builder::with_capacity(frames.len());
     let mut seeds = UInt64Builder::with_capacity(frames.len());
+    let mut checkpoints = UInt64Builder::with_capacity(frames.len());
     for f in frames {
         if f.values.len() != width {
             return Err(ParquetError::General(format!(
@@ -94,6 +97,7 @@ fn batch(
         deceptive.append_option(f.intent.map(|(_, d)| d));
         levels.append_value(level);
         seeds.append_value(seed);
+        checkpoints.append_value(checkpoint);
     }
     let mut columns: Vec<ArrayRef> = vec![Arc::new(tick.finish())];
     columns.extend(values.iter_mut().map(|b| Arc::new(b.finish()) as ArrayRef));
@@ -102,6 +106,7 @@ fn batch(
     columns.push(Arc::new(deceptive.finish()));
     columns.push(Arc::new(levels.finish()));
     columns.push(Arc::new(seeds.finish()));
+    columns.push(Arc::new(checkpoints.finish()));
     RecordBatch::try_new(schema.clone(), columns).map_err(|e| ParquetError::General(e.to_string()))
 }
 
@@ -110,6 +115,7 @@ pub fn write<W: Write + Send>(
     columns: &[Column],
     level: u8,
     seed: u64,
+    checkpoint: u64,
     out: W,
 ) -> Result<(), ParquetError> {
     let schema = schema(columns);
@@ -118,7 +124,7 @@ pub fn write<W: Write + Send>(
         .build();
     let mut writer = ArrowWriter::try_new(out, schema.clone(), Some(props))?;
     for chunk in frames.chunks(BATCH) {
-        writer.write(&batch(chunk, columns, level, seed, &schema)?)?;
+        writer.write(&batch(chunk, columns, level, seed, checkpoint, &schema)?)?;
     }
     writer.close()?;
     Ok(())

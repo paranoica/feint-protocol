@@ -93,6 +93,7 @@ fn record_with(p: &Params, seed: u64, sides: [Side; 2]) -> (RunReport, Vec<Frame
         seed,
         bodies: sides.iter().map(|&s| body(s, &game)).collect(),
         levels,
+        opponent: feint_ai::Opponent::HandMade,
     };
     let mut first = controller(sides[0], &game, p);
     let mut second = controller(sides[1], &game, p);
@@ -289,6 +290,7 @@ fn fakes_that_score_are_recorded_as_won() {
         seed: 7,
         bodies: vec![body(Side::Level(5), &game), body(Side::Idle, &game)],
         levels: [5, 0],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let report = run_match(&mut game, [&mut faker, &mut idle], header, 240 * 240).unwrap();
     let profile = faker.profile("airhockey").expect("level 5 keeps a model");

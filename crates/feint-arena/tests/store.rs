@@ -16,11 +16,11 @@ fn the_database_is_versioned_and_survives_a_restart() {
     let root = std::env::temp_dir().join(format!("feint-store-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let mut store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 3);
+    assert_eq!(store.schema_version().unwrap(), 4);
     store.issue_ticket(100, "t1", 42).unwrap();
     drop(store);
     let store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 3);
+    assert_eq!(store.schema_version().unwrap(), 4);
     assert_eq!(
         store.ticket_seed(200, "t1").unwrap(),
         42,
@@ -50,7 +50,7 @@ fn a_version_one_database_is_migrated_in_place() {
     .unwrap();
     drop(conn);
     let mut store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 3);
+    assert_eq!(store.schema_version().unwrap(), 4);
     for _ in 0..3 {
         assert_eq!(store.try_ticket(10, "old").unwrap(), 5);
     }
@@ -80,7 +80,7 @@ fn a_version_two_database_keeps_its_rows_as_hockey() {
     .unwrap();
     drop(conn);
     let store = Store::open(&root).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 3);
+    assert_eq!(store.schema_version().unwrap(), 4);
     let game: String = store
         .connection()
         .query_row("SELECT game FROM matches", [], |r| r.get(0))
@@ -94,7 +94,7 @@ fn a_version_two_database_keeps_its_rows_as_hockey() {
     drop(store);
     assert_eq!(
         Store::open(&root).unwrap().schema_version().unwrap(),
-        3,
+        4,
         "a second open migrates nothing"
     );
 }
@@ -130,4 +130,109 @@ fn results_count_a_draw_as_neither_and_skip_unfinished_matches() {
         }]
     );
     assert!(store.results("carl").unwrap().is_empty());
+}
+
+#[test]
+fn a_version_three_database_gains_an_empty_checkpoint_for_every_match() {
+    let root = std::env::temp_dir().join(format!("feint-store-v3-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("matches")).unwrap();
+    let conn = rusqlite::Connection::open(root.join("feint.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE players (id INTEGER PRIMARY KEY, nick TEXT NOT NULL UNIQUE);
+         CREATE TABLE tickets (token TEXT PRIMARY KEY, seed INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0);
+         CREATE TABLE matches (id INTEGER PRIMARY KEY, player_id INTEGER NOT NULL, level INTEGER NOT NULL, seed INTEGER NOT NULL, score_human INTEGER NOT NULL, score_bot INTEGER NOT NULL, ticks INTEGER NOT NULL, finished INTEGER NOT NULL, digest TEXT NOT NULL, profile_used INTEGER, record_path TEXT, parquet_path TEXT, created INTEGER NOT NULL, game TEXT NOT NULL DEFAULT 'airhockey');
+         CREATE TABLE profiles (player_id INTEGER NOT NULL, version INTEGER NOT NULL, parent INTEGER, blob BLOB NOT NULL, game TEXT NOT NULL DEFAULT 'airhockey', PRIMARY KEY (player_id, version));
+         INSERT INTO players (id, nick) VALUES (1, 'ann');
+         INSERT INTO matches (player_id, level, seed, score_human, score_bot, ticks, finished, digest, created) VALUES (1, 5, 3, 7, 2, 900, 1, 'ab', 10);
+         PRAGMA user_version = 3;",
+    )
+    .unwrap();
+    drop(conn);
+    let store = Store::open(&root).unwrap();
+    assert_eq!(store.schema_version().unwrap(), 4);
+    let checkpoint: String = store
+        .connection()
+        .query_row("SELECT checkpoint FROM matches", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(checkpoint, "");
+    assert_eq!(store.results("ann").unwrap().len(), 1);
+}
+
+#[test]
+fn results_count_hand_made_matches_only() {
+    let root = std::env::temp_dir().join(format!("feint-store-trained-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = Store::open(&root).unwrap();
+    store
+        .connection()
+        .execute_batch(
+            "INSERT INTO players (id, nick) VALUES (1, 'ann');
+             INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks, finished, digest, created, checkpoint) VALUES
+               (1, 'airhockey', 5, 1, 7, 2, 10, 1, 'a', 1, ''),
+               (1, 'airhockey', 5, 2, 1, 7, 10, 1, 'b', 1, 'daf7bada17a01ab0'),
+               (1, 'airhockey', 5, 3, 0, 7, 10, 1, 'c', 1, 'daf7bada17a01ab0');",
+        )
+        .unwrap();
+    assert_eq!(
+        store.results("ann").unwrap(),
+        vec![feint_arena::ResultRow {
+            game: "airhockey".into(),
+            level: 5,
+            matches: 1,
+            won: 1,
+            lost: 0,
+            mine: 7,
+            theirs: 2,
+        }]
+    );
+}
+
+#[test]
+fn a_trained_match_is_stored_with_its_checkpoint_and_a_hand_made_one_without() {
+    let root = std::env::temp_dir().join(format!("feint-store-ckpt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut store = Store::open(&root).unwrap();
+    let id = feint_ml::registry::CHECKPOINTS[0].id;
+    let mut trained = feint_web::Session::trained(5, 31, id).unwrap();
+    let mut hand = feint_web::Session::new(5, 32).unwrap();
+    for s in [&mut trained, &mut hand] {
+        for _ in 0..150 {
+            let p = s.positions();
+            s.set_pointer(p[0], p[1]);
+            s.advance(4);
+        }
+    }
+    for (token, seed, session) in [("t1", 31, &trained), ("t2", 32, &hand)] {
+        store.issue_ticket(100, token, seed).unwrap();
+        let bytes = session.record();
+        let verified = feint_arena::verify(&bytes, None).unwrap();
+        let upload = feint_arena::Upload {
+            now: 200,
+            nick: "ann",
+            token,
+            used: None,
+            bytes: &bytes,
+            verified: &verified,
+            profile: None,
+        };
+        store.save(&upload).unwrap();
+    }
+    let stored: Vec<(i64, String)> = store
+        .connection()
+        .prepare("SELECT seed, checkpoint FROM matches ORDER BY seed")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        stored,
+        vec![(31, format!("{id:016x}")), (32, String::new())]
+    );
+    let profiles: i64 = store
+        .connection()
+        .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(profiles, 0);
 }

@@ -226,6 +226,7 @@ fn hockey_bot_match_replays_from_its_record() {
         seed: 11,
         bodies: bodies_for(&game, [2, 1]),
         levels: [2, 1],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let (mut a, mut b) = (bot(2, &game, 0, 0), bot(1, &game, 1, 0));
     let report = run_match(&mut game, [&mut a, &mut b], header, 240 * 20).unwrap();

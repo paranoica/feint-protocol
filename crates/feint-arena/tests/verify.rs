@@ -295,3 +295,93 @@ fn duel_records_verify_with_their_own_columns() {
     });
     assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
 }
+
+#[test]
+fn hand_made_records_still_verify() {
+    let bytes = include_bytes!("fixtures/hand-made-v3-scripted.rec");
+    let v = verify(bytes, None).unwrap();
+    assert_eq!(v.digest, 0x3ead_b537_80e6_dc0d);
+    assert_eq!(v.record.ticks, 3_000);
+    assert!(!v.finished && v.profile.is_none());
+}
+
+fn nonzero(id: u64) -> std::num::NonZeroU64 {
+    std::num::NonZeroU64::new(id).unwrap()
+}
+
+fn trained_session(seed: u64, ticks: u64) -> Session {
+    let mut s = Session::trained(5, seed, feint_ml::registry::CHECKPOINTS[0].id).unwrap();
+    for _ in 0..ticks {
+        let (x, y) = script(s.tick());
+        s.set_pointer(x, y);
+        s.advance(1);
+    }
+    s
+}
+
+fn hand_made_profile() -> feint_ai::Profile {
+    let s = scripted(5, 4, 2_000);
+    s.profile().expect("level 5 keeps a profile")
+}
+
+#[test]
+fn verify_rebuilds_the_trained_opponent() {
+    let s = trained_session(17, 3_000);
+    let v = verify(&s.record(), None).unwrap();
+    assert_eq!(v.digest, s.digest());
+    assert_eq!(v.frames.len() as u64, 3_000);
+    assert_eq!(
+        v.record.header.opponent,
+        feint_ai::Opponent::Trained(nonzero(feint_ml::registry::CHECKPOINTS[0].id))
+    );
+    assert!(v.frames.iter().all(|f| f.intent.is_none()));
+}
+
+#[test]
+fn a_trained_match_yields_no_profile_where_a_hand_made_one_does() {
+    let hand = scripted(5, 4, 2_000);
+    assert!(verify(&hand.record(), None).unwrap().profile.is_some());
+    let trained = trained_session(4, 2_000);
+    assert!(verify(&trained.record(), None).unwrap().profile.is_none());
+}
+
+#[test]
+fn unknown_checkpoint_is_refused() {
+    let s = trained_session(17, 600);
+    let id = feint_ml::registry::CHECKPOINTS[0].id;
+    let forged = forge(&s.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::Trained(nonzero(id ^ 1));
+    });
+    assert_eq!(verify(&forged, None).err(), Some(VerifyError::Checkpoint));
+}
+
+#[test]
+fn trained_penalty_record_is_refused() {
+    let p = feint_web::Play::<Penalty>::new(3, 5).unwrap();
+    let mut p = p;
+    p.advance(600);
+    let id = feint_ml::registry::CHECKPOINTS[0].id;
+    let forged = forge(&p.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::Trained(nonzero(id));
+    });
+    assert_eq!(verify(&forged, None).err(), Some(VerifyError::Game));
+}
+
+#[test]
+fn trained_with_a_profile_is_refused() {
+    let s = trained_session(17, 600);
+    let profile = hand_made_profile();
+    assert_eq!(
+        verify(&s.record(), Some(&profile)).err(),
+        Some(VerifyError::Profile)
+    );
+}
+
+#[test]
+fn a_trained_record_relabelled_as_hand_made_is_a_mismatch() {
+    let s = trained_session(17, 1_200);
+    let forged = forge(&s.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::HandMade;
+    });
+    assert_eq!(verify(&forged, None).err(), Some(VerifyError::Mismatch));
+}

@@ -1,8 +1,10 @@
 mod line_game;
 
+use std::num::NonZeroU64;
+
 use feint_ai::{
-    Bot, Difficulty, Record, RecordError, RunHeader, decode_record, encode_record, replay_record,
-    run_match,
+    Bot, Difficulty, Opponent, Record, RecordError, RunHeader, decode_record, encode_record,
+    replay_record, run_match,
 };
 use feint_protocol::{BodyParamsT, GameAdapter, MessageT, encode};
 use line_game::{Line, LinePlaybook};
@@ -16,6 +18,7 @@ fn header() -> RunHeader {
         seed: 21,
         bodies: vec![body.clone(), body],
         levels: [0, 4],
+        opponent: feint_ai::Opponent::HandMade,
     }
 }
 
@@ -179,4 +182,76 @@ fn a_profile_round_trips_exactly_through_bytes() {
         "a record is not a profile"
     );
     assert!(feint_ai::decode_profile(&[1, 2, 3]).is_err());
+}
+
+fn header_frames(bot: u8, checkpoint: u64) -> Vec<u8> {
+    let (record, _) = played();
+    let bytes = encode_record(&record);
+    let mut header = feint_protocol::MatchHeaderT::default();
+    header.game_id = Some("line".into());
+    header.game_version = 1;
+    header.seed = 21;
+    header.level = 4;
+    header.bodies = Some(record.header.bodies.clone());
+    header.bot = feint_protocol::BotKind(bot);
+    header.checkpoint = checkpoint;
+    let body = encode(&MessageT::MatchHeader(Box::new(header)));
+    let first = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+    let mut out = (body.len() as u32).to_le_bytes().to_vec();
+    out.extend_from_slice(&body);
+    out.extend_from_slice(&bytes[4 + first..]);
+    out
+}
+
+#[test]
+fn a_hand_made_record_says_so() {
+    let (record, _) = played();
+    assert_eq!(record.header.opponent, Opponent::HandMade);
+    let back = decode_record(&encode_record(&record)).unwrap();
+    assert_eq!(back.header.opponent, Opponent::HandMade);
+}
+
+#[test]
+fn trained_opponent_round_trips_in_a_record() {
+    let (mut record, _) = played();
+    record.header.opponent = Opponent::Trained(NonZeroU64::new(0xdaf7_bada_17a0_1ab0).unwrap());
+    let back = decode_record(&encode_record(&record)).unwrap();
+    assert_eq!(back, record);
+    let back = decode_record(&header_frames(1, 77)).unwrap();
+    assert_eq!(
+        back.header.opponent,
+        Opponent::Trained(NonZeroU64::new(77).unwrap())
+    );
+}
+
+#[test]
+fn trained_with_checkpoint_zero_is_refused() {
+    assert_eq!(
+        decode_record(&header_frames(1, 0)),
+        Err(RecordError::Opponent)
+    );
+}
+
+#[test]
+fn hand_made_with_a_checkpoint_is_refused() {
+    assert_eq!(
+        decode_record(&header_frames(0, 5)),
+        Err(RecordError::Opponent)
+    );
+}
+
+#[test]
+fn unknown_bot_kind_is_refused() {
+    for kind in [2, 7, 255] {
+        assert_eq!(
+            decode_record(&header_frames(kind, 0)),
+            Err(RecordError::Opponent),
+            "{kind}"
+        );
+        assert_eq!(
+            decode_record(&header_frames(kind, 9)),
+            Err(RecordError::Opponent),
+            "{kind}"
+        );
+    }
 }

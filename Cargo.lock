@@ -434,6 +434,7 @@ dependencies = [
  "axum",
  "duel",
  "feint-ai",
+ "feint-ml",
  "feint-protocol",
  "feint-web",
  "parquet",
@@ -475,6 +476,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "feint-ml-check"
+version = "0.1.0"
+dependencies = [
+ "airhockey",
+ "feint-ai",
+ "feint-ml",
+ "feint-protocol",
+]
+
+[[package]]
 name = "feint-protocol"
 version = "0.1.0"
 dependencies = [
@@ -489,6 +500,7 @@ dependencies = [
  "airhockey",
  "duel",
  "feint-ai",
+ "feint-ml",
  "feint-protocol",
  "penalty",
  "wasm-bindgen",

@@ -2,12 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use feint_ai::Opponent;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::parquet_out;
 use crate::verify::Verified;
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 pub const MAX_ATTEMPTS: i64 = 3;
 pub const TICKET_SECONDS: u64 = 45 * 60;
 pub const MAX_OPEN_TICKETS: i64 = 512;
@@ -144,6 +145,14 @@ impl Store {
                  COMMIT;",
             )?;
         }
+        if version < 4 {
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE matches ADD COLUMN checkpoint TEXT NOT NULL DEFAULT '';
+                 PRAGMA user_version = 4;
+                 COMMIT;",
+            )?;
+        }
         Ok(Self {
             conn,
             root: root.to_path_buf(),
@@ -236,7 +245,7 @@ impl Store {
                     SUM(m.score_human > m.score_bot), SUM(m.score_human < m.score_bot),
                     SUM(m.score_human), SUM(m.score_bot)
              FROM matches m JOIN players p ON p.id = m.player_id
-             WHERE p.nick = ?1 AND m.finished = 1
+             WHERE p.nick = ?1 AND m.finished = 1 AND m.checkpoint = ''
              GROUP BY m.game, m.level ORDER BY m.game, m.level",
         )?;
         let count = |v: i64| u32::try_from(v).unwrap_or(u32::MAX);
@@ -327,8 +336,8 @@ impl Store {
         let score = |i: usize| verified.score.get(i).copied().unwrap_or(0);
         tx.execute(
             "INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks,
-                 finished, digest, profile_used, created)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 finished, digest, profile_used, created, checkpoint)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 player,
                 verified.game,
@@ -341,6 +350,10 @@ impl Store {
                 format!("{:016x}", verified.digest),
                 used,
                 to_i64(now),
+                match record.header.opponent {
+                    Opponent::HandMade => String::new(),
+                    Opponent::Trained(id) => format!("{:016x}", id.get()),
+                },
             ],
         )?;
         let id = tx.last_insert_rowid();
@@ -406,6 +419,10 @@ fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), S
         verified.columns,
         header.levels[1],
         header.seed,
+        match header.opponent {
+            Opponent::HandMade => 0,
+            Opponent::Trained(id) => id.get(),
+        },
         &file,
     )
     .map_err(|e| StoreError::Io(e.to_string()))?;

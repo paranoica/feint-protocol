@@ -1,11 +1,11 @@
 use airhockey::AirHockey;
 use duel::QuickDraw;
 use feint_ai::{
-    Bot, Controller, Difficulty, Memory, Profile, Record, RecordError, Runner, decode_record,
-    encode_record,
+    Bot, Controller, Difficulty, Memory, Opponent, Profile, Record, RecordError, Runner,
+    decode_record, encode_record,
 };
 use feint_protocol::ActionT;
-use feint_web::{Column, HubGame, Play, Replayer};
+use feint_web::{Column, HubGame, Play, Replayer, SessionError};
 use penalty::Penalty;
 
 pub const MAX_TICKS: u64 = 240 * 60 * 30;
@@ -21,6 +21,21 @@ pub enum VerifyError {
     Twice,
     Profile,
     Mismatch,
+    Checkpoint,
+}
+
+enum Seat<G: HubGame> {
+    HandMade(Box<Bot<G, G::Book>>),
+    Trained(Box<dyn Controller<G>>),
+}
+
+impl<G: HubGame> Seat<G> {
+    fn controller(&mut self) -> &mut dyn Controller<G> {
+        match self {
+            Self::HandMade(bot) => bot.as_mut(),
+            Self::Trained(pilot) => pilot.as_mut(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,30 +102,52 @@ fn verify_game<G: HubGame>(
         return Err(VerifyError::Ticks);
     }
     let mut game = G::build(level);
-    let header = Play::<G>::header(level, record.header.seed, &game).ok_or(VerifyError::Level)?;
+    let header = Play::<G>::header(level, record.header.seed, record.header.opponent, &game)
+        .ok_or(VerifyError::Level)?;
     if header != record.header {
         return Err(VerifyError::Bodies);
     }
     let mut human = Replayer::new(human_actions(&record)?);
-    let mut bot = Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| VerifyError::Level)?;
-    if let Some(profile) = profile {
-        bot.load_profile(profile, G::ID)
-            .map_err(|_| VerifyError::Profile)?;
-    }
-    let mut runner = Runner::start(&mut game, [&mut human, &mut bot], header)
+    let mut bot = match record.header.opponent {
+        Opponent::HandMade => {
+            let mut bot =
+                Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| VerifyError::Level)?;
+            if let Some(profile) = profile {
+                bot.load_profile(profile, G::ID)
+                    .map_err(|_| VerifyError::Profile)?;
+            }
+            Seat::HandMade(Box::new(bot))
+        }
+        Opponent::Trained(checkpoint) => {
+            let pilot = G::trained(level, checkpoint.get(), &game.spec()).map_err(|e| match e {
+                SessionError::Unsupported => VerifyError::Game,
+                SessionError::Level => VerifyError::Level,
+                _ => VerifyError::Checkpoint,
+            })?;
+            if profile.is_some() {
+                return Err(VerifyError::Profile);
+            }
+            Seat::Trained(pilot)
+        }
+    };
+    let trained = matches!(bot, Seat::Trained(_));
+    let mut runner = Runner::start(&mut game, [&mut human, bot.controller()], header)
         .map_err(|_| VerifyError::Bodies)?;
     let mut frames = Vec::with_capacity(usize::try_from(record.ticks.min(1 << 14)).unwrap_or(0));
     let mut intent = None;
     let mut seen = 0;
     while runner.ticks() < record.ticks
-        && runner.step(&mut game, [&mut human as &mut dyn Controller<G>, &mut bot])
+        && runner.step(
+            &mut game,
+            [&mut human as &mut dyn Controller<G>, bot.controller()],
+        )
     {
         let fresh = &runner.actions()[seen..];
         if record.actions.get(seen..seen + fresh.len()) != Some(fresh) {
             return Err(VerifyError::Mismatch);
         }
         for action in fresh {
-            if action.player == 1 {
+            if action.player == 1 && !trained {
                 intent = Some((action.intent, action.deceptive));
             }
         }
@@ -126,7 +163,7 @@ fn verify_game<G: HubGame>(
             intent,
         });
     }
-    let report = runner.finish(&mut game, [&mut human, &mut bot]);
+    let report = runner.finish(&mut game, [&mut human, bot.controller()]);
     if encode_record(&report.record()) != bytes {
         return Err(VerifyError::Mismatch);
     }
@@ -138,9 +175,12 @@ fn verify_game<G: HubGame>(
         finished: report.finished,
         score: report.score,
         digest: report.digest,
-        profile: bot
-            .profile(G::ID)
-            .filter(|_| difficulty_keeps_profiles(level)),
+        profile: match &bot {
+            Seat::HandMade(bot) => bot
+                .profile(G::ID)
+                .filter(|_| difficulty_keeps_profiles(level)),
+            Seat::Trained(_) => None,
+        },
     })
 }
 

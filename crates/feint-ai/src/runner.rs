@@ -1,8 +1,17 @@
+use std::num::NonZeroU64;
+
 use feint_protocol::{
     ActionT, AdapterError, BodyParamsT, EventT, GameAdapter, ObservationT, PlayerId,
 };
 
 use crate::playbook::Controller;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Opponent {
+    #[default]
+    HandMade,
+    Trained(NonZeroU64),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunHeader {
@@ -11,6 +20,7 @@ pub struct RunHeader {
     pub seed: u64,
     pub bodies: Vec<BodyParamsT>,
     pub levels: [u8; 2],
+    pub opponent: Opponent,
 }
 
 #[derive(Clone, Debug, PartialEq)]
