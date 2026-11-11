@@ -17,11 +17,19 @@ fn seat(name: &str) -> PyResult<Seat> {
         "human" => Ok(Seat::Human),
         "reader" => Ok(Seat::Reader { anticipates: false }),
         "reader:anticipating" => Ok(Seat::Reader { anticipates: true }),
-        other => other
-            .strip_prefix("level:")
-            .and_then(|level| level.parse().ok())
-            .map(Seat::Level)
-            .ok_or_else(|| PyValueError::new_err(format!("unknown seat {other:?}"))),
+        other => {
+            let level = other
+                .strip_prefix("level:")
+                .and_then(|level| level.parse().ok())
+                .map(Seat::Level);
+            let frozen = other
+                .strip_prefix("frozen:")
+                .and_then(|index| index.parse().ok())
+                .map(Seat::Frozen);
+            level
+                .or(frozen)
+                .ok_or_else(|| PyValueError::new_err(format!("unknown seat {other:?}")))
+        }
     }
 }
 
@@ -34,6 +42,7 @@ fn name(seat: Seat) -> String {
         Seat::Reader { anticipates: false } => "reader".into(),
         Seat::Reader { anticipates: true } => "reader:anticipating".into(),
         Seat::Level(level) => format!("level:{level}"),
+        Seat::Frozen(index) => format!("frozen:{index}"),
     }
 }
 
@@ -97,7 +106,8 @@ fn arrays<'py>(py: Python<'py>, out: &Outputs, envs: usize) -> PyResult<Bound<'p
 #[pymethods]
 impl PyHockeyBatch {
     #[new]
-    #[pyo3(signature = (seats, seed, cap_ticks = 240 * 600, threads = 1, reaction_ms = (150, 400), physique = (0.4, 1.0), goals_to_win = None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (seats, seed, cap_ticks = 240 * 600, threads = 1, reaction_ms = (150, 400), physique = (0.4, 1.0), goals_to_win = None, frozen = Vec::new()))]
     fn new(
         seats: Vec<(String, String)>,
         seed: u64,
@@ -106,6 +116,7 @@ impl PyHockeyBatch {
         reaction_ms: (u32, u32),
         physique: (f64, f64),
         goals_to_win: Option<u32>,
+        frozen: Vec<Vec<u8>>,
     ) -> PyResult<Self> {
         let seats = seats
             .iter()
@@ -116,6 +127,7 @@ impl PyHockeyBatch {
         spec.threads = threads;
         spec.reaction_ms = [reaction_ms.0, reaction_ms.1];
         spec.physique = [physique.0, physique.1];
+        spec.frozen = frozen;
         if let Some(goals) = goals_to_win {
             spec.params.goals_to_win = goals;
         }

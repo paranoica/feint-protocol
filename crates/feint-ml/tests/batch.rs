@@ -2,6 +2,8 @@ use airhockey::human::{HUMAN_NOISE, Human, Reader};
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, RunHeader, run_match};
 use feint_ml::batch::{FEATURES, OUTPUTS};
+use feint_ml::mlp::Mlp;
+use feint_ml::registry::CHECKPOINTS;
 use feint_ml::{BatchError, BatchSpec, Episode, HockeyBatch, Outputs, Pilot, Policy, Seat};
 use feint_protocol::GameAdapter;
 
@@ -127,6 +129,16 @@ fn replayed(seats: [Seat; 2], episode: Episode, ticks: u64) -> u64 {
             }
             Seat::Human => Box::new(Human::new(params.clone(), HUMAN_NOISE)),
             Seat::Reader { anticipates } => Box::new(Reader::new(params.clone(), anticipates)),
+            Seat::Frozen(_) => Box::new(
+                Pilot::new(
+                    HockeyPlaybook::new(params.clone()),
+                    Mlp::from_safetensors(CHECKPOINTS[0].bytes).expect("the checkpoint"),
+                    &spec,
+                    episode.reaction_ms[index],
+                    episode.physique[index],
+                )
+                .expect("a pilot"),
+            ),
         });
     }
     let header = RunHeader {
@@ -438,4 +450,84 @@ fn feature_scales_are_the_spec_maxima_and_one_for_reaction_and_body() {
             1.0
         ]
     );
+}
+
+fn frozen_spec(seats: Vec<[Seat; 2]>, seed: u64) -> BatchSpec {
+    let mut spec = BatchSpec::new(seats, seed);
+    spec.frozen = vec![CHECKPOINTS[0].bytes.to_vec()];
+    spec
+}
+
+#[test]
+fn a_frozen_seat_plays_what_run_match_plays_with_the_same_pilot() {
+    for seats in [
+        [Seat::Learner, Seat::Frozen(0)],
+        [Seat::Frozen(0), Seat::Learner],
+    ] {
+        let mut spec = frozen_spec(vec![seats], 13);
+        spec.cap_ticks = 1_200;
+        let mut batch = HockeyBatch::new(spec).expect("a valid batch");
+        let mut out = batch.reset().expect("resets").clone();
+        let first = batch.episode(0).expect("env 0");
+        while !out.truncated[0] {
+            out = batch.step(&actions(&out, 1)).expect("steps").clone();
+        }
+        for _ in 0..150 {
+            out = batch.step(&actions(&out, 1)).expect("steps").clone();
+        }
+        let second = batch.episode(0).expect("env 0");
+        assert_ne!(first.seed, second.seed);
+        let ticks = batch.ticks(0).expect("env 0");
+        assert!(ticks > 500, "{ticks}");
+        assert_eq!(
+            batch.digest(0),
+            Some(replayed(seats, second, ticks)),
+            "{seats:?}"
+        );
+    }
+}
+
+#[test]
+fn a_frozen_seat_takes_the_episodes_reaction_and_body() {
+    let spec = frozen_spec(vec![[Seat::Learner, Seat::Frozen(0)]; 64], 5);
+    let (reaction, physique) = (spec.reaction_ms, spec.physique);
+    let mut batch = HockeyBatch::new(spec).expect("a valid batch");
+    batch.reset().expect("resets");
+    let mut seen = Vec::new();
+    for env in 0..64 {
+        let e = batch.episode(env).unwrap();
+        assert!(
+            (reaction[0]..=reaction[1]).contains(&e.reaction_ms[1]),
+            "{e:?}"
+        );
+        assert!(
+            e.physique[1] >= physique[0] && e.physique[1] <= physique[1],
+            "{e:?}"
+        );
+        seen.push(e.reaction_ms[1]);
+    }
+    seen.sort_unstable();
+    seen.dedup();
+    assert!(seen.len() > 20, "{} distinct reactions", seen.len());
+}
+
+#[test]
+fn bad_frozen_bytes_or_index_are_refused() {
+    let spec = frozen_spec(vec![[Seat::Learner, Seat::Frozen(1)]], 1);
+    assert_eq!(HockeyBatch::new(spec).err(), Some(BatchError::Frozen(1)));
+    let mut spec = BatchSpec::new(vec![[Seat::Learner, Seat::Frozen(0)]], 1);
+    assert_eq!(
+        HockeyBatch::new(spec.clone()).err(),
+        Some(BatchError::Frozen(0))
+    );
+    spec.frozen = vec![b"not a checkpoint".to_vec()];
+    assert_eq!(
+        HockeyBatch::new(spec.clone()).err(),
+        Some(BatchError::Frozen(0))
+    );
+    spec.frozen = vec![CHECKPOINTS[0].bytes.to_vec(), b"junk".to_vec()];
+    assert_eq!(HockeyBatch::new(spec).err(), Some(BatchError::Frozen(1)));
+    let mut spec = BatchSpec::new(vec![[Seat::Frozen(0), Seat::Frozen(0)]], 1);
+    spec.frozen = vec![CHECKPOINTS[0].bytes.to_vec()];
+    assert_eq!(HockeyBatch::new(spec).err(), Some(BatchError::NoLearner(0)));
 }

@@ -55,6 +55,10 @@
       "run": "cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
       "heavy": true
     },
+    "s2-eval": {
+      "run": "FEINT_CHECKPOINT={args} cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
+      "heavy": true
+    },
     "compare": {
       "run": "cargo run --release --locked -q -p feint-compare -- web/public/compare.json 40",
       "heavy": true
@@ -97,6 +101,10 @@
     },
     "gym-throughput": {
       "run": "cd python && uv run python -m feint_train.throughput --threads 6 8",
+      "heavy": true
+    },
+    "train-night": {
+      "run": "cd python && uv run python -m feint_train.train --logdir runs/night --league --hours 6.5 --init runs/pilot-l35-g999/checkpoint.pt --gamma 0.999 --lr 1e-4 --shaping 0 --eval-opponents level:5 --eval-every 30 --eval-matches 100 --resume auto && uv run python -m feint_train.select --logdir runs/night",
       "heavy": true
     }
   },

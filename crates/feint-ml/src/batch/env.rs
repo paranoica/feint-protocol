@@ -5,6 +5,7 @@ use feint_protocol::{ChaCha8Rng, EventKind, GameAdapter, ObservationT, PlayerId}
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use super::{Episode, FEATURES, Fed, OUTPUTS, SEED_FLOOR, Seat};
+use crate::mlp::Mlp;
 use crate::pilot::Pilot;
 
 type Learner = Pilot<AirHockey, HockeyPlaybook, Fed>;
@@ -56,6 +57,7 @@ fn other(seat: Seat, params: &Params) -> Result<Box<dyn Controller<AirHockey> + 
         }
         Seat::Human => Ok(Box::new(Human::new(params.clone(), HUMAN_NOISE))),
         Seat::Reader { anticipates } => Ok(Box::new(Reader::new(params.clone(), anticipates))),
+        Seat::Frozen(index) => Err(format!("frozen checkpoint {index} needs a pilot")),
     }
 }
 
@@ -63,6 +65,7 @@ pub(super) struct Ranges {
     pub(super) reaction_ms: [u32; 2],
     pub(super) physique: [f64; 2],
     pub(super) cap: u64,
+    pub(super) frozen: Vec<Mlp>,
 }
 
 struct Dealt {
@@ -89,7 +92,7 @@ fn deal(
     let mut players = Vec::with_capacity(2);
     for (index, seat) in seats.into_iter().enumerate() {
         let (reaction, strength) = match seat {
-            Seat::Learner => {
+            Seat::Learner | Seat::Frozen(_) => {
                 let [low, high] = ranges.reaction_ms;
                 let span = f64::from(high - low) + 1.0;
                 let reaction = (low + (unit(rng) * span) as u32).min(high);
@@ -114,6 +117,22 @@ fn deal(
             )
             .map(|pilot| Player::Learner(Box::new(pilot)))
             .map_err(|e| format!("{e:?}"))?,
+            Seat::Frozen(index) => {
+                let mlp = ranges
+                    .frozen
+                    .get(usize::from(index))
+                    .cloned()
+                    .ok_or_else(|| format!("frozen checkpoint {index}"))?;
+                Pilot::new(
+                    HockeyPlaybook::new(params.clone()),
+                    mlp,
+                    &spec,
+                    reaction,
+                    strength,
+                )
+                .map(|pilot| Player::Other(Box::new(pilot)))
+                .map_err(|e| format!("{e:?}"))?
+            }
             seat => Player::Other(other(seat, params)?),
         });
     }

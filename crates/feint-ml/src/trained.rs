@@ -21,9 +21,18 @@ pub fn trained_pilot(
     checkpoint: u64,
     spec: &GameSpecT,
 ) -> Result<TrainedPilot, TrainedError> {
-    let difficulty = Difficulty::preset(level).ok_or(TrainedError::Level)?;
+    Difficulty::preset(level).ok_or(TrainedError::Level)?;
     let file = registry::lookup(checkpoint).ok_or(TrainedError::Checkpoint)?;
     let mlp = Mlp::from_safetensors(file.bytes).map_err(TrainedError::Model)?;
+    trained_pilot_from(level, mlp, spec)
+}
+
+pub fn trained_pilot_from(
+    level: u8,
+    mlp: Mlp,
+    spec: &GameSpecT,
+) -> Result<TrainedPilot, TrainedError> {
+    let difficulty = Difficulty::preset(level).ok_or(TrainedError::Level)?;
     Pilot::new(
         HockeyPlaybook::new(Params::default()),
         mlp,
