@@ -5,7 +5,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 cargo build -q --locked --release -p airhockey-check --lib --target wasm32-unknown-unknown
-cargo build -q --locked -p feint-ai -p airhockey --target wasm32-unknown-unknown
+cargo build -q --locked -p feint-ai -p airhockey -p feint-ml --target wasm32-unknown-unknown
 debug="$(cargo run -q --locked -p airhockey-check)"
 release="$(cargo run -q --locked --release -p airhockey-check)"
 wasm="$(node crates/games/airhockey-check/check.mjs \
@@ -16,6 +16,20 @@ echo "native release: $release"
 echo "wasm32:         $wasm"
 if [[ "$debug" != "$release" || "$debug" != "$wasm" ]]; then
   echo "physics is not deterministic across builds" >&2
+  exit 1
+fi
+
+cargo build -q --locked --release -p feint-ml-check --lib --target wasm32-unknown-unknown
+ml_debug="$(cargo run -q --locked -p feint-ml-check)"
+ml_release="$(cargo run -q --locked --release -p feint-ml-check)"
+ml_wasm="$(node crates/feint-ml-check/check.mjs \
+  target/wasm32-unknown-unknown/release/feint_ml_check.wasm)"
+
+echo "trained native debug:   $ml_debug"
+echo "trained native release: $ml_release"
+echo "trained wasm32:         $ml_wasm"
+if [[ "$ml_debug" != "$ml_release" || "$ml_debug" != "$ml_wasm" ]]; then
+  echo "the trained policy is not deterministic across builds" >&2
   exit 1
 fi
 

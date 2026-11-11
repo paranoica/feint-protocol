@@ -1,0 +1,20 @@
+[package]
+name = "feint-ml-check"
+description = "Runs the embedded trained policy over the fixtures and through one match and returns digests, natively and as wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+airhockey = { path = "../games/airhockey" }
+feint-ai = { path = "../feint-ai" }
+feint-ml = { path = "../feint-ml" }
+feint-protocol = { path = "../feint-protocol" }
+
+[lints]
+workspace = true
