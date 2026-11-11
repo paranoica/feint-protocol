@@ -174,6 +174,7 @@ impl<G: HubGame> Play<G> {
             seed,
             bodies: vec![left_body, right_body],
             levels: [left, right],
+            opponent: feint_ai::Opponent::HandMade,
         };
         let runner = Runner::start(&mut game, [&mut left_bot, &mut bot], header)
             .map_err(|_| SessionError::Level)?;
@@ -215,6 +216,7 @@ impl<G: HubGame> Play<G> {
             seed,
             bodies: vec![G::human_body(), difficulty.body(&game.spec())],
             levels: [0, level],
+            opponent: feint_ai::Opponent::HandMade,
         })
     }
 

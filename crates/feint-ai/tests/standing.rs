@@ -16,6 +16,7 @@ fn report(score: [i64; 2], finished: bool, actions: Vec<ActionT>) -> RunReport {
             seed: 0,
             bodies: vec![],
             levels: [1, 1],
+            opponent: feint_ai::Opponent::HandMade,
         },
         score: score.to_vec(),
         ticks: 10,

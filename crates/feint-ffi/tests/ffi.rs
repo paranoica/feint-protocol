@@ -18,6 +18,7 @@ fn native() -> Outcome {
         seed: SEED,
         bodies: vec![body(1, &game).unwrap(), body(5, &game).unwrap()],
         levels: [1, 5],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let spec = game.spec();
     let bot = |level| {

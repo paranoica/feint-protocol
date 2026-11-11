@@ -4,6 +4,13 @@ use feint_protocol::{
 
 use crate::playbook::Controller;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Opponent {
+    #[default]
+    HandMade,
+    Trained(u64),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunHeader {
     pub game_id: String,
@@ -11,6 +18,7 @@ pub struct RunHeader {
     pub seed: u64,
     pub bodies: Vec<BodyParamsT>,
     pub levels: [u8; 2],
+    pub opponent: Opponent,
 }
 
 #[derive(Clone, Debug, PartialEq)]

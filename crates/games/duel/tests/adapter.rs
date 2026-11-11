@@ -194,6 +194,7 @@ fn two_bots_duel_to_the_end() {
                 .map(|&l| Difficulty::preset(l).unwrap().body(&spec))
                 .collect(),
             levels: [a, b],
+            opponent: feint_ai::Opponent::HandMade,
         };
         let (mut x, mut y) = (make(a), make(b));
         let report = run_match(&mut game, [&mut x, &mut y], header, 240 * 900).unwrap();
@@ -248,6 +249,7 @@ fn a_bot_learns_which_way_its_opponent_rolls() {
         seed: 2,
         bodies: vec![body(2.86, 1.25), Difficulty::preset(4).unwrap().body(&spec)],
         levels: [0, 4],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let report = run_match(&mut game, [&mut target, &mut bot], header, 240 * 900).unwrap();
     assert_eq!(

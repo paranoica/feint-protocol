@@ -135,6 +135,7 @@ fn replayed(seats: [Seat; 2], episode: Episode, ticks: u64) -> u64 {
         seed: episode.seed,
         bodies,
         levels: [0, 0],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let [a, b] = &mut players[..] else {
         unreachable!("two seats")

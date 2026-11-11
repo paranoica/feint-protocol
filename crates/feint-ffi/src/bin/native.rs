@@ -15,6 +15,7 @@ fn main() {
         seed,
         bodies: vec![a_body, b_body],
         levels: [1, 5],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let spec = game.spec();
     let bot = |level| {

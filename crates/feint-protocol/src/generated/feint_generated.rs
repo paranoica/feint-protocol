@@ -187,6 +187,90 @@ impl<'a> ::flatbuffers::Verifiable for EventKind {
 
 impl ::flatbuffers::SimpleToVerifyInSlice for EventKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_BOT_KIND: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_BOT_KIND: u8 = 1;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_BOT_KIND: [BotKind; 2] = [
+  BotKind::HandMade,
+  BotKind::Trained,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct BotKind(pub u8);
+#[allow(non_upper_case_globals)]
+impl BotKind {
+  pub const HandMade: Self = Self(0);
+  pub const Trained: Self = Self(1);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 1;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::HandMade,
+    Self::Trained,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::HandMade => Some("HandMade"),
+      Self::Trained => Some("Trained"),
+      _ => None,
+    }
+  }
+}
+impl ::core::fmt::Debug for BotKind {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> ::flatbuffers::Follow<'a> for BotKind {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl ::flatbuffers::Push for BotKind {
+    type Output = BotKind;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+    }
+}
+
+impl ::flatbuffers::EndianScalar for BotKind {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> ::flatbuffers::Verifiable for BotKind {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl ::flatbuffers::SimpleToVerifyInSlice for BotKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_MESSAGE: u8 = 7;
@@ -2064,6 +2148,8 @@ impl<'a> MatchHeader<'a> {
   pub const VT_SEED: ::flatbuffers::VOffsetT = 8;
   pub const VT_LEVEL: ::flatbuffers::VOffsetT = 10;
   pub const VT_BODIES: ::flatbuffers::VOffsetT = 12;
+  pub const VT_BOT: ::flatbuffers::VOffsetT = 14;
+  pub const VT_CHECKPOINT: ::flatbuffers::VOffsetT = 16;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -2075,10 +2161,12 @@ impl<'a> MatchHeader<'a> {
     args: &'args MatchHeaderArgs<'args>
   ) -> ::flatbuffers::WIPOffset<MatchHeader<'bldr>> {
     let mut builder = MatchHeaderBuilder::new(_fbb);
+    builder.add_checkpoint(args.checkpoint);
     builder.add_seed(args.seed);
     if let Some(x) = args.bodies { builder.add_bodies(x); }
     builder.add_game_version(args.game_version);
     if let Some(x) = args.game_id { builder.add_game_id(x); }
+    builder.add_bot(args.bot);
     builder.add_level(args.level);
     builder.finish()
   }
@@ -2093,12 +2181,16 @@ impl<'a> MatchHeader<'a> {
     let bodies = self.bodies().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
     });
+    let bot = self.bot();
+    let checkpoint = self.checkpoint();
     MatchHeaderT {
       game_id,
       game_version,
       seed,
       level,
       bodies,
+      bot,
+      checkpoint,
     }
   }
 
@@ -2137,6 +2229,20 @@ impl<'a> MatchHeader<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<BodyParams>>>>(MatchHeader::VT_BODIES, None)}
   }
+  #[inline]
+  pub fn bot(&self) -> BotKind {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<BotKind>(MatchHeader::VT_BOT, Some(BotKind::HandMade)).unwrap()}
+  }
+  #[inline]
+  pub fn checkpoint(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(MatchHeader::VT_CHECKPOINT, Some(0)).unwrap()}
+  }
 }
 
 impl ::flatbuffers::Verifiable for MatchHeader<'_> {
@@ -2150,6 +2256,8 @@ impl ::flatbuffers::Verifiable for MatchHeader<'_> {
      .visit_field::<u64>("seed", Self::VT_SEED, false)?
      .visit_field::<u8>("level", Self::VT_LEVEL, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<BodyParams>>>>("bodies", Self::VT_BODIES, false)?
+     .visit_field::<BotKind>("bot", Self::VT_BOT, false)?
+     .visit_field::<u64>("checkpoint", Self::VT_CHECKPOINT, false)?
      .finish();
     Ok(())
   }
@@ -2160,6 +2268,8 @@ pub struct MatchHeaderArgs<'a> {
     pub seed: u64,
     pub level: u8,
     pub bodies: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<BodyParams<'a>>>>>,
+    pub bot: BotKind,
+    pub checkpoint: u64,
 }
 impl<'a> Default for MatchHeaderArgs<'a> {
   #[inline]
@@ -2170,6 +2280,8 @@ impl<'a> Default for MatchHeaderArgs<'a> {
       seed: 0,
       level: 0,
       bodies: None,
+      bot: BotKind::HandMade,
+      checkpoint: 0,
     }
   }
 }
@@ -2200,6 +2312,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MatchHeaderBuilder<'a, 'b, A>
     self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(MatchHeader::VT_BODIES, bodies);
   }
   #[inline]
+  pub fn add_bot(&mut self, bot: BotKind) {
+    self.fbb_.push_slot::<BotKind>(MatchHeader::VT_BOT, bot, BotKind::HandMade);
+  }
+  #[inline]
+  pub fn add_checkpoint(&mut self, checkpoint: u64) {
+    self.fbb_.push_slot::<u64>(MatchHeader::VT_CHECKPOINT, checkpoint, 0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> MatchHeaderBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     MatchHeaderBuilder {
@@ -2222,6 +2342,8 @@ impl ::core::fmt::Debug for MatchHeader<'_> {
       ds.field("seed", &self.seed());
       ds.field("level", &self.level());
       ds.field("bodies", &self.bodies());
+      ds.field("bot", &self.bot());
+      ds.field("checkpoint", &self.checkpoint());
       ds.finish()
   }
 }
@@ -2233,6 +2355,8 @@ pub struct MatchHeaderT {
   pub seed: u64,
   pub level: u8,
   pub bodies: Option<alloc::vec::Vec<BodyParamsT>>,
+  pub bot: BotKind,
+  pub checkpoint: u64,
 }
 impl Default for MatchHeaderT {
   fn default() -> Self {
@@ -2242,6 +2366,8 @@ impl Default for MatchHeaderT {
       seed: 0,
       level: 0,
       bodies: None,
+      bot: BotKind::HandMade,
+      checkpoint: 0,
     }
   }
 }
@@ -2259,12 +2385,16 @@ impl MatchHeaderT {
     let bodies = self.bodies.as_ref().map(|x|{
       let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
+    let bot = self.bot;
+    let checkpoint = self.checkpoint;
     MatchHeader::create(_fbb, &MatchHeaderArgs{
       game_id,
       game_version,
       seed,
       level,
       bodies,
+      bot,
+      checkpoint,
     })
   }
 }

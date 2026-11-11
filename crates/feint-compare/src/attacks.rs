@@ -224,6 +224,7 @@ fn header(
             vec![human, bot]
         },
         levels: [0, 0],
+        opponent: feint_ai::Opponent::HandMade,
     }
 }
 

@@ -50,6 +50,7 @@ fn header(game: &AirHockey, seed: u64) -> RunHeader {
         seed,
         bodies: vec![body.clone(), body],
         levels: [0, 0],
+        opponent: feint_ai::Opponent::HandMade,
     }
 }
 

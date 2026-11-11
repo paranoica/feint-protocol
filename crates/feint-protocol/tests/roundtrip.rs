@@ -2,9 +2,9 @@
 mod builders;
 
 use feint_protocol::{
-    ActionSpaceT, ActionT, BodyParamsT, DecodeError, DimT, EnvelopeT, EventKind, EventT, GameSpecT,
-    MAX_MESSAGE_BYTES, MatchHeaderT, MatchResultT, MessageT, ObservationT, PROTOCOL_VERSION,
-    TimeMode, decode, encode, finish_envelope_buffer, root_as_envelope,
+    ActionSpaceT, ActionT, BodyParamsT, BotKind, DecodeError, DimT, EnvelopeT, EventKind, EventT,
+    GameSpecT, MAX_MESSAGE_BYTES, MatchHeaderT, MatchResultT, MessageT, ObservationT,
+    PROTOCOL_VERSION, TimeMode, decode, encode, finish_envelope_buffer, root_as_envelope,
 };
 
 fn dim(name: &str, min: f32, max: f32, unit: &str) -> DimT {
@@ -288,4 +288,19 @@ fn a_hand_made_header_keeps_the_bytes_it_had_before_the_trained_fields() {
          00000000020000002400000004000000eaffffff04000000020000009a99193ecdcccc3e0000060008000400\
          0600000004000000020000009a99193ecdcccc3e09000000616972686f636b6579000000"
     );
+}
+
+#[test]
+fn a_trained_header_round_trips_and_an_old_one_reads_as_hand_made() {
+    let mut header = MatchHeaderT::default();
+    header.game_id = Some("airhockey".into());
+    header.bot = BotKind::Trained;
+    header.checkpoint = 0xdaf7_bada_17a0_1ab0;
+    let back = decode(&encode(&MessageT::MatchHeader(Box::new(header.clone())))).unwrap();
+    assert_eq!(back, MessageT::MatchHeader(Box::new(header)));
+    let old = MatchHeaderT::default();
+    match decode(&encode(&MessageT::MatchHeader(Box::new(old)))).unwrap() {
+        MessageT::MatchHeader(h) => assert_eq!((h.bot, h.checkpoint), (BotKind::HandMade, 0)),
+        other => panic!("{other:?}"),
+    }
 }

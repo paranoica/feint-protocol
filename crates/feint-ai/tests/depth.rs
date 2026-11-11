@@ -29,6 +29,7 @@ fn header(seed: u64) -> RunHeader {
         seed,
         bodies: vec![],
         levels: [0, 0],
+        opponent: feint_ai::Opponent::HandMade,
     }
 }
 

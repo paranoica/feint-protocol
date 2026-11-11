@@ -44,6 +44,7 @@ pub fn match_digest() -> u64 {
         seed: MATCH_SEED,
         bodies: vec![body.clone(), body],
         levels: [5, 5],
+        opponent: feint_ai::Opponent::HandMade,
     };
     let report =
         run_match(&mut game, [&mut bot, &mut pilot], header, MATCH_TICKS).expect("the match runs");

@@ -144,6 +144,7 @@ fn play_against(
         seed: 3,
         bodies: vec![],
         levels: [4, 0],
+        opponent: feint_ai::Opponent::HandMade,
     };
     run_match(&mut game, [bot, &mut keeper], header, u64::from(rounds) * 4).unwrap()
 }

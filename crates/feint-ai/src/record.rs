@@ -1,7 +1,9 @@
-use feint_protocol::{DecodeError, MatchHeaderT, MatchResultT, MessageT, ProfileT, decode, encode};
+use feint_protocol::{
+    BotKind, DecodeError, MatchHeaderT, MatchResultT, MessageT, ProfileT, decode, encode,
+};
 
 use crate::model::Profile;
-use crate::runner::{Record, RunHeader};
+use crate::runner::{Opponent, Record, RunHeader};
 
 pub const MAX_RECORD_BYTES: usize = 64 << 20;
 
@@ -11,6 +13,7 @@ pub enum RecordError {
     Message(DecodeError),
     Order,
     Missing,
+    Opponent,
 }
 
 fn frame(out: &mut Vec<u8>, message: &MessageT) {
@@ -29,6 +32,10 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
     header.seed = record.header.seed;
     header.level = record.header.levels[1];
     header.bodies = Some(record.header.bodies.clone());
+    if let Opponent::Trained(checkpoint) = record.header.opponent {
+        header.bot = BotKind::Trained;
+        header.checkpoint = checkpoint;
+    }
     frame(&mut out, &MessageT::MatchHeader(Box::new(header)));
     for action in &record.actions {
         frame(&mut out, &MessageT::Action(Box::new(action.clone())));
@@ -40,6 +47,14 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
     result.seed = record.header.seed;
     frame(&mut out, &MessageT::MatchResult(Box::new(result)));
     out
+}
+
+fn opponent(bot: BotKind, checkpoint: u64) -> Result<Opponent, RecordError> {
+    match (bot, checkpoint) {
+        (BotKind::HandMade, 0) => Ok(Opponent::HandMade),
+        (BotKind::Trained, c) if c != 0 => Ok(Opponent::Trained(c)),
+        _ => Err(RecordError::Opponent),
+    }
 }
 
 pub fn decode_record(bytes: &[u8]) -> Result<Record, RecordError> {
@@ -66,6 +81,7 @@ pub fn decode_record(bytes: &[u8]) -> Result<Record, RecordError> {
                     seed: h.seed,
                     bodies: h.bodies.unwrap_or_default(),
                     levels: [0, h.level],
+                    opponent: opponent(h.bot, h.checkpoint)?,
                 });
             }
             (MessageT::Action(a), Some(_)) => {
