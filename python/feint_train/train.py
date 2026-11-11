@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import time
 from collections import defaultdict, deque
@@ -49,6 +50,14 @@ class TrainConfig:
     concede_weight: float = 1.0
     critic_warmup: int = 0
     update: UpdateConfig = field(default_factory=UpdateConfig)
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.concede_weight) and self.concede_weight >= 0.0):
+            raise ValueError(f"concede weight must be a non-negative number: {self.concede_weight}")
+        if not 0.0 <= self.capped_ahead <= 1.0:
+            raise ValueError(f"a capped lead is valued in [0, 1]: {self.capped_ahead}")
+        if self.critic_warmup < 0:
+            raise ValueError(f"critic warm-up is a count of updates: {self.critic_warmup}")
 
 
 def seats(config: TrainConfig) -> list[tuple[str, str]]:
@@ -115,6 +124,7 @@ class Trainer:
             self.generation = state.get("generation", 0) + 1
             if self.league is not None and state.get("league") is not None:
                 self.league = League.from_state(state["league"])
+                self.league.budget = config.budget
         self.start_from(init, init_actor)
         self.writer = SummaryWriter(str(logdir))
         self.writer.add_text("config", str(asdict(config)))
@@ -357,21 +367,24 @@ def train(
 
 def load_actor(agent: Agent, path: Path) -> None:
     meta = metadata(path)
-    if meta.get("format") != FORMAT or meta.get("layout") != LAYOUT:
+    if meta.get("format") != FORMAT or meta.get("layout") != LAYOUT or "inv_scales" not in meta:
         raise ValueError(f"{path} is not a {FORMAT} {LAYOUT} policy")
     inverse = np.array(meta["inv_scales"].split(","), dtype=np.float32)
     expected = agent.inverse_scales().detach().cpu().numpy()
     if inverse.shape != expected.shape or not np.array_equal(inverse, expected):
         raise ValueError(f"{path} was trained on other feature scales")
     tensors = load_file(str(path))
+    pairs = []
+    for layer, index in (("layer0", 0), ("layer1", 2), ("layer2", 4)):
+        for part in ("weight", "bias"):
+            target = getattr(agent.actor[index], part)
+            source = torch.as_tensor(tensors[f"{layer}.{part}"])
+            if source.shape != target.shape:
+                raise ValueError(f"{path} {layer}.{part} has shape {tuple(source.shape)}")
+            pairs.append((target, source))
     with torch.no_grad():
-        for layer, index in (("layer0", 0), ("layer1", 2), ("layer2", 4)):
-            for part in ("weight", "bias"):
-                target = getattr(agent.actor[index], part)
-                source = torch.as_tensor(tensors[f"{layer}.{part}"])
-                if source.shape != target.shape:
-                    raise ValueError(f"{path} {layer}.{part} has shape {tuple(source.shape)}")
-                target.copy_(source)
+        for target, source in pairs:
+            target.copy_(source)
 
 
 def hide_gpu_for(device: str) -> None:
@@ -379,7 +392,7 @@ def hide_gpu_for(device: str) -> None:
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
-def main() -> None:
+def parse(argv: list[str] | None = None) -> tuple[argparse.Namespace, TrainConfig]:
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdir", type=Path, required=True)
     parser.add_argument("--opponents", default="level:1")
@@ -410,9 +423,7 @@ def main() -> None:
     parser.add_argument("--level5", type=float, default=Budget.level5)
     parser.add_argument("--readers", type=float, default=Budget.readers)
     parser.add_argument("--frozen", type=float, default=Budget.frozen)
-    args = parser.parse_args()
-    hide_gpu_for(args.device)
-    resume, init, init_actor = start_from(args.resume, args.logdir, args.init, args.init_actor)
+    args = parser.parse_args(argv)
     config = TrainConfig(
         opponents=args.opponents.split(","),
         eval_opponents=args.eval_opponents.split(","),
@@ -438,6 +449,13 @@ def main() -> None:
         concede_weight=args.concede_weight,
         critic_warmup=args.critic_warmup,
     )
+    return args, config
+
+
+def main() -> None:
+    args, config = parse()
+    hide_gpu_for(args.device)
+    resume, init, init_actor = start_from(args.resume, args.logdir, args.init, args.init_actor)
     train(config, args.logdir, resume, init, init_actor)
 
 

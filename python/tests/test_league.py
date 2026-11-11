@@ -148,3 +148,14 @@ def test_a_budget_with_impossible_shares_is_refused(shares: dict[str, float]) ->
 def test_a_budget_that_takes_every_seat_is_allowed() -> None:
     budget = Budget(hand_made=0.5, level5=0.5, readers=0.25, frozen=0.25)
     assert budget.level5 == 0.5
+
+
+def test_a_budget_whose_shares_add_to_one_up_to_rounding_is_allowed() -> None:
+    assert 0.56 + 0.34 + 0.1 > 1.0
+    Budget(hand_made=0.56, level5=0.1, readers=0.34, frozen=0.1)
+
+
+@pytest.mark.parametrize("name", ["hand_made", "level5", "readers", "frozen"])
+def test_a_budget_share_that_is_not_a_number_is_refused(name: str) -> None:
+    with pytest.raises(ValueError):
+        Budget(**{name: float("nan")})

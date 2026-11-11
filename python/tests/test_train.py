@@ -426,3 +426,104 @@ def test_init_actor_refuses_a_layer_of_another_shape(tmp_path: Path) -> None:
     save_file(tensors, str(path), metadata(good))
     with pytest.raises(ValueError):
         Trainer(small(), tmp_path / "t", init_actor=path)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"concede_weight": -0.1},
+        {"concede_weight": float("nan")},
+        {"concede_weight": float("inf")},
+        {"capped_ahead": 1.1},
+        {"capped_ahead": -0.1},
+        {"capped_ahead": float("nan")},
+        {"critic_warmup": -1},
+    ],
+)
+def test_a_config_with_a_meaningless_reward_setting_is_refused(change: dict) -> None:
+    with pytest.raises(ValueError):
+        TrainConfig(**change)
+
+
+def test_reward_settings_at_their_bounds_are_allowed() -> None:
+    TrainConfig(concede_weight=0.0, capped_ahead=0.0)
+    TrainConfig(capped_ahead=1.0)
+
+
+def test_a_rejected_actor_file_leaves_the_actor_untouched(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file, save_file
+
+    from feint_train.export import metadata
+    from feint_train.train import load_actor
+
+    good, _ = exported_actor(tmp_path, seed=9)
+    tensors = load_file(str(good))
+    tensors["layer2.bias"] = tensors["layer2.bias"][:1].copy()
+    path = tmp_path / "narrow.safetensors"
+    save_file(tensors, str(path), metadata(good))
+    trainer = Trainer(small(), tmp_path / "t")
+    before = {k: v.clone() for k, v in trainer.agent.actor.state_dict().items()}
+    with pytest.raises(ValueError):
+        load_actor(trainer.agent, path)
+    for name, value in trainer.agent.actor.state_dict().items():
+        assert torch.equal(value, before[name])
+
+
+def test_an_actor_file_without_scales_is_refused(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file, save_file
+
+    from feint_train.export import metadata
+
+    good, _ = exported_actor(tmp_path, seed=10)
+    meta = {k: v for k, v in metadata(good).items() if k != "inv_scales"}
+    path = tmp_path / "bare.safetensors"
+    save_file(load_file(str(good)), str(path), meta)
+    with pytest.raises(ValueError):
+        Trainer(small(), tmp_path / "t", init_actor=path)
+
+
+def test_a_resumed_league_takes_the_budget_given_now(tmp_path: Path) -> None:
+    from feint_train.league import Budget
+
+    first = Trainer(league_config(), tmp_path)
+    first.snapshot()
+    first.save()
+    config = league_config()
+    config.budget = Budget(hand_made=0.5, level5=0.5, readers=0.0, frozen=0.1)
+    again = Trainer(config, tmp_path, resume=tmp_path / "checkpoint.pt")
+    assert again.league.budget == config.budget
+    assert again.league.ids() == first.league.ids()
+
+
+def test_the_command_line_sets_the_budget_and_reward_settings(tmp_path: Path) -> None:
+    from feint_train.league import Budget
+    from feint_train.train import parse
+
+    args, config = parse(
+        [
+            "--logdir",
+            str(tmp_path),
+            "--hand-made",
+            "0.45",
+            "--level5",
+            "0.35",
+            "--readers",
+            "0.1",
+            "--frozen",
+            "0.2",
+            "--concede-weight",
+            "0.8",
+            "--capped-ahead",
+            "0.5",
+            "--critic-warmup",
+            "30",
+            "--init-actor",
+            "a.safetensors",
+        ]
+    )
+    assert config.budget == Budget(hand_made=0.45, level5=0.35, readers=0.1, frozen=0.2)
+    assert (config.concede_weight, config.capped_ahead, config.critic_warmup) == (0.8, 0.5, 30)
+    assert args.init_actor == Path("a.safetensors")
+    _, default = parse(["--logdir", str(tmp_path)])
+    assert default.budget == Budget()
+    assert (default.concede_weight, default.capped_ahead, default.critic_warmup) == (1.0, 0.75, 0)
