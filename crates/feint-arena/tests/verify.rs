@@ -295,3 +295,12 @@ fn duel_records_verify_with_their_own_columns() {
     });
     assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
 }
+
+#[test]
+fn hand_made_records_still_verify() {
+    let bytes = include_bytes!("fixtures/hand-made-v3-scripted.rec");
+    let v = verify(bytes, None).unwrap();
+    assert_eq!(v.digest, 0x3ead_b537_80e6_dc0d);
+    assert_eq!(v.record.ticks, 3_000);
+    assert!(!v.finished && v.profile.is_none());
+}

@@ -266,3 +266,26 @@ fn version_error_keeps_only_a_short_prefix_of_the_client_string() {
     let bytes = raw_envelope(Some("0.2"), all_messages().remove(3), true);
     assert_eq!(decode(&bytes), Err(DecodeError::Version("0.2".into())));
 }
+
+#[test]
+fn a_hand_made_header_keeps_the_bytes_it_had_before_the_trained_fields() {
+    let mut header = MatchHeaderT::default();
+    header.game_id = Some("airhockey".into());
+    header.game_version = 3;
+    header.seed = 0xDEAD_BEEF;
+    header.level = 5;
+    let mut body = BodyParamsT::default();
+    body.values = Some(vec![0.15, 0.4]);
+    header.bodies = Some(vec![body.clone(), body]);
+    let hex: String = encode(&MessageT::MatchHeader(Box::new(header)))
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(
+        hex,
+        "14000000464e543000000a001000080007000c000a00000000000005080000001c00000003000000302e3100\
+         00000e00200008000c001400070010000e00000000000005540000000300000010000000efbeadde00000000\
+         00000000020000002400000004000000eaffffff04000000020000009a99193ecdcccc3e0000060008000400\
+         0600000004000000020000009a99193ecdcccc3e09000000616972686f636b6579000000"
+    );
+}
