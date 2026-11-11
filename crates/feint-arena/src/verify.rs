@@ -87,7 +87,8 @@ fn verify_game<G: HubGame>(
         return Err(VerifyError::Ticks);
     }
     let mut game = G::build(level);
-    let header = Play::<G>::header(level, record.header.seed, &game).ok_or(VerifyError::Level)?;
+    let header = Play::<G>::header(level, record.header.seed, record.header.opponent, &game)
+        .ok_or(VerifyError::Level)?;
     if header != record.header {
         return Err(VerifyError::Bodies);
     }

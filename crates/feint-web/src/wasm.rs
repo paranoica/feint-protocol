@@ -6,7 +6,7 @@ use penalty::Penalty;
 use wasm_bindgen::prelude::*;
 
 use crate::hub::HubGame;
-use crate::session::{Play, Session};
+use crate::session::{Play, Session, SessionError};
 
 trait Live {
     fn advance(&mut self, ticks: u32) -> u32;
@@ -134,6 +134,30 @@ fn start(
     }
 }
 
+fn start_trained(
+    game: &str,
+    level: u8,
+    seed: u32,
+    checkpoint: &str,
+) -> Result<Box<dyn Live>, JsValue> {
+    let seed = u64::from(seed);
+    let checkpoint = u64::from_str_radix(checkpoint, 16)
+        .map_err(|_| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
+    let refused = |e: SessionError| JsValue::from_str(&format!("no trained bot: {e:?}"));
+    match game {
+        <AirHockey as HubGame>::ID => Ok(Box::new(
+            Session::trained(level, seed, checkpoint).map_err(refused)?,
+        )),
+        <Penalty as HubGame>::ID => Ok(Box::new(
+            Play::<Penalty>::trained(level, seed, checkpoint).map_err(refused)?,
+        )),
+        <QuickDraw as HubGame>::ID => Ok(Box::new(
+            Play::<QuickDraw>::trained(level, seed, checkpoint).map_err(refused)?,
+        )),
+        _ => Err(unknown(game)),
+    }
+}
+
 fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>, JsValue> {
     let seed = u64::from(seed);
     match game {
@@ -201,6 +225,15 @@ impl WebMatch {
 
     pub fn create(game: &str, level: u8, seed: u32) -> Result<WebMatch, JsValue> {
         start(game, level, seed, None).map(|session| WebMatch { session })
+    }
+
+    pub fn create_trained(
+        game: &str,
+        level: u8,
+        seed: u32,
+        checkpoint: &str,
+    ) -> Result<WebMatch, JsValue> {
+        start_trained(game, level, seed, checkpoint).map(|session| WebMatch { session })
     }
 
     pub fn watch(game: &str, left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {

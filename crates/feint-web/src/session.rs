@@ -1,7 +1,7 @@
 use airhockey::{AirHockey, Params};
 use feint_ai::{
-    Bot, Controller, Difficulty, InsightView, Memory, Profile, RunHeader, RunReport, Runner,
-    encode_record,
+    Bot, Controller, Difficulty, InsightView, Memory, Opponent, Profile, RunHeader, RunReport,
+    Runner, encode_record,
 };
 use feint_protocol::{ActionT, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 
@@ -13,6 +13,8 @@ pub const GAME_ID: &str = "airhockey";
 pub enum SessionError {
     Level,
     Profile,
+    Checkpoint,
+    Unsupported,
 }
 
 pub struct Pointer {
@@ -71,9 +73,43 @@ impl Controller<AirHockey> for Pointer {
     }
 }
 
+enum Seat<G: HubGame> {
+    HandMade(Box<Bot<G, G::Book>>),
+    Trained(Box<dyn Controller<G>>, G::Book),
+}
+
+impl<G: HubGame> Seat<G> {
+    fn controller(&mut self) -> &mut dyn Controller<G> {
+        match self {
+            Self::HandMade(bot) => bot.as_mut(),
+            Self::Trained(pilot, _) => pilot.as_mut(),
+        }
+    }
+
+    fn insight(&self) -> InsightView {
+        match self {
+            Self::HandMade(bot) => bot.insight(),
+            Self::Trained(..) => InsightView {
+                current: None,
+                intent: None,
+                memory: false,
+                likely_shot: None,
+                likely_cover: Vec::new(),
+            },
+        }
+    }
+
+    fn playbook(&self) -> &G::Book {
+        match self {
+            Self::HandMade(bot) => bot.playbook(),
+            Self::Trained(_, book) => book,
+        }
+    }
+}
+
 pub struct Play<G: HubGame> {
     game: G,
-    bot: Bot<G, G::Book>,
+    bot: Seat<G>,
     left: Option<Bot<G, G::Book>>,
     human: G::Human,
     runner: Option<Runner>,
@@ -136,16 +172,30 @@ impl<G: HubGame> Play<G> {
         if profile.is_some() && difficulty.memory != Memory::MatchAndProfile {
             return Err(SessionError::Profile);
         }
-        let mut game = G::build(level);
-        let header = Self::header(level, seed, &game).ok_or(SessionError::Level)?;
+        let game = G::build(level);
+        let header =
+            Self::header(level, seed, Opponent::HandMade, &game).ok_or(SessionError::Level)?;
         let mut bot =
             Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| SessionError::Level)?;
         if let Some(profile) = profile {
             bot.load_profile(profile, G::ID)
                 .map_err(|_| SessionError::Profile)?;
         }
+        Self::start(game, Seat::HandMade(Box::new(bot)), header)
+    }
+
+    pub fn trained(level: u8, seed: u64, checkpoint: u64) -> Result<Self, SessionError> {
+        Difficulty::preset(level).ok_or(SessionError::Level)?;
+        let game = G::build(level);
+        let pilot = G::trained(level, checkpoint, &game.spec())?;
+        let header = Self::header(level, seed, Opponent::Trained(checkpoint), &game)
+            .ok_or(SessionError::Level)?;
+        Self::start(game, Seat::Trained(pilot, G::book()), header)
+    }
+
+    fn start(mut game: G, mut bot: Seat<G>, header: RunHeader) -> Result<Self, SessionError> {
         let mut human = G::Human::default();
-        let runner = Runner::start(&mut game, [&mut human, &mut bot], header)
+        let runner = Runner::start(&mut game, [&mut human, bot.controller()], header)
             .map_err(|_| SessionError::Level)?;
         Ok(Self {
             game,
@@ -180,7 +230,7 @@ impl<G: HubGame> Play<G> {
             .map_err(|_| SessionError::Level)?;
         Ok(Self {
             game,
-            bot,
+            bot: Seat::HandMade(Box::new(bot)),
             left: Some(left_bot),
             human: G::Human::default(),
             runner: Some(runner),
@@ -204,11 +254,14 @@ impl<G: HubGame> Play<G> {
 
     #[must_use]
     pub fn profile(&self) -> Option<Profile> {
-        self.bot.profile(G::ID)
+        match &self.bot {
+            Seat::HandMade(bot) => bot.profile(G::ID),
+            Seat::Trained(..) => None,
+        }
     }
 
     #[must_use]
-    pub fn header(level: u8, seed: u64, game: &G) -> Option<RunHeader> {
+    pub fn header(level: u8, seed: u64, opponent: Opponent, game: &G) -> Option<RunHeader> {
         let difficulty = Difficulty::preset(level)?;
         Some(RunHeader {
             game_id: G::ID.into(),
@@ -216,7 +269,7 @@ impl<G: HubGame> Play<G> {
             seed,
             bodies: vec![G::human_body(), difficulty.body(&game.spec())],
             levels: [0, level],
-            opponent: feint_ai::Opponent::HandMade,
+            opponent,
         })
     }
 
@@ -238,7 +291,7 @@ impl<G: HubGame> Play<G> {
                 Some(left) => left,
                 None => &mut self.human,
             };
-            if !runner.step(&mut self.game, [first, &mut self.bot]) {
+            if !runner.step(&mut self.game, [first, self.bot.controller()]) {
                 break;
             }
             self.events.extend_from_slice(runner.events());
@@ -250,7 +303,7 @@ impl<G: HubGame> Play<G> {
                 Some(left) => left,
                 None => &mut self.human,
             };
-            self.report = Some(runner.finish(&mut self.game, [first, &mut self.bot]));
+            self.report = Some(runner.finish(&mut self.game, [first, self.bot.controller()]));
         }
         &self.events
     }
