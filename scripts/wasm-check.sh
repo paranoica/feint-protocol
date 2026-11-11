@@ -35,8 +35,12 @@ fi
 
 scripts/web-build.sh --wasm-only
 record="target/web-check.record"
-read -r browser rate < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
-  web/src/wasm/feint_web_bg.wasm "$record")
+trained_record="target/web-check-trained.record"
+{
+  read -r browser rate
+  read -r trained_browser
+} < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
+  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record")
 native="$(cargo run -q --locked --release -p feint-web --bin replay -- "$record")"
 echo "browser record: $browser at $rate ticks/s"
 echo "native replay:  $native"
@@ -46,5 +50,13 @@ if [[ "$browser" != "$native" ]]; then
 fi
 if (( rate < 960 )); then
   echo "the wasm match runs at $rate ticks/s, below 4x real time (960)" >&2
+  exit 1
+fi
+
+trained_native="$(cargo run -q --locked --release -p feint-arena --bin verify-record -- "$trained_record")"
+echo "browser trained record: $trained_browser"
+echo "arena verify (native):  $trained_native"
+if [[ "$trained_browser" != "$trained_native" ]]; then
+  echo "a browser match against the trained bot does not verify natively" >&2
   exit 1
 fi

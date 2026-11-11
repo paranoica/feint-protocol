@@ -45,6 +45,7 @@ fn parquet_rows_match_facts_gathered_without_the_writer() {
         verified.columns,
         2,
         record.header.seed,
+        0,
         File::create(&path).unwrap(),
     )
     .unwrap();
@@ -115,6 +116,49 @@ fn parquet_rows_match_facts_gathered_without_the_writer() {
             .iter()
             .all(|v| v == Some(record.header.seed))
     );
+    let checkpoint = col("checkpoint");
+    assert!(
+        checkpoint
+            .as_primitive::<UInt64Type>()
+            .iter()
+            .all(|v| v == Some(0))
+    );
+}
+
+#[test]
+fn the_checkpoint_column_is_written() {
+    let id = feint_ml::registry::CHECKPOINTS[0].id;
+    let mut session = Session::trained(5, 6, id).unwrap();
+    for _ in 0..200 {
+        let p = session.positions();
+        session.set_pointer(p[0], p[1]);
+        session.advance(4);
+    }
+    let verified = verify(&session.record(), None).unwrap();
+    let path = scratch("checkpoint");
+    parquet_out::write(
+        &verified.frames,
+        verified.columns,
+        5,
+        6,
+        id,
+        File::create(&path).unwrap(),
+    )
+    .unwrap();
+    let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+        .unwrap()
+        .build()
+        .unwrap();
+    let batches: Vec<_> = reader.map(Result::unwrap).collect();
+    let batch = arrow::compute::concat_batches(&batches[0].schema(), &batches).unwrap();
+    let column = batch.column_by_name("checkpoint").unwrap();
+    assert_eq!(column.len(), 800);
+    assert!(
+        column
+            .as_primitive::<UInt64Type>()
+            .iter()
+            .all(|v| v == Some(id))
+    );
 }
 
 #[test]
@@ -136,6 +180,7 @@ fn a_tick_with_several_events_keeps_them_all() {
         AirHockey::COLUMNS,
         1,
         9,
+        0,
         File::create(&path).unwrap(),
     )
     .unwrap();
@@ -171,6 +216,7 @@ fn a_penalty_match_is_written_with_its_own_columns() {
         verified.columns,
         2,
         4,
+        0,
         File::create(&path).unwrap(),
     )
     .unwrap();
@@ -223,7 +269,15 @@ fn a_penalty_match_is_written_with_its_own_columns() {
         intent: None,
     }];
     assert!(
-        parquet_out::write(&short, Penalty::COLUMNS, 1, 1, File::create(&path).unwrap()).is_err(),
+        parquet_out::write(
+            &short,
+            Penalty::COLUMNS,
+            1,
+            1,
+            0,
+            File::create(&path).unwrap()
+        )
+        .is_err(),
         "a frame narrower than its columns"
     );
     let mut gap = verified.frames[..1].to_vec();
@@ -233,7 +287,15 @@ fn a_penalty_match_is_written_with_its_own_columns() {
         .unwrap();
     gap[0].values[at] = None;
     assert!(
-        parquet_out::write(&gap, Penalty::COLUMNS, 1, 1, File::create(&path).unwrap()).is_err(),
+        parquet_out::write(
+            &gap,
+            Penalty::COLUMNS,
+            1,
+            1,
+            0,
+            File::create(&path).unwrap()
+        )
+        .is_err(),
         "an empty value in a column that is never empty"
     );
 }

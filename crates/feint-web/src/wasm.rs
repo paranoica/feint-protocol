@@ -184,6 +184,15 @@ pub fn games() -> Vec<String> {
     ]
 }
 
+#[must_use]
+#[wasm_bindgen]
+pub fn checkpoints() -> Vec<String> {
+    feint_ml::registry::CHECKPOINTS
+        .iter()
+        .map(|c| format!("{:016x}", c.id))
+        .collect()
+}
+
 #[wasm_bindgen]
 pub struct WebMatch {
     session: Box<dyn Live>,

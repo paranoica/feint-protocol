@@ -434,6 +434,7 @@ dependencies = [
  "axum",
  "duel",
  "feint-ai",
+ "feint-ml",
  "feint-protocol",
  "feint-web",
  "parquet",
