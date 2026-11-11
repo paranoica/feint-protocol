@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from feint_train.league import League, match_value
+from feint_train.league import Budget, League, match_value
 
 CHECKPOINT = Path(__file__).parents[2] / "crates/feint-ml/checkpoints/airhockey-g999.safetensors"
 
@@ -107,3 +107,55 @@ def test_league_state_round_trips() -> None:
     assert again.ids() == league.ids()
     assert again.rate("a") == league.rate("a")
     assert again.archive_size == league.archive_size
+
+
+def test_a_capped_lead_can_be_valued_like_a_level_match() -> None:
+    assert match_value(4, 1, finished=False, ahead=0.5) == 0.5
+    assert match_value(1, 4, finished=False, ahead=0.5) == 0.5
+    assert match_value(4, 1, finished=False, ahead=0.9) == pytest.approx(0.9)
+    assert match_value(1, 4, finished=False, ahead=0.9) == pytest.approx(0.1)
+    assert match_value(7, 3, finished=True, ahead=0.5) == 1.0
+    assert match_value(3, 7, finished=True, ahead=0.5) == 0.0
+
+
+def test_the_focus_budget_fills_the_table_by_its_shares() -> None:
+    budget = Budget(hand_made=0.45, level5=0.35, readers=0.1, frozen=0.2)
+    league = League(budget=budget)
+    for i in range(5):
+        league.add(f"snap-{i}", CHECKPOINT)
+    opponents = league.table(256, np.random.default_rng(1)).opponents
+    assert opponents.count("level:5") == 89
+    assert sum(o in ("level:3", "level:4") for o in opponents) == 26
+    assert sum(o.startswith("reader") for o in opponents) == 25
+    assert sum(o.startswith("snap-") for o in opponents) == 51
+    assert opponents.count("learner") == 65
+
+
+@pytest.mark.parametrize(
+    "shares",
+    [
+        {"hand_made": 0.2, "level5": 0.3},
+        {"hand_made": 0.5, "level5": 0.1, "readers": 0.3, "frozen": 0.3},
+        {"frozen": -0.1},
+        {"readers": 1.1, "hand_made": 0.0, "level5": 0.0, "frozen": 0.0},
+    ],
+)
+def test_a_budget_with_impossible_shares_is_refused(shares: dict[str, float]) -> None:
+    with pytest.raises(ValueError):
+        Budget(**shares)
+
+
+def test_a_budget_that_takes_every_seat_is_allowed() -> None:
+    budget = Budget(hand_made=0.5, level5=0.5, readers=0.25, frozen=0.25)
+    assert budget.level5 == 0.5
+
+
+def test_a_budget_whose_shares_add_to_one_up_to_rounding_is_allowed() -> None:
+    assert 0.56 + 0.34 + 0.1 > 1.0
+    Budget(hand_made=0.56, level5=0.1, readers=0.34, frozen=0.1)
+
+
+@pytest.mark.parametrize("name", ["hand_made", "level5", "readers", "frozen"])
+def test_a_budget_share_that_is_not_a_number_is_refused(name: str) -> None:
+    with pytest.raises(ValueError):
+        Budget(**{name: float("nan")})

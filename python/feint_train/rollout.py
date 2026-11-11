@@ -3,6 +3,10 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
+def weighted_goals(reward: np.ndarray, concede_weight: float) -> np.ndarray:
+    return np.where(reward < 0.0, reward * concede_weight, reward).astype(reward.dtype)
+
+
 @dataclass
 class Transition:
     slot: int
