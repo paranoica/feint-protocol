@@ -407,3 +407,34 @@ fn every_terminal_carries_exactly_its_own_matchs_goals_and_score() {
         "{after_decision} terminals after a decision"
     );
 }
+
+#[test]
+fn feature_scales_are_the_spec_maxima_and_one_for_reaction_and_body() {
+    let params = Params::default();
+    let scales = feint_ml::batch::feature_scales(&params);
+    let (l, w) = (params.half_length as f32, params.half_width as f32);
+    let (cap, mallet) = (params.puck_speed_cap as f32, params.max_body_speed as f32);
+    assert_eq!(
+        scales,
+        [
+            l,
+            w,
+            cap,
+            cap,
+            l,
+            w,
+            mallet,
+            mallet,
+            l,
+            w,
+            l,
+            w,
+            mallet,
+            mallet,
+            params.stall_seconds as f32,
+            params.serve_pause_seconds as f32,
+            1.0,
+            1.0
+        ]
+    );
+}

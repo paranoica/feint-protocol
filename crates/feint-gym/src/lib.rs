@@ -1,4 +1,5 @@
-use feint_ml::batch::{FEATURES, OUTPUTS};
+use feint_ml::Params;
+use feint_ml::batch::{FEATURES, OUTPUTS, feature_scales};
 use feint_ml::{BatchError, BatchSpec, HockeyBatch, Outputs, Seat};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -137,6 +138,11 @@ impl PyHockeyBatch {
     #[classattr]
     fn outputs() -> usize {
         OUTPUTS
+    }
+
+    #[classattr]
+    fn scales() -> Vec<f32> {
+        feature_scales(&Params::default()).to_vec()
     }
 
     fn reset<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

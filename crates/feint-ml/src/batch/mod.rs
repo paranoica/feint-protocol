@@ -15,6 +15,16 @@ pub const OUTPUTS: usize = 2;
 
 const SEED_FLOOR: u64 = 1 << 63;
 
+#[must_use]
+pub fn feature_scales(params: &Params) -> [f32; FEATURES] {
+    let spec = AirHockey::new(params.clone(), 0).spec();
+    let mut scales = [1.0; FEATURES];
+    for (scale, dim) in scales.iter_mut().zip(spec.observation.iter().flatten()) {
+        *scale = dim.max.max(-dim.min).max(f32::MIN_POSITIVE);
+    }
+    scales
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Seat {
     Learner,
