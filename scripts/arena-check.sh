@@ -20,12 +20,18 @@ if [[ -z "$base" ]]; then
   cat "$log" >&2
   exit 1
 fi
-node scripts/arena-check.mjs "$base" "$root/web/src/wasm/feint_web.js" web/src/wasm/feint_web_bg.wasm
+patched="$data/unknown-checkpoint.rec"
+node scripts/arena-check.mjs "$base" "$root/web/src/wasm/feint_web.js" web/src/wasm/feint_web_bg.wasm "$patched"
+if refusal="$(target/release/verify-record "$patched" 2>&1)"; then
+  echo "a record naming an unknown checkpoint verifies natively" >&2
+  exit 1
+fi
+[[ "$refusal" == *"Checkpoint"* ]] || { echo "the patched record fails for another reason: $refusal" >&2; exit 1; }
 page="$(curl -fsS "$base/")"
 [[ "$page" == *"Feint"* ]] || { echo "the arena does not serve the front" >&2; exit 1; }
 parquet="$(find "$data/matches" -name '*.parquet' | wc -l)"
-if [[ "$parquet" -ne 2 ]]; then
-  echo "expected 2 Parquet files, found $parquet" >&2
+if [[ "$parquet" -ne 3 ]]; then
+  echo "expected 3 Parquet files, found $parquet" >&2
   exit 1
 fi
-echo "arena-check: 2 matches verified and stored, profile chain 1 -> 2, front served"
+echo "arena-check: 3 matches verified and stored (one against the trained bot), profile chain 1 -> 2, unknown checkpoint refused, front served"
