@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from feint_train.rollout import Collector
+from feint_train.rollout import Collector, weighted_goals
 
 FEATURES = 3
 
@@ -158,3 +158,18 @@ def test_two_seats_of_one_match_keep_separate_advantage_chains() -> None:
     a_first = (gamma * 2.0 - 1.0) + gamma * lam * a_last
     b_first = (gamma * 20.0 - 10.0) + gamma * lam * b_last
     np.testing.assert_allclose(advantage, [a_first, b_first, a_last, b_last])
+
+
+def test_a_conceded_goal_costs_the_concede_weight_and_a_scored_goal_stays_one() -> None:
+    reward = np.array([[1.0, -1.0], [0.0, 0.0], [-1.0, 1.0]], dtype=np.float32)
+    weighted = weighted_goals(reward, 0.8)
+    np.testing.assert_array_equal(
+        weighted, np.array([[1.0, -0.8], [0.0, 0.0], [-0.8, 1.0]], dtype=np.float32)
+    )
+    assert weighted.dtype == np.float32
+    np.testing.assert_array_equal(reward[0], [1.0, -1.0])
+
+
+def test_a_concede_weight_of_one_changes_nothing() -> None:
+    reward = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=np.float32)
+    np.testing.assert_array_equal(weighted_goals(reward, 1.0), reward)

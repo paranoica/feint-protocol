@@ -7,13 +7,13 @@ HAND_MADE = ("level:3", "level:4")
 READERS = ("reader", "reader:anticipating")
 
 
-def match_value(mine: int, theirs: int, finished: bool) -> float:
+def match_value(mine: int, theirs: int, finished: bool, ahead: float = 0.75) -> float:
     if finished:
         return 1.0 if mine > theirs else 0.0
     if mine > theirs:
-        return 0.75
+        return ahead
     if mine < theirs:
-        return 0.25
+        return 1.0 - ahead
     return 0.5
 
 
@@ -23,6 +23,15 @@ class Budget:
     level5: float = 0.1
     readers: float = 0.1
     frozen: float = 0.3
+
+    def __post_init__(self) -> None:
+        shares = (self.hand_made, self.level5, self.readers, self.frozen)
+        if any(share < 0.0 for share in shares):
+            raise ValueError(f"negative share in {self}")
+        if self.level5 > self.hand_made:
+            raise ValueError(f"level 5 is part of the hand-made share: {self}")
+        if self.hand_made + self.readers + self.frozen > 1.0:
+            raise ValueError(f"shares take more than every seat: {self}")
 
 
 @dataclass
