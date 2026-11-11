@@ -13,6 +13,10 @@ class Result:
     wins: int
     losses: int
     unfinished: int
+    ahead_at_cap: int = 0
+    behind_at_cap: int = 0
+    goals_for: int = 0
+    goals_against: int = 0
 
     @property
     def matches(self) -> int:
@@ -52,6 +56,8 @@ def evaluate(
     )
     out = batch.reset()
     outcome = np.zeros(matches, dtype=np.int8)
+    lead = np.zeros(matches, dtype=np.int64)
+    goals = np.zeros(2, dtype=np.int64)
     while (outcome == 0).any():
         actions = np.zeros((matches, 2, 2), dtype=np.float32)
         ready = out["ready"]
@@ -60,15 +66,21 @@ def evaluate(
         out = batch.step(actions)
         ended = (out["terminated"] | out["truncated"]) & (outcome == 0)
         for env in np.flatnonzero(ended):
+            mine = int(out["score"][env, learner[env]])
+            theirs = int(out["score"][env, 1 - learner[env]])
+            goals += (mine, theirs)
+            lead[env] = mine - theirs
             if out["truncated"][env]:
                 outcome[env] = 3
             else:
-                mine = out["score"][env, learner[env]]
-                theirs = out["score"][env, 1 - learner[env]]
                 outcome[env] = 1 if mine > theirs else 2
     return Result(
         opponent=opponent,
         wins=int((outcome == 1).sum()),
         losses=int((outcome == 2).sum()),
         unfinished=int((outcome == 3).sum()),
+        ahead_at_cap=int(((outcome == 3) & (lead > 0)).sum()),
+        behind_at_cap=int(((outcome == 3) & (lead < 0)).sum()),
+        goals_for=int(goals[0]),
+        goals_against=int(goals[1]),
     )

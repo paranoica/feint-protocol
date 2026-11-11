@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass, field
@@ -27,7 +28,7 @@ class TrainConfig:
     minutes: float = 30.0
     seed: int = 1
     lr: float = 3e-4
-    gamma: float = 0.997
+    gamma: float = 0.999
     lam: float = 0.95
     std: float = 0.3
     shaping: float = 0.1
@@ -62,7 +63,15 @@ class Stats:
 
 
 class Trainer:
-    def __init__(self, config: TrainConfig, logdir: Path, resume: Path | None = None) -> None:
+    def __init__(
+        self,
+        config: TrainConfig,
+        logdir: Path,
+        resume: Path | None = None,
+        init: Path | None = None,
+    ) -> None:
+        if resume is not None and init is not None:
+            raise ValueError("resume a run or start from a checkpoint, not both")
         torch.set_num_threads(config.torch_threads)
         torch.manual_seed(config.seed)
         self.config = config
@@ -83,6 +92,8 @@ class Trainer:
             self.optimizer.load_state_dict(state["optimizer"])
             spent = state["spent"]
             self.updates = state["updates"]
+        if init is not None:
+            self.agent.load_state_dict(torch.load(init, map_location=config.device)["agent"])
         self.writer = SummaryWriter(str(logdir))
         self.writer.add_text("config", str(asdict(config)))
         self.collector = Collector(
@@ -120,9 +131,19 @@ class Trainer:
             )
             self.writer.add_scalar(f"eval/{opponent}", result.share, self.updates)
             self.writer.add_scalar(f"eval_unfinished/{opponent}", result.unfinished, self.updates)
+            self.writer.add_scalar(
+                f"eval_ahead_at_cap/{opponent}", result.ahead_at_cap, self.updates
+            )
+            self.writer.add_scalar(
+                f"eval_goals_per_match/{opponent}",
+                (result.goals_for + result.goals_against) / max(1, result.matches),
+                self.updates,
+            )
             print(
                 f"[{self.elapsed() / 60:5.1f} min, update {self.updates}] eval vs {opponent}: "
-                f"{result.wins}/{result.matches} won, {result.unfinished} unfinished",
+                f"{result.wins}/{result.matches} won, {result.losses} lost, "
+                f"{result.unfinished} unfinished ({result.ahead_at_cap} ahead, "
+                f"{result.behind_at_cap} behind), goals {result.goals_for}:{result.goals_against}",
                 flush=True,
             )
 
@@ -219,8 +240,15 @@ class Trainer:
         return self.agent
 
 
-def train(config: TrainConfig, logdir: Path, resume: Path | None = None) -> Agent:
-    return Trainer(config, logdir, resume).run()
+def train(
+    config: TrainConfig, logdir: Path, resume: Path | None = None, init: Path | None = None
+) -> Agent:
+    return Trainer(config, logdir, resume, init).run()
+
+
+def hide_gpu_for(device: str) -> None:
+    if device == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def main() -> None:
@@ -236,8 +264,12 @@ def main() -> None:
     parser.add_argument("--eval-every", type=float, default=5.0)
     parser.add_argument("--eval-matches", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--gamma", type=float, default=TrainConfig.gamma)
+    parser.add_argument("--shaping", type=float, default=TrainConfig.shaping)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--init", type=Path)
     args = parser.parse_args()
+    hide_gpu_for(args.device)
     config = TrainConfig(
         opponents=args.opponents.split(","),
         eval_opponents=args.eval_opponents.split(","),
@@ -249,8 +281,10 @@ def main() -> None:
         eval_every_minutes=args.eval_every,
         eval_matches=args.eval_matches,
         seed=args.seed,
+        gamma=args.gamma,
+        shaping=args.shaping,
     )
-    train(config, args.logdir, args.resume)
+    train(config, args.logdir, args.resume, args.init)
 
 
 if __name__ == "__main__":
