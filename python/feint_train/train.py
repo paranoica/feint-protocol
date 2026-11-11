@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import time
 from collections import defaultdict, deque
@@ -183,7 +184,7 @@ class Trainer:
         self.save()
         export(self.agent, self.logdir / f"{name}.safetensors")
 
-    def evaluate(self) -> None:
+    def evaluate(self, policy: str) -> None:
         for opponent in self.config.eval_opponents:
             result = evaluate(
                 self.agent.act,
@@ -202,6 +203,9 @@ class Trainer:
                 (result.goals_for + result.goals_against) / max(1, result.matches),
                 self.updates,
             )
+            row = {"policy": policy, "opponent": opponent, **asdict(result)}
+            with (self.logdir / "evals.jsonl").open("a") as log:
+                log.write(json.dumps(row) + "\n")
             print(
                 f"[{self.elapsed() / 60:5.1f} min, update {self.updates}] eval vs {opponent}: "
                 f"{result.wins}/{result.matches} won, {result.losses} lost, "
@@ -292,7 +296,7 @@ class Trainer:
         while self.elapsed() < budget:
             self.iteration(self.elapsed() / budget)
             if self.elapsed() >= self.next_eval:
-                self.evaluate()
+                self.evaluate(f"policy-{self.updates:05d}")
                 evaluated = self.updates
                 self.next_eval += config.eval_every_minutes * 60.0
                 self.checkpoint(f"policy-{self.updates:05d}")
@@ -303,7 +307,7 @@ class Trainer:
                 self.next_generation_now()
                 self.save()
         if evaluated != self.updates:
-            self.evaluate()
+            self.evaluate("policy-final")
         self.checkpoint("policy-final")
         self.writer.close()
         return self.agent
