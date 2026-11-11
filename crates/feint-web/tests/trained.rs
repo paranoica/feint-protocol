@@ -4,7 +4,7 @@ use feint_ai::{Controller, Difficulty, Opponent, decode_record, run_match};
 use feint_ml::registry::CHECKPOINTS;
 use feint_ml::trained::trained_pilot;
 use feint_protocol::{ActionT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use feint_web::{HubGame, Play, Pointer, Session, SessionError};
+use feint_web::{HubGame, Play, Pointer, Session, SessionError, parse_checkpoint};
 use penalty::Penalty;
 
 fn script(tick: u64) -> (f32, f32) {
@@ -112,4 +112,28 @@ fn a_trained_seat_has_no_insight_or_profile() {
     assert!(insight.current.is_none() && insight.intent.is_none() && !insight.memory);
     assert!(insight.likely_shot.is_none() && insight.likely_cover.is_empty());
     assert_eq!(s.insight_of(1), insight);
+}
+
+#[test]
+fn a_checkpoint_id_from_the_page_is_exactly_sixteen_hex_digits() {
+    assert_eq!(
+        parse_checkpoint("daf7bada17a01ab0"),
+        Some(0xdaf7_bada_17a0_1ab0)
+    );
+    assert_eq!(
+        parse_checkpoint("DAF7BADA17A01AB0"),
+        Some(0xdaf7_bada_17a0_1ab0)
+    );
+    assert_eq!(parse_checkpoint("0000000000000001"), Some(1));
+    for bad in [
+        "",
+        "1",
+        "+af7bada17a01ab0",
+        "daf7bada17a01ab",
+        "daf7bada17a01ab00",
+        "daf7bada17a01abg",
+        " daf7bada17a01ab",
+    ] {
+        assert_eq!(parse_checkpoint(bad), None, "{bad:?}");
+    }
 }

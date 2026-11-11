@@ -17,6 +17,15 @@ pub enum SessionError {
     Unsupported,
 }
 
+#[must_use]
+pub fn parse_checkpoint(hex: &str) -> Option<u64> {
+    if hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        None
+    }
+}
+
 pub struct Pointer {
     target: [f32; 2],
     sent: Option<[f32; 2]>,

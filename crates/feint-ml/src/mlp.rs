@@ -109,6 +109,9 @@ impl Mlp {
                 "layers do not chain from the features to the outputs",
             ));
         }
+        if s0[0] == 0 || s1[0] == 0 {
+            return Err(MlpError::Shape("a hidden layer has no units"));
+        }
         require(&st, "hidden", &format!("{},{}", s0[0], s1[0]), "hidden")?;
         let inverse = inverse_scales(st.metadata("inv_scales").ok_or(MlpError::Scales)?)?;
         let dense = |inputs: usize, weight: Vec<f32>, bias: Vec<f32>| Dense {

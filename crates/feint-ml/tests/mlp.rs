@@ -267,3 +267,43 @@ fn a_broken_file_is_a_format_error() {
         Err(MlpError::Format(_))
     ));
 }
+
+#[test]
+fn a_hidden_layer_of_width_zero_is_refused() {
+    let net = vec![
+        (
+            0,
+            18,
+            Layer {
+                weight: Vec::new(),
+                bias: Vec::new(),
+            },
+        ),
+        (
+            1,
+            0,
+            Layer {
+                weight: Vec::new(),
+                bias: vec![0.0],
+            },
+        ),
+        (
+            2,
+            1,
+            Layer {
+                weight: vec![1.0, 1.0],
+                bias: vec![0.0, 0.0],
+            },
+        ),
+    ];
+    let mut meta = meta(1);
+    for (k, v) in &mut meta {
+        if *k == "hidden" {
+            *v = "0,1".into();
+        }
+    }
+    assert!(matches!(
+        Mlp::from_safetensors(&safetensors(&net, &meta)),
+        Err(MlpError::Shape(_))
+    ));
+}

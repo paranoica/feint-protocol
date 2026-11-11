@@ -6,7 +6,7 @@ use penalty::Penalty;
 use wasm_bindgen::prelude::*;
 
 use crate::hub::HubGame;
-use crate::session::{Play, Session, SessionError};
+use crate::session::{Play, Session, SessionError, parse_checkpoint};
 
 trait Live {
     fn advance(&mut self, ticks: u32) -> u32;
@@ -141,8 +141,8 @@ fn start_trained(
     checkpoint: &str,
 ) -> Result<Box<dyn Live>, JsValue> {
     let seed = u64::from(seed);
-    let checkpoint = u64::from_str_radix(checkpoint, 16)
-        .map_err(|_| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
+    let checkpoint = parse_checkpoint(checkpoint)
+        .ok_or_else(|| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
     let refused = |e: SessionError| JsValue::from_str(&format!("no trained bot: {e:?}"));
     match game {
         <AirHockey as HubGame>::ID => Ok(Box::new(
