@@ -90,3 +90,29 @@ fn a_trained_pilot_plays_a_whole_match_through_run_match() {
         first.ticks
     );
 }
+
+#[test]
+fn trained_pilot_from_equals_trained_pilot_for_the_embedded_file() {
+    let run = |from_file: bool| {
+        let mut game = AirHockey::new(Params::default(), 4);
+        let spec = game.spec();
+        let mut pilot = if from_file {
+            let mlp = feint_ml::mlp::Mlp::from_safetensors(CHECKPOINTS[0].bytes).unwrap();
+            feint_ml::trained::trained_pilot_from(4, mlp, &spec).unwrap()
+        } else {
+            trained_pilot(4, CHECKPOINTS[0].id, &spec).unwrap()
+        };
+        let mut other = Reader::new(Params::default(), true);
+        let head = header(4, 8, &game);
+        run_match(&mut game, [&mut other, &mut pilot], head, 2_400)
+            .unwrap()
+            .digest
+    };
+    assert_eq!(run(true), run(false));
+    let spec = AirHockey::new(Params::default(), 4).spec();
+    let mlp = feint_ml::mlp::Mlp::from_safetensors(CHECKPOINTS[0].bytes).unwrap();
+    assert!(matches!(
+        feint_ml::trained::trained_pilot_from(9, mlp, &spec),
+        Err(TrainedError::Level)
+    ));
+}

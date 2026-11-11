@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -204,3 +205,24 @@ def test_scales_bring_every_feature_near_unit_range() -> None:
         out = batch.step(policy(out))
         scaled = out["obs"][out["ready"]] / scales
         assert np.abs(scaled).max() <= 1.0 + 1e-6
+
+
+CHECKPOINT = Path(__file__).parents[2] / "crates/feint-ml/checkpoints/airhockey-g999.safetensors"
+
+
+def test_frozen_seats_are_named_and_need_their_bytes() -> None:
+    policy = CHECKPOINT.read_bytes()
+    batch = HockeyBatch(
+        [("learner", "frozen:0"), ("frozen:1", "learner")], seed=1, frozen=[policy, policy]
+    )
+    assert [batch.seats(0), batch.seats(1)] == [("learner", "frozen:0"), ("frozen:1", "learner")]
+    out = batch.reset()
+    for _ in range(50):
+        out = batch.step(np.zeros((2, 2, 2), dtype=np.float32))
+    assert out["obs"].shape == (2, 2, HockeyBatch.features)
+    with pytest.raises(ValueError, match="frozen checkpoint 1"):
+        HockeyBatch([("learner", "frozen:1")], seed=1, frozen=[policy])
+    with pytest.raises(ValueError, match="frozen checkpoint 0"):
+        HockeyBatch([("learner", "frozen:0")], seed=1, frozen=[b"junk"])
+    with pytest.raises(ValueError, match="unknown seat"):
+        HockeyBatch([("learner", "frozen:x")], seed=1)

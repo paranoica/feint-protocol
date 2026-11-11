@@ -6,6 +6,7 @@ use airhockey::{AirHockey, OBSERVATION_LEN, Params};
 use feint_ai::{Difficulty, MAX_DELAY_TICKS, delay_ticks};
 use feint_protocol::GameAdapter;
 
+use crate::mlp::Mlp;
 use crate::pilot::{EXTRA_FEATURES, Policy};
 use env::{Env, Ranges, body};
 
@@ -31,6 +32,7 @@ pub enum Seat {
     Level(u8),
     Human,
     Reader { anticipates: bool },
+    Frozen(u16),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +44,7 @@ pub struct BatchSpec {
     pub reaction_ms: [u32; 2],
     pub physique: [f64; 2],
     pub params: Params,
+    pub frozen: Vec<Vec<u8>>,
 }
 
 impl BatchSpec {
@@ -55,6 +58,7 @@ impl BatchSpec {
             reaction_ms: [150, 400],
             physique: [0.4, 1.0],
             params: Params::default(),
+            frozen: Vec::new(),
         }
     }
 }
@@ -70,6 +74,7 @@ pub enum BatchError {
     BadRange,
     BadActions { expected: usize, got: usize },
     Game(String),
+    Frozen(u16),
 }
 
 impl std::fmt::Display for BatchError {
@@ -92,6 +97,10 @@ impl std::fmt::Display for BatchError {
                 write!(f, "{got} action values, expected {expected}")
             }
             Self::Game(why) => write!(f, "the game refused: {why}"),
+            Self::Frozen(index) => write!(
+                f,
+                "frozen checkpoint {index} is missing or not a policy file"
+            ),
         }
     }
 }
@@ -169,10 +178,16 @@ impl HockeyBatch {
                 least,
             });
         }
+        let mut frozen = Vec::with_capacity(spec.frozen.len());
+        for (index, bytes) in spec.frozen.iter().enumerate() {
+            let index = u16::try_from(index).map_err(|_| BatchError::Frozen(u16::MAX))?;
+            frozen.push(Mlp::from_safetensors(bytes).map_err(|_| BatchError::Frozen(index))?);
+        }
         let ranges = Ranges {
             reaction_ms: spec.reaction_ms,
             physique: spec.physique,
             cap: spec.cap_ticks,
+            frozen,
         };
         let mut envs = Vec::with_capacity(spec.seats.len());
         for (index, seats) in spec.seats.iter().enumerate() {
@@ -180,10 +195,14 @@ impl HockeyBatch {
                 return Err(BatchError::NoLearner(index));
             }
             for seat in seats {
-                if let Seat::Level(level) = *seat
-                    && Difficulty::preset(level).is_none()
-                {
-                    return Err(BatchError::BadLevel(level));
+                match *seat {
+                    Seat::Level(level) if Difficulty::preset(level).is_none() => {
+                        return Err(BatchError::BadLevel(level));
+                    }
+                    Seat::Frozen(index) if usize::from(index) >= ranges.frozen.len() => {
+                        return Err(BatchError::Frozen(index));
+                    }
+                    _ => {}
                 }
             }
             envs.push(
