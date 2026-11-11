@@ -36,3 +36,22 @@ fn an_unknown_id_is_not_in_the_registry() {
         assert!(lookup(c.id ^ 1).is_none());
     }
 }
+
+#[test]
+fn the_registry_ships_the_checkpoint_that_met_the_bar() {
+    assert_eq!(CHECKPOINTS.len(), 1);
+    let shipped = &CHECKPOINTS[0];
+    assert_eq!(shipped.name, "airhockey-focus");
+    assert_eq!(shipped.id, 0x1517_1d6c_57a0_caa7);
+    let file = feint_ml::safetensors::SafeTensors::parse(shipped.bytes).unwrap();
+    assert_eq!(file.metadata("selected_from"), Some("policy-00321"));
+    assert_eq!(file.metadata("selected_wins"), Some("128"));
+    assert_eq!(file.metadata("selected_matches"), Some("200"));
+}
+
+#[test]
+fn the_parity_checkpoint_is_not_in_the_registry() {
+    let parity = include_bytes!("../checkpoints/airhockey-g999.safetensors");
+    assert_eq!(fnv1a64(parity), 0xdaf7_bada_17a0_1ab0);
+    assert!(lookup(0xdaf7_bada_17a0_1ab0).is_none());
+}

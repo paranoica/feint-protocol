@@ -6,9 +6,9 @@ pub struct Checkpoint {
 }
 
 pub const CHECKPOINTS: &[Checkpoint] = &[Checkpoint {
-    name: "airhockey-g999",
-    id: 0xdaf7_bada_17a0_1ab0,
-    bytes: include_bytes!("../checkpoints/airhockey-g999.safetensors"),
+    name: "airhockey-focus",
+    id: 0x1517_1d6c_57a0_caa7,
+    bytes: include_bytes!("../checkpoints/airhockey-focus.safetensors"),
 }];
 
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
