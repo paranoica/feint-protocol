@@ -55,6 +55,10 @@
       "run": "cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
       "heavy": true
     },
+    "ml-ladder": {
+      "run": "cargo test --release --locked -q -p feint-ml --test ladder -- --ignored --nocapture",
+      "heavy": true
+    },
     "s2-eval": {
       "run": "FEINT_CHECKPOINT={args} cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
       "heavy": true
