@@ -125,7 +125,7 @@ class Trainer:
             if self.league is not None and state.get("league") is not None:
                 self.league = League.from_state(state["league"])
                 self.league.budget = config.budget
-        self.start_from(init, init_actor)
+        self.load_start(init, init_actor)
         self.writer = SummaryWriter(str(logdir))
         self.writer.add_text("config", str(asdict(config)))
         self.collector = Collector(
@@ -146,7 +146,7 @@ class Trainer:
         if state is not None and "torch_rng" in state:
             torch.set_rng_state(state["torch_rng"])
 
-    def start_from(self, init: Path | None, init_actor: Path | None) -> None:
+    def load_start(self, init: Path | None, init_actor: Path | None) -> None:
         if init is not None:
             state = torch.load(init, map_location=self.config.device, weights_only=True)
             self.agent.load_state_dict(state["agent"])
