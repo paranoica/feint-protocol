@@ -171,6 +171,21 @@ input:focus {
   outline: 2px solid var(--you);
   outline-offset: 1px;
 }
+.bots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.bots[hidden] {
+  display: none;
+}
+.bots button {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.bots button[aria-pressed="true"] {
+  border-color: var(--you);
+}
 .levels {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

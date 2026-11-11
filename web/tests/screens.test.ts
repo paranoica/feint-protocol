@@ -59,3 +59,25 @@ test("watching two bots goes from the menu to a result naming the winner", () =>
   const human = start(level, "airhockey", 2, "ann");
   assert.equal(human.name === "game" ? human.watch : null, undefined, "a human game is not a watch");
 });
+
+test("a trained start keeps the bot kind through finish and again", () => {
+  const game = start(first("ann"), "airhockey", 4, "ann", "trained");
+  assert.deepEqual(game, { name: "game", game: "airhockey", nick: "ann", level: 4, bot: "trained" });
+  const result = finish(game, [2, 7]);
+  assert.deepEqual(result, {
+    name: "result",
+    game: "airhockey",
+    nick: "ann",
+    level: 4,
+    score: [2, 7],
+    bot: "trained",
+  });
+  assert.deepEqual(again(result), { name: "level", nick: "ann" });
+  assert.deepEqual(start(first("ann"), "airhockey", 4, "ann", "hand-made"), start(first("ann"), "airhockey", 4, "ann"));
+});
+
+test("start refuses an unknown bot kind", () => {
+  const level = first("ann");
+  assert.equal(start(level, "airhockey", 3, "ann", "neural" as never), level);
+  assert.equal(start(level, "airhockey", 3, "ann", "" as never), level);
+});
