@@ -25,6 +25,10 @@ class UpdateStats:
     clip_fraction: float
 
 
+def minibatches(order: np.ndarray, parts: int) -> list[np.ndarray]:
+    return [part for part in np.array_split(order, parts) if len(part)]
+
+
 def ppo_update(
     agent: Agent,
     optimizer: torch.optim.Optimizer,
@@ -41,13 +45,11 @@ def ppo_update(
     adv = torch.as_tensor(advantage, dtype=torch.float32, device=device)
     ret = torch.as_tensor(returns, dtype=torch.float32, device=device)
     count = len(obs)
-    size = max(1, count // config.minibatches)
     totals = np.zeros(5)
     batches = 0
     for _ in range(config.epochs):
-        order = generator.permutation(count)
-        for start in range(0, count, size):
-            index = torch.as_tensor(order[start : start + size], device=device)
+        for part in minibatches(generator.permutation(count), config.minibatches):
+            index = torch.as_tensor(part, device=device)
             dist = agent.distribution(obs[index])
             logp = dist.log_prob(action[index]).sum(-1)
             ratio = (logp - old_logp[index]).exp()

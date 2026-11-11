@@ -27,8 +27,11 @@ class Agent(nn.Module):
         nn.init.zeros_(self.actor[-1].bias)
         nn.init.orthogonal_(self.critic[-1].weight, gain=1.0)
 
+    def inverse_scales(self) -> torch.Tensor:
+        return 1.0 / self.scales
+
     def normalise(self, obs: torch.Tensor) -> torch.Tensor:
-        return obs / self.scales
+        return obs * self.inverse_scales()
 
     def value(self, obs: torch.Tensor) -> torch.Tensor:
         return self.critic(self.normalise(obs)).squeeze(-1)

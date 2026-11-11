@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from feint_train.agent import Agent
-from feint_train.update import UpdateConfig, ppo_update
+from feint_train.update import UpdateConfig, minibatches, ppo_update
 
 
 def target(obs: np.ndarray) -> np.ndarray:
@@ -42,3 +42,16 @@ def test_the_value_head_learns_the_return() -> None:
         data = {"obs": obs, "action": action, "logp": logp, "value": value}
         ppo_update(agent, optimizer, data, np.zeros(len(obs)), returns, UpdateConfig(), rng)
     assert np.abs(agent.values(obs) - returns).mean() < 0.15
+
+
+def test_minibatches_split_every_sample_once_into_near_equal_parts() -> None:
+    order = np.random.default_rng(0).permutation(17)
+    parts = minibatches(order, 8)
+    assert len(parts) == 8
+    assert sorted(len(part) for part in parts) == [2] * 7 + [3]
+    np.testing.assert_array_equal(np.concatenate(parts), order)
+
+
+def test_fewer_samples_than_minibatches_gives_no_empty_part() -> None:
+    parts = minibatches(np.arange(3), 8)
+    assert [len(part) for part in parts] == [1, 1, 1]

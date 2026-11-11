@@ -72,6 +72,8 @@ class Trainer:
     ) -> None:
         if resume is not None and init is not None:
             raise ValueError("resume a run or start from a checkpoint, not both")
+        if config.seed == config.eval_seed:
+            raise ValueError("training and evaluation need different seeds")
         torch.set_num_threads(config.torch_threads)
         torch.manual_seed(config.seed)
         self.config = config
@@ -108,6 +110,8 @@ class Trainer:
         return time.perf_counter() - self.start
 
     def checkpoint(self, name: str) -> None:
+        path = self.logdir / "checkpoint.pt"
+        partial = path.with_suffix(".pt.partial")
         torch.save(
             {
                 "agent": self.agent.state_dict(),
@@ -116,8 +120,9 @@ class Trainer:
                 "updates": self.updates,
                 "config": asdict(self.config),
             },
-            self.logdir / "checkpoint.pt",
+            partial,
         )
+        partial.replace(path)
         export(self.agent, self.logdir / f"{name}.safetensors")
 
     def evaluate(self) -> None:

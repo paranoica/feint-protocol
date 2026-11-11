@@ -115,7 +115,10 @@ def test_shaping_is_the_discounted_change_of_puck_progress() -> None:
     act(c, [True, False], [2.0, 0.0], [0.0, 0.0])
     c.credit(out(reward=[1.0, 0.0], ready=[False, False], terminated=True), ZERO, ZERO)
     first, last = c.transitions
-    phi = lambda x: 0.5 * x / 2.0  # noqa: E731
+
+    def phi(x: float) -> float:
+        return 0.5 * x / 2.0
+
     assert first.reward == pytest.approx(gamma * phi(2.0) - phi(1.0))
     assert last.reward == pytest.approx(1.0 - phi(2.0))
 
@@ -127,3 +130,31 @@ def test_open_transitions_block_advantages_and_clearing() -> None:
         c.advantages(0.9)
     with pytest.raises(RuntimeError, match="open transitions"):
         c.clear()
+
+
+def test_a_truncation_with_shaping_credits_the_discounted_change_to_the_final_features() -> None:
+    gamma = 0.9
+    c = collector(shaping=0.5, gamma=gamma)
+    act(c, [True, False], [1.0, 0.0], [0.0, 0.0])
+    c.credit(
+        out(reward=[0.0, 0.0], ready=[False, False], truncated=True, final=[3.0, 0.0]),
+        ZERO,
+        np.array([5.0, 0.0], dtype=np.float32),
+    )
+    [t] = c.transitions
+    assert t.reward == pytest.approx(gamma * 0.5 * 3.0 / 2.0 - 0.5 * 1.0 / 2.0)
+    assert t.next_value == pytest.approx(5.0)
+
+
+def test_two_seats_of_one_match_keep_separate_advantage_chains() -> None:
+    gamma, lam = 0.5, 0.5
+    c = collector(gamma=gamma)
+    act(c, [True, True], [0.0, 0.0], [1.0, 10.0])
+    c.credit(out(reward=[0.0, 0.0], ready=[True, True]), np.array([2.0, 20.0]), ZERO)
+    act(c, [True, True], [0.0, 0.0], [2.0, 20.0])
+    c.credit(out(reward=[1.0, -1.0], ready=[False, False], terminated=True), ZERO, ZERO)
+    advantage, _ = c.advantages(lam)
+    a_last, b_last = 1.0 - 2.0, -1.0 - 20.0
+    a_first = (gamma * 2.0 - 1.0) + gamma * lam * a_last
+    b_first = (gamma * 20.0 - 10.0) + gamma * lam * b_last
+    np.testing.assert_allclose(advantage, [a_first, b_first, a_last, b_last])

@@ -65,3 +65,38 @@ def test_logging_an_update_raises_no_warnings(tmp_path: Path) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         trainer.log(stats, rollout=1.0, update=1.0, transitions=10)
+
+
+def test_training_and_evaluation_seeds_must_differ(tmp_path: Path) -> None:
+    config = small(seed=77)
+    assert config.eval_seed == 77
+    with pytest.raises(ValueError):
+        Trainer(config, tmp_path)
+
+
+def test_a_failed_checkpoint_save_keeps_the_previous_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trainer = Trainer(small(), tmp_path)
+    trainer.updates = 3
+    trainer.checkpoint("first")
+
+    def broken(obj: object, f: object) -> None:
+        Path(str(f)).write_bytes(b"half a checkpoint")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(torch, "save", broken)
+    with pytest.raises(OSError):
+        trainer.checkpoint("second")
+    assert torch.load(tmp_path / "checkpoint.pt")["updates"] == 3
+
+
+def test_one_iteration_collects_updates_and_clears(tmp_path: Path) -> None:
+    trainer = Trainer(small(), tmp_path)
+    trainer.config.steps = 8
+    before = [p.detach().clone() for p in trainer.agent.parameters()]
+    trainer.iteration(0.0)
+    assert trainer.updates == 1
+    assert trainer.collector.transitions == [] and not trainer.collector.open
+    after = list(trainer.agent.parameters())
+    assert any(not torch.equal(a, b) for a, b in zip(after, before, strict=True))
