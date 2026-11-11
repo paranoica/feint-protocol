@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use feint_protocol::{
     BotKind, DecodeError, MatchHeaderT, MatchResultT, MessageT, ProfileT, decode, encode,
 };
@@ -34,7 +36,7 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
     header.bodies = Some(record.header.bodies.clone());
     if let Opponent::Trained(checkpoint) = record.header.opponent {
         header.bot = BotKind::Trained;
-        header.checkpoint = checkpoint;
+        header.checkpoint = checkpoint.get();
     }
     frame(&mut out, &MessageT::MatchHeader(Box::new(header)));
     for action in &record.actions {
@@ -52,7 +54,9 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
 fn opponent(bot: BotKind, checkpoint: u64) -> Result<Opponent, RecordError> {
     match (bot, checkpoint) {
         (BotKind::HandMade, 0) => Ok(Opponent::HandMade),
-        (BotKind::Trained, c) if c != 0 => Ok(Opponent::Trained(c)),
+        (BotKind::Trained, c) => NonZeroU64::new(c)
+            .map(Opponent::Trained)
+            .ok_or(RecordError::Opponent),
         _ => Err(RecordError::Opponent),
     }
 }

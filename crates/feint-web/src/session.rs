@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use airhockey::{AirHockey, Params};
 use feint_ai::{
     Bot, Controller, Difficulty, InsightView, Memory, Opponent, Profile, RunHeader, RunReport,
@@ -197,8 +199,9 @@ impl<G: HubGame> Play<G> {
         Difficulty::preset(level).ok_or(SessionError::Level)?;
         let game = G::build(level);
         let pilot = G::trained(level, checkpoint, &game.spec())?;
-        let header = Self::header(level, seed, Opponent::Trained(checkpoint), &game)
-            .ok_or(SessionError::Level)?;
+        let id = NonZeroU64::new(checkpoint).ok_or(SessionError::Checkpoint)?;
+        let header =
+            Self::header(level, seed, Opponent::Trained(id), &game).ok_or(SessionError::Level)?;
         Self::start(game, Seat::Trained(pilot, G::book()), header)
     }
 

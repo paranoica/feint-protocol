@@ -305,6 +305,10 @@ fn hand_made_records_still_verify() {
     assert!(!v.finished && v.profile.is_none());
 }
 
+fn nonzero(id: u64) -> std::num::NonZeroU64 {
+    std::num::NonZeroU64::new(id).unwrap()
+}
+
 fn trained_session(seed: u64, ticks: u64) -> Session {
     let mut s = Session::trained(5, seed, feint_ml::registry::CHECKPOINTS[0].id).unwrap();
     for _ in 0..ticks {
@@ -328,7 +332,7 @@ fn verify_rebuilds_the_trained_opponent() {
     assert_eq!(v.frames.len() as u64, 3_000);
     assert_eq!(
         v.record.header.opponent,
-        feint_ai::Opponent::Trained(feint_ml::registry::CHECKPOINTS[0].id)
+        feint_ai::Opponent::Trained(nonzero(feint_ml::registry::CHECKPOINTS[0].id))
     );
     assert!(v.frames.iter().all(|f| f.intent.is_none()));
 }
@@ -346,7 +350,7 @@ fn unknown_checkpoint_is_refused() {
     let s = trained_session(17, 600);
     let id = feint_ml::registry::CHECKPOINTS[0].id;
     let forged = forge(&s.record(), |r| {
-        r.header.opponent = feint_ai::Opponent::Trained(id ^ 1);
+        r.header.opponent = feint_ai::Opponent::Trained(nonzero(id ^ 1));
     });
     assert_eq!(verify(&forged, None).err(), Some(VerifyError::Checkpoint));
 }
@@ -358,7 +362,7 @@ fn trained_penalty_record_is_refused() {
     p.advance(600);
     let id = feint_ml::registry::CHECKPOINTS[0].id;
     let forged = forge(&p.record(), |r| {
-        r.header.opponent = feint_ai::Opponent::Trained(id);
+        r.header.opponent = feint_ai::Opponent::Trained(nonzero(id));
     });
     assert_eq!(verify(&forged, None).err(), Some(VerifyError::Game));
 }

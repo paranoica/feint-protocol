@@ -30,6 +30,10 @@ fn id() -> u64 {
     CHECKPOINTS[0].id
 }
 
+fn trained_id() -> Opponent {
+    Opponent::Trained(std::num::NonZeroU64::new(id()).unwrap())
+}
+
 fn played(seed: u64, ticks: u64) -> Session {
     let mut s = Session::trained(5, seed, id()).unwrap();
     for _ in 0..ticks {
@@ -55,7 +59,7 @@ fn the_header_names_the_trained_opponent_with_the_levels_body() {
     let header = decode_record(&s.record()).unwrap().header;
     let game = AirHockey::new(Params::default(), 5);
     let body = Difficulty::preset(5).unwrap().body(&game.spec());
-    assert_eq!(header.opponent, Opponent::Trained(id()));
+    assert_eq!(header.opponent, trained_id());
     assert_eq!(header.levels, [0, 5]);
     assert_eq!(header.bodies, vec![AirHockey::human_body(), body]);
 }
@@ -64,7 +68,7 @@ fn the_header_names_the_trained_opponent_with_the_levels_body() {
 fn a_trained_session_plays_what_run_match_plays_with_the_same_pilot() {
     let session = played(41, 3_000);
     let mut game = AirHockey::new(Params::default(), 5);
-    let header = Session::header(5, 41, Opponent::Trained(id()), &game).unwrap();
+    let header = Session::header(5, 41, trained_id(), &game).unwrap();
     let mut human = Scripted(Pointer::new());
     let mut pilot = trained_pilot(5, id(), &game.spec()).unwrap();
     let report = run_match(&mut game, [&mut human, &mut pilot], header, 3_000).unwrap();

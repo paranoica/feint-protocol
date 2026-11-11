@@ -7,7 +7,13 @@ from feint_gym import HockeyBatch
 
 from feint_train.agent import Agent
 from feint_train.export import forward
-from feint_train.fixtures import extreme_features, make_fixtures, read_matrix, write_matrix
+from feint_train.fixtures import (
+    extreme_features,
+    make_fixtures,
+    read_matrix,
+    write_matrix,
+    zero_forcing_features,
+)
 
 FEATURES = 18
 
@@ -55,12 +61,31 @@ def test_fixtures_are_what_the_exported_policy_computes(tmp_path: Path) -> None:
     make_fixtures(checkpoint, out, policy, recorded=24, seed=4242, threads=2)
     inputs, outputs = read_matrix(out / "features.bin"), read_matrix(out / "outputs.bin")
     scales = np.array(HockeyBatch.scales, dtype=np.float32)
-    assert inputs.shape == (24 + len(extreme_features(scales)), FEATURES)
-    assert outputs.shape == (len(inputs), 2)
-    assert len(np.unique(inputs[:24], axis=0)) == 24
     agent = Agent(scales)
     agent.load_state_dict(torch.load(checkpoint, weights_only=True)["agent"])
+    zero = len(zero_forcing_features(agent, scales, units=64))
+    assert zero > 0
+    assert inputs.shape == (24 + zero + len(extreme_features(scales)), FEATURES)
+    assert outputs.shape == (len(inputs), 2)
+    assert len(np.unique(inputs[:24], axis=0)) == 24
     np.testing.assert_array_equal(outputs, agent.act(inputs))
     exported = forward(policy, inputs)
-    np.testing.assert_allclose(exported[:24], outputs[:24], rtol=0, atol=1e-5)
-    np.testing.assert_allclose(exported[24:], outputs[24:], rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(exported[: 24 + zero], outputs[: 24 + zero], rtol=0, atol=1e-5)
+    np.testing.assert_allclose(exported[24 + zero :], outputs[24 + zero :], rtol=1e-5, atol=1e-5)
+
+
+def test_zero_forcing_rows_drive_a_first_layer_unit_to_exactly_zero(tmp_path: Path) -> None:
+    agent = Agent(np.array(HockeyBatch.scales, dtype=np.float32))
+    agent.load_state_dict(torch.load(saved_agent(tmp_path), weights_only=True)["agent"])
+    scales = np.array(HockeyBatch.scales, dtype=np.float32)
+    rows = zero_forcing_features(agent, scales, units=16)
+    assert len(rows) >= 8
+    w = agent.actor[0].weight.detach().numpy().astype(np.float32)
+    b = agent.actor[0].bias.detach().numpy().astype(np.float32)
+    inverse = (np.float32(1.0) / scales).astype(np.float32)
+    for row in rows:
+        assert np.count_nonzero(row) == 1
+        x = (row * inverse).astype(np.float32)
+        k = int(np.flatnonzero(row)[0])
+        pre = b + w[:, k] * x[k]
+        assert (pre == 0).any()

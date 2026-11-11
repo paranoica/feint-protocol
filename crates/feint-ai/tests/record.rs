@@ -1,5 +1,7 @@
 mod line_game;
 
+use std::num::NonZeroU64;
+
 use feint_ai::{
     Bot, Difficulty, Opponent, Record, RecordError, RunHeader, decode_record, encode_record,
     replay_record, run_match,
@@ -212,11 +214,14 @@ fn a_hand_made_record_says_so() {
 #[test]
 fn trained_opponent_round_trips_in_a_record() {
     let (mut record, _) = played();
-    record.header.opponent = Opponent::Trained(0xdaf7_bada_17a0_1ab0);
+    record.header.opponent = Opponent::Trained(NonZeroU64::new(0xdaf7_bada_17a0_1ab0).unwrap());
     let back = decode_record(&encode_record(&record)).unwrap();
     assert_eq!(back, record);
     let back = decode_record(&header_frames(1, 77)).unwrap();
-    assert_eq!(back.header.opponent, Opponent::Trained(77));
+    assert_eq!(
+        back.header.opponent,
+        Opponent::Trained(NonZeroU64::new(77).unwrap())
+    );
 }
 
 #[test]

@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use feint_protocol::{
     ActionT, AdapterError, BodyParamsT, EventT, GameAdapter, ObservationT, PlayerId,
 };
@@ -8,7 +10,7 @@ use crate::playbook::Controller;
 pub enum Opponent {
     #[default]
     HandMade,
-    Trained(u64),
+    Trained(NonZeroU64),
 }
 
 #[derive(Clone, Debug, PartialEq)]

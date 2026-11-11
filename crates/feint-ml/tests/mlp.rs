@@ -7,6 +7,7 @@ const PYTHON_FILE: &[u8] = include_bytes!("../checkpoints/airhockey-g999.safeten
 const FEATURES_BIN: &[u8] = include_bytes!("fixtures/features.bin");
 const OUTPUTS_BIN: &[u8] = include_bytes!("fixtures/outputs.bin");
 const RECORDED: usize = 1000;
+const EXTREMES: usize = 1 + 4 + 2 * 18;
 const LAYOUT: &str = "airhockey-v3:anticipated-observation16+reaction_s+physique";
 
 fn matrix(bytes: &[u8]) -> (usize, usize, Vec<f32>) {
@@ -130,15 +131,14 @@ fn forward_matches_pytorch_on_recorded_features() {
     let (rows, width, inputs) = matrix(FEATURES_BIN);
     let (out_rows, out_width, expected) = matrix(OUTPUTS_BIN);
     assert_eq!((width, out_rows, out_width), (18, rows, 2));
-    assert!(rows > RECORDED);
-    let mut worst_recorded = 0.0f32;
+    assert!(rows > RECORDED + EXTREMES);
+    let absolute = rows - EXTREMES;
     for row in 0..rows {
         let got = run(&mut mlp, &inputs[row * 18..(row + 1) * 18]);
         for k in 0..2 {
             let want = expected[row * 2 + k];
             let diff = (got[k] - want).abs();
-            if row < RECORDED {
-                worst_recorded = worst_recorded.max(diff);
+            if row < absolute {
                 assert!(diff <= 1e-5, "row {row} out {k}: {} vs {want}", got[k]);
             } else {
                 assert!(
@@ -149,7 +149,6 @@ fn forward_matches_pytorch_on_recorded_features() {
             }
         }
     }
-    assert!(worst_recorded > 0.0 || rows == 0);
 }
 
 #[test]

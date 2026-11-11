@@ -119,7 +119,7 @@ fn verify_game<G: HubGame>(
             Seat::HandMade(Box::new(bot))
         }
         Opponent::Trained(checkpoint) => {
-            let pilot = G::trained(level, checkpoint, &game.spec()).map_err(|e| match e {
+            let pilot = G::trained(level, checkpoint.get(), &game.spec()).map_err(|e| match e {
                 SessionError::Unsupported => VerifyError::Game,
                 SessionError::Level => VerifyError::Level,
                 _ => VerifyError::Checkpoint,

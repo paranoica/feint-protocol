@@ -42,6 +42,41 @@ def extreme_features(scales: np.ndarray) -> np.ndarray:
     return np.stack(rows)
 
 
+def zero_forcing_features(agent: Agent, scales: np.ndarray, units: int) -> np.ndarray:
+    weight = agent.actor[0].weight.detach().cpu().numpy().astype(np.float32)
+    bias = agent.actor[0].bias.detach().cpu().numpy().astype(np.float32)
+    inverse = (np.float32(1.0) / scales).astype(np.float32)
+    rows = []
+    for j in range(min(units, len(bias))):
+        k = int(np.argmax(np.abs(weight[j])))
+        w = weight[j, k]
+        if w == 0:
+            continue
+        found = None
+        z = np.float32(-bias[j] / w)
+        for _ in range(64):
+            if np.float32(bias[j] + np.float32(w * z)) == 0:
+                found = z
+                break
+            z = np.nextafter(z, np.float32(np.inf), dtype=np.float32)
+        if found is None:
+            continue
+        x = np.float32(found * scales[k])
+        for step in (np.float32(np.inf), np.float32(-np.inf)):
+            probe = x
+            for _ in range(64):
+                if np.float32(probe * inverse[k]) == found:
+                    row = np.zeros(len(scales), dtype=np.float32)
+                    row[k] = probe
+                    rows.append(row)
+                    break
+                probe = np.nextafter(probe, step, dtype=np.float32)
+            else:
+                continue
+            break
+    return np.stack(rows) if rows else np.zeros((0, len(scales)), dtype=np.float32)
+
+
 def record_features(agent: Agent, count: int, seed: int, threads: int) -> np.ndarray:
     opponents = ["level:3", "level:5"]
     seats = [
@@ -71,7 +106,11 @@ def make_fixtures(
     export(agent, policy)
     scales = np.array(HockeyBatch.scales, dtype=np.float32)
     inputs = np.concatenate(
-        [record_features(agent, recorded, seed, threads), extreme_features(scales)]
+        [
+            record_features(agent, recorded, seed, threads),
+            zero_forcing_features(agent, scales, units=64),
+            extreme_features(scales),
+        ]
     )
     write_matrix(out / "features.bin", inputs)
     write_matrix(out / "outputs.bin", agent.act(inputs))
