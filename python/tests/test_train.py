@@ -11,8 +11,9 @@ import numpy as np
 import pytest
 import torch
 
+from feint_train.export import export
 from feint_train.league import League
-from feint_train.train import TrainConfig, Trainer, hide_gpu_for
+from feint_train.train import TrainConfig, Trainer, hide_gpu_for, start_from
 from feint_train.update import UpdateStats
 
 DECISION_HZ = 60
@@ -259,3 +260,169 @@ def test_results_against_an_evicted_snapshot_go_to_the_frozen_bucket(tmp_path: P
     trainer.account("level:5", 0, 7, finished=True)
     assert set(trainer.stats.results) == {"frozen", "level:5"}
     assert list(trainer.stats.results["frozen"]) == [0.75, 0.25]
+
+
+def exported_actor(tmp_path: Path, seed: int) -> tuple[Path, dict[str, torch.Tensor]]:
+    source = Trainer(small(seed=seed), tmp_path / f"actor-{seed}")
+    torch.manual_seed(seed)
+    with torch.no_grad():
+        for p in source.agent.actor.parameters():
+            p.normal_(std=0.3)
+    path = tmp_path / f"actor-{seed}.safetensors"
+    export(source.agent, path)
+    return path, {k: v.clone() for k, v in source.agent.actor.state_dict().items()}
+
+
+def test_init_actor_takes_the_actor_from_the_file_and_the_rest_from_the_checkpoint(
+    tmp_path: Path,
+) -> None:
+    actor_file, actor = exported_actor(tmp_path, seed=5)
+    base = Trainer(small(seed=2), tmp_path / "base")
+    with torch.no_grad():
+        base.agent.log_std.fill_(-1.1)
+    base.save()
+    started = Trainer(
+        small(seed=3),
+        tmp_path / "started",
+        init=tmp_path / "base" / "checkpoint.pt",
+        init_actor=actor_file,
+    )
+    for name, value in actor.items():
+        assert torch.equal(started.agent.actor.state_dict()[name], value)
+    for name, value in base.agent.critic.state_dict().items():
+        assert torch.equal(started.agent.critic.state_dict()[name], value)
+    assert torch.equal(started.agent.log_std, base.agent.log_std)
+
+
+def test_init_actor_refuses_a_file_made_for_other_feature_scales(tmp_path: Path) -> None:
+    from feint_train.agent import Agent
+
+    features = len(Trainer(small(), tmp_path / "probe").agent.scales)
+    path = tmp_path / "other.safetensors"
+    export(Agent(np.full(features, 3.0, dtype=np.float32)), path)
+    with pytest.raises(ValueError):
+        Trainer(small(), tmp_path / "t", init_actor=path)
+
+
+def test_init_actor_refuses_a_file_of_another_format(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file, save_file
+
+    from feint_train.export import metadata
+
+    good, _ = exported_actor(tmp_path, seed=6)
+    path = tmp_path / "foreign.safetensors"
+    save_file(load_file(str(good)), str(path), {**metadata(good), "format": "other-v9"})
+    with pytest.raises(ValueError):
+        Trainer(small(), tmp_path / "t", init_actor=path)
+
+
+def test_resuming_and_starting_from_an_actor_file_do_not_mix(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        Trainer(small(), tmp_path, resume=tmp_path / "x.pt", init_actor=tmp_path / "y.safetensors")
+
+
+def test_a_resumed_run_ignores_the_starting_points(tmp_path: Path) -> None:
+    init, actor = tmp_path / "init.pt", tmp_path / "actor.safetensors"
+    assert start_from("auto", tmp_path, init, actor) == (None, init, actor)
+    (tmp_path / "checkpoint.pt").write_bytes(b"")
+    assert start_from("auto", tmp_path, init, actor) == (tmp_path / "checkpoint.pt", None, None)
+    assert start_from(None, tmp_path, init, actor) == (None, init, actor)
+
+
+def test_warmup_trains_only_the_critic_and_leaves_the_actor_without_adam_state(
+    tmp_path: Path,
+) -> None:
+    config = small()
+    config.steps = 8
+    config.critic_warmup = 2
+    trainer = Trainer(config, tmp_path)
+    actor = [p.detach().clone() for p in trainer.agent.actor.parameters()]
+    log_std = trainer.agent.log_std.detach().clone()
+    critic = [p.detach().clone() for p in trainer.agent.critic.parameters()]
+    for _ in range(2):
+        trainer.iteration(0.0)
+    for before, after in zip(actor, trainer.agent.actor.parameters(), strict=True):
+        assert torch.equal(before, after)
+    assert torch.equal(log_std, trainer.agent.log_std)
+    assert any(
+        not torch.equal(b, a)
+        for b, a in zip(critic, trainer.agent.critic.parameters(), strict=True)
+    )
+    frozen = [*trainer.agent.actor.parameters(), trainer.agent.log_std]
+    assert all(p not in trainer.optimizer.state for p in frozen)
+    trainer.iteration(0.0)
+    assert any(
+        not torch.equal(b, a) for b, a in zip(actor, trainer.agent.actor.parameters(), strict=True)
+    )
+    assert all(p.requires_grad for p in trainer.agent.parameters())
+
+
+def test_the_actor_file_joins_the_league_archive_from_the_first_batch(tmp_path: Path) -> None:
+    actor_file, _ = exported_actor(tmp_path, seed=7)
+    trainer = Trainer(league_config(), tmp_path / "run", init_actor=actor_file)
+    assert trainer.league.ids() == ["snap-init"]
+    assert any(s.startswith("frozen:") for pair in trainer.table for s in pair)
+
+
+class ScriptedBatch:
+    def __init__(self, out: dict[str, np.ndarray]) -> None:
+        self.out = out
+
+    def step(self, actions: np.ndarray) -> dict[str, np.ndarray]:
+        return self.out
+
+
+def test_the_trainer_credits_a_conceded_goal_at_the_concede_weight(tmp_path: Path) -> None:
+    config = small()
+    config.concede_weight = 0.5
+    trainer = Trainer(config, tmp_path)
+    ready = trainer.out["ready"].reshape(-1)
+    slot = int(np.flatnonzero(ready)[0])
+    envs = config.envs
+    reward = np.zeros((envs, 2), dtype=np.float32)
+    reward.reshape(-1)[slot] = -1.0
+    trainer.batch = ScriptedBatch(
+        {
+            "reward": reward,
+            "ready": trainer.out["ready"],
+            "obs": trainer.out["obs"],
+            "final_obs": np.zeros_like(trainer.out["obs"]),
+            "terminated": np.zeros(envs, dtype=bool),
+            "truncated": np.zeros(envs, dtype=bool),
+            "score": np.zeros((envs, 2), dtype=np.uint32),
+        }
+    )
+    trainer.step()
+    credited = [t.reward for t in trainer.collector.transitions if t.slot == slot]
+    assert credited == [-0.5]
+
+
+def test_the_trainer_uses_the_configured_budget_and_capped_value(tmp_path: Path) -> None:
+    from feint_train.league import Budget
+
+    config = league_config()
+    config.budget = Budget(hand_made=0.5, level5=0.5, readers=0.0, frozen=0.0)
+    config.capped_ahead = 0.5
+    trainer = Trainer(config, tmp_path)
+    assert trainer.opponent_of.count("level:5") == 5
+    trainer.snapshot()
+    kept = trainer.league.ids()[0]
+    trainer.account(kept, 3, 1, finished=False)
+    trainer.account("level:5", 3, 1, finished=False)
+    assert list(trainer.stats.results["frozen"]) == [0.5]
+    assert list(trainer.stats.results["level:5"]) == [0.5]
+    assert trainer.league.find(kept).value == 0.5
+
+
+def test_init_actor_refuses_a_layer_of_another_shape(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file, save_file
+
+    from feint_train.export import metadata
+
+    good, _ = exported_actor(tmp_path, seed=8)
+    tensors = load_file(str(good))
+    tensors["layer2.bias"] = tensors["layer2.bias"][:1].copy()
+    path = tmp_path / "narrow.safetensors"
+    save_file(tensors, str(path), metadata(good))
+    with pytest.raises(ValueError):
+        Trainer(small(), tmp_path / "t", init_actor=path)

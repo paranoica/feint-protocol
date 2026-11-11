@@ -9,13 +9,14 @@ from pathlib import Path
 import numpy as np
 import torch
 from feint_gym import HockeyBatch
+from safetensors.numpy import load_file
 from torch.utils.tensorboard import SummaryWriter
 
 from feint_train.agent import Agent
 from feint_train.evaluate import evaluate
-from feint_train.export import export
-from feint_train.league import League, match_value
-from feint_train.rollout import Collector
+from feint_train.export import FORMAT, LAYOUT, export, metadata
+from feint_train.league import Budget, League, match_value
+from feint_train.rollout import Collector, weighted_goals
 from feint_train.update import UpdateConfig, UpdateStats, ppo_update
 
 
@@ -43,6 +44,10 @@ class TrainConfig:
     archive_size: int = 12
     generation_minutes: float = 15.0
     snapshot_minutes: float = 30.0
+    budget: Budget = field(default_factory=Budget)
+    capped_ahead: float = 0.75
+    concede_weight: float = 1.0
+    critic_warmup: int = 0
     update: UpdateConfig = field(default_factory=UpdateConfig)
 
 
@@ -59,12 +64,13 @@ def seats(config: TrainConfig) -> list[tuple[str, str]]:
 
 
 class Stats:
-    def __init__(self, window: int = 400) -> None:
+    def __init__(self, window: int = 400, ahead: float = 0.75) -> None:
         self.results: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=window))
         self.goals: deque[float] = deque(maxlen=window)
+        self.ahead = ahead
 
     def record(self, opponent: str, mine: int, theirs: int, finished: bool) -> None:
-        self.results[opponent].append(match_value(mine, theirs, finished))
+        self.results[opponent].append(match_value(mine, theirs, finished, self.ahead))
         self.goals.append(mine - theirs)
 
 
@@ -75,8 +81,9 @@ class Trainer:
         logdir: Path,
         resume: Path | None = None,
         init: Path | None = None,
+        init_actor: Path | None = None,
     ) -> None:
-        if resume is not None and init is not None:
+        if resume is not None and (init is not None or init_actor is not None):
             raise ValueError("resume a run or start from a checkpoint, not both")
         if config.seed == config.eval_seed:
             raise ValueError("training and evaluation need different seeds")
@@ -90,7 +97,11 @@ class Trainer:
         scales = np.array(HockeyBatch.scales, dtype=np.float32)
         self.agent = Agent(scales, std=config.std).to(torch.device(config.device))
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=config.lr, eps=1e-5)
-        self.league = League(archive_size=config.archive_size) if config.league else None
+        self.league = (
+            League(archive_size=config.archive_size, budget=config.budget)
+            if config.league
+            else None
+        )
         spent = 0.0
         self.updates = 0
         self.generation = 0
@@ -104,15 +115,13 @@ class Trainer:
             self.generation = state.get("generation", 0) + 1
             if self.league is not None and state.get("league") is not None:
                 self.league = League.from_state(state["league"])
-        if init is not None:
-            weights = torch.load(init, map_location=config.device, weights_only=True)["agent"]
-            self.agent.load_state_dict(weights)
+        self.start_from(init, init_actor)
         self.writer = SummaryWriter(str(logdir))
         self.writer.add_text("config", str(asdict(config)))
         self.collector = Collector(
             slots=self.slots, gamma=config.gamma, potential_scale=float(scales[0])
         )
-        self.stats = Stats()
+        self.stats = Stats(ahead=config.capped_ahead)
         self.start = time.perf_counter() - spent
         now = self.elapsed()
         self.next_eval = now + config.eval_every_minutes * 60.0
@@ -126,6 +135,15 @@ class Trainer:
         self.build_batch()
         if state is not None and "torch_rng" in state:
             torch.set_rng_state(state["torch_rng"])
+
+    def start_from(self, init: Path | None, init_actor: Path | None) -> None:
+        if init is not None:
+            state = torch.load(init, map_location=self.config.device, weights_only=True)
+            self.agent.load_state_dict(state["agent"])
+        if init_actor is not None:
+            load_actor(self.agent, init_actor)
+            if self.league is not None:
+                self.league.add("snap-init", init_actor)
 
     def build_batch(self) -> None:
         self.batch_seed = self.config.seed + 7919 * self.generation
@@ -231,6 +249,7 @@ class Trainer:
             action[ready], logp[ready], value[ready] = self.agent.sample(obs[ready])
         self.collector.act(ready, obs, action, logp, value)
         out = self.batch.step(action.reshape(self.envs, 2, 2))
+        out["reward"] = weighted_goals(out["reward"], self.config.concede_weight)
         values = self.values_at(out["obs"], out["ready"].reshape(-1))
         final_values = self.values_at(out["final_obs"], np.repeat(out["truncated"], 2))
         self.collector.credit(out, values, final_values)
@@ -247,7 +266,9 @@ class Trainer:
     def account(self, opponent: str, mine: int, theirs: int, finished: bool) -> None:
         if opponent.startswith("snap-"):
             if self.league is not None:
-                self.league.record(opponent, match_value(mine, theirs, finished))
+                self.league.record(
+                    opponent, match_value(mine, theirs, finished, self.config.capped_ahead)
+                )
             opponent = "frozen"
         self.stats.record(opponent, mine, theirs, finished)
 
@@ -263,6 +284,7 @@ class Trainer:
         advantage, returns = self.collector.advantages(config.lam)
         data = self.collector.arrays()
         began = time.perf_counter()
+        self.freeze_actor(self.updates < config.critic_warmup)
         result = ppo_update(
             self.agent, self.optimizer, data, advantage, returns, config.update, self.rng
         )
@@ -270,6 +292,10 @@ class Trainer:
         self.collector.clear()
         self.updates += 1
         self.log(result, rollout, update, len(data["obs"]))
+
+    def freeze_actor(self, frozen: bool) -> None:
+        self.agent.actor.requires_grad_(not frozen)
+        self.agent.log_std.requires_grad_(not frozen)
 
     def log(self, result: UpdateStats, rollout: float, update: float, transitions: int) -> None:
         w, n = self.writer, self.updates
@@ -320,9 +346,32 @@ class Trainer:
 
 
 def train(
-    config: TrainConfig, logdir: Path, resume: Path | None = None, init: Path | None = None
+    config: TrainConfig,
+    logdir: Path,
+    resume: Path | None = None,
+    init: Path | None = None,
+    init_actor: Path | None = None,
 ) -> Agent:
-    return Trainer(config, logdir, resume, init).run()
+    return Trainer(config, logdir, resume, init, init_actor).run()
+
+
+def load_actor(agent: Agent, path: Path) -> None:
+    meta = metadata(path)
+    if meta.get("format") != FORMAT or meta.get("layout") != LAYOUT:
+        raise ValueError(f"{path} is not a {FORMAT} {LAYOUT} policy")
+    inverse = np.array(meta["inv_scales"].split(","), dtype=np.float32)
+    expected = agent.inverse_scales().detach().cpu().numpy()
+    if inverse.shape != expected.shape or not np.array_equal(inverse, expected):
+        raise ValueError(f"{path} was trained on other feature scales")
+    tensors = load_file(str(path))
+    with torch.no_grad():
+        for layer, index in (("layer0", 0), ("layer1", 2), ("layer2", 4)):
+            for part in ("weight", "bias"):
+                target = getattr(agent.actor[index], part)
+                source = torch.as_tensor(tensors[f"{layer}.{part}"])
+                if source.shape != target.shape:
+                    raise ValueError(f"{path} {layer}.{part} has shape {tuple(source.shape)}")
+                target.copy_(source)
 
 
 def hide_gpu_for(device: str) -> None:
@@ -353,10 +402,17 @@ def main() -> None:
     parser.add_argument("--league", action="store_true")
     parser.add_argument("--generation-minutes", type=float, default=TrainConfig.generation_minutes)
     parser.add_argument("--snapshot-minutes", type=float, default=TrainConfig.snapshot_minutes)
+    parser.add_argument("--init-actor", type=Path)
+    parser.add_argument("--critic-warmup", type=int, default=TrainConfig.critic_warmup)
+    parser.add_argument("--concede-weight", type=float, default=TrainConfig.concede_weight)
+    parser.add_argument("--capped-ahead", type=float, default=TrainConfig.capped_ahead)
+    parser.add_argument("--hand-made", type=float, default=Budget.hand_made)
+    parser.add_argument("--level5", type=float, default=Budget.level5)
+    parser.add_argument("--readers", type=float, default=Budget.readers)
+    parser.add_argument("--frozen", type=float, default=Budget.frozen)
     args = parser.parse_args()
     hide_gpu_for(args.device)
-    resume = resolve_resume(args.resume, args.logdir)
-    init = None if resume is not None else args.init
+    resume, init, init_actor = start_from(args.resume, args.logdir, args.init, args.init_actor)
     config = TrainConfig(
         opponents=args.opponents.split(","),
         eval_opponents=args.eval_opponents.split(","),
@@ -375,8 +431,23 @@ def main() -> None:
         league=args.league,
         generation_minutes=args.generation_minutes,
         snapshot_minutes=args.snapshot_minutes,
+        budget=Budget(
+            hand_made=args.hand_made, level5=args.level5, readers=args.readers, frozen=args.frozen
+        ),
+        capped_ahead=args.capped_ahead,
+        concede_weight=args.concede_weight,
+        critic_warmup=args.critic_warmup,
     )
-    train(config, args.logdir, resume, init)
+    train(config, args.logdir, resume, init, init_actor)
+
+
+def start_from(
+    resume: str | None, logdir: Path, init: Path | None, init_actor: Path | None
+) -> tuple[Path | None, Path | None, Path | None]:
+    found = resolve_resume(resume, logdir)
+    if found is not None:
+        return found, None, None
+    return None, init, init_actor
 
 
 def resolve_resume(resume: str | None, logdir: Path) -> Path | None:
