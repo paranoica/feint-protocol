@@ -1,4 +1,5 @@
 import os
+import pickle
 import warnings
 from pathlib import Path
 
@@ -100,3 +101,28 @@ def test_one_iteration_collects_updates_and_clears(tmp_path: Path) -> None:
     assert trainer.collector.transitions == [] and not trainer.collector.open
     after = list(trainer.agent.parameters())
     assert any(not torch.equal(a, b) for a, b in zip(after, before, strict=True))
+
+
+class Planted:
+    pass
+
+
+@pytest.mark.parametrize("flag", ["resume", "init"])
+def test_a_checkpoint_carrying_arbitrary_objects_is_refused_even_when_torch_is_told_to_allow_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    source = Trainer(small(), tmp_path / "a")
+    planted = tmp_path / "planted.pt"
+    torch.save(
+        {
+            "agent": source.agent.state_dict(),
+            "optimizer": source.optimizer.state_dict(),
+            "spent": 0.0,
+            "updates": 0,
+            "planted": Planted(),
+        },
+        planted,
+    )
+    monkeypatch.setenv("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    with pytest.raises(pickle.UnpicklingError):
+        Trainer(small(), tmp_path / "b", **{flag: planted})

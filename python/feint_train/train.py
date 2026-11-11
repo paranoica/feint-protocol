@@ -89,13 +89,14 @@ class Trainer:
         spent = 0.0
         self.updates = 0
         if resume is not None:
-            state = torch.load(resume, map_location=config.device)
+            state = torch.load(resume, map_location=config.device, weights_only=True)
             self.agent.load_state_dict(state["agent"])
             self.optimizer.load_state_dict(state["optimizer"])
             spent = state["spent"]
             self.updates = state["updates"]
         if init is not None:
-            self.agent.load_state_dict(torch.load(init, map_location=config.device)["agent"])
+            weights = torch.load(init, map_location=config.device, weights_only=True)["agent"]
+            self.agent.load_state_dict(weights)
         self.writer = SummaryWriter(str(logdir))
         self.writer.add_text("config", str(asdict(config)))
         self.collector = Collector(
