@@ -13,6 +13,7 @@ penalty.workspace = true
 duel.workspace = true
 feint-ai.workspace = true
 feint-protocol.workspace = true
+feint-ml.workspace = true
 
 [lints]
 workspace = true

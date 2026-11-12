@@ -4,9 +4,10 @@ use feint_protocol::PlayerId;
 
 pub const CONTACT_SLACK: f64 = 0.01;
 pub const SHOT_SPEED: f64 = 1.4;
-pub const SHOW_MIN: f64 = 0.2;
-pub const SHOW_HOLD_TICKS: usize = 48;
+pub const SHOW_MIN: f64 = 0.15;
+pub const SHOW_HOLD_TICKS: usize = 30;
 pub const SHOW_REACH: f64 = 0.5;
+pub const SHOW_BACK: f64 = 0.1;
 pub const SHOW_WINDOW_TICKS: u64 = 360;
 pub const BEHIND_COS: f64 = 0.5;
 pub const CORNER_SPLIT: f64 = 0.035;
@@ -20,6 +21,7 @@ const MAX_BOUNCES: usize = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shot {
     pub player: PlayerId,
+    pub from: u64,
     pub contact: u64,
     pub shown: Option<u8>,
     pub realised: u8,
@@ -71,7 +73,8 @@ fn shown_side(params: &Params, frame: &Frame, player: PlayerId) -> Option<u8> {
     let puck = seen(player, frame.puck);
     let line = puck - seen(player, frame.mallets[me]);
     let length = line.length();
-    if length == 0.0 || length > SHOW_REACH || line.x < BEHIND_COS * length {
+    let back = params.puck_radius + params.mallet_radius + SHOW_BACK;
+    if length < back || length > SHOW_REACH || line.x < BEHIND_COS * length {
         return None;
     }
     let y = puck.y + (params.half_length - puck.x) * line.y / line.x;
@@ -101,8 +104,12 @@ fn shown(
     since: usize,
     contact: usize,
     player: PlayerId,
+    in_play: u64,
 ) -> Option<u8> {
-    let earliest = frames[contact].tick.saturating_sub(SHOW_WINDOW_TICKS);
+    let earliest = frames[contact]
+        .tick
+        .saturating_sub(SHOW_WINDOW_TICKS)
+        .max(in_play);
     let mut best: Option<(u8, usize)> = None;
     let mut run: Option<(u8, usize)> = None;
     for f in frames[since..contact].iter().filter(|f| f.tick >= earliest) {
@@ -192,24 +199,34 @@ pub fn shots(params: &Params, frames: &[Frame]) -> Vec<Shot> {
     let reach = params.puck_radius + params.mallet_radius + CONTACT_SLACK;
     let starts = touch_starts(frames, reach);
     let mut out = Vec::new();
-    let mut since = 0;
+    let mut since = [0usize; 2];
+    let mut in_play = 0;
+    let jump = params.puck_speed_cap * params.tick_dt() * 2.0;
     for k in 0..frames.len() {
+        if k > 0
+            && (frames[k].score != frames[k - 1].score
+                || (frames[k].puck - frames[k - 1].puck).length() > jump)
+        {
+            since = [k, k];
+            in_play = frames[k].tick + u64::from(params.serve_pause_ticks());
+        }
         for player in 0..2u8 {
-            if !starts[k][usize::from(player)] {
+            let me = usize::from(player);
+            if !starts[k][me] {
                 continue;
             }
+            since[1 - me] = k;
             if let Some(side) = realised(params, frames, &starts, k, player, reach) {
                 out.push(Shot {
                     player,
+                    from: frames[since[me]].tick,
                     contact: frames[k].tick,
-                    shown: shown(params, frames, since, k, player),
+                    shown: shown(params, frames, since[me], k, player, in_play),
                     realised: side,
                     scored: false,
                 });
+                since[me] = k;
             }
-        }
-        if starts[k][0] || starts[k][1] {
-            since = k;
         }
     }
     for player in 0..2u8 {

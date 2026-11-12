@@ -9,6 +9,7 @@ const SHOT_SPEED: f64 = 3.0;
 struct Film {
     frames: Vec<Frame>,
     flip: bool,
+    score: [u32; 2],
 }
 
 impl Film {
@@ -16,6 +17,7 @@ impl Film {
         Self {
             frames: Vec::new(),
             flip,
+            score: [0, 0],
         }
     }
 
@@ -24,6 +26,7 @@ impl Film {
     }
 
     fn push(&mut self, puck: Vec2, mallet: Vec2, score: [u32; 2]) {
+        self.score = score;
         let tick = self.frames.len() as u64;
         let far = self.put(Vec2::new(0.9, -0.4));
         let (puck, mallet) = (self.put(puck), self.put(mallet));
@@ -42,19 +45,19 @@ impl Film {
 
     fn hold(&mut self, ticks: usize, puck: Vec2, mallet: Vec2) {
         for _ in 0..ticks {
-            self.push(puck, mallet, [0, 0]);
+            self.push(puck, mallet, self.score);
         }
     }
 
     fn strike(&mut self, puck: Vec2, aim_y: f64, ticks: usize) -> Vec2 {
         let dir = unit(Vec2::new(1.0 - puck.x, aim_y - puck.y));
         let mallet = puck - dir * TOUCH;
-        self.push(puck, mallet, [0, 0]);
+        self.push(puck, mallet, self.score);
         let step = SHOT_SPEED / 240.0;
         let mut at = puck;
         for _ in 0..ticks {
             at += dir * step;
-            self.push(at, mallet, [0, 0]);
+            self.push(at, mallet, self.score);
         }
         at
     }
@@ -131,11 +134,11 @@ fn a_show_to_the_side_the_puck_goes_is_not_a_fake() {
 
 #[test]
 fn a_show_shorter_than_the_hold_is_not_a_fake_and_the_hold_itself_is() {
-    let s = found(&fake_film(false, 47));
+    let s = found(&fake_film(false, 29));
     assert_eq!(s.len(), 1, "{s:?}");
-    assert_eq!(s[0].shown, None, "47 ticks is under the 0.2 s hold");
-    let s = found(&fake_film(false, 48));
-    assert_eq!(s[0].shown, Some(0), "48 ticks is the 0.2 s hold");
+    assert_eq!(s[0].shown, None, "29 ticks is under the 0.125 s hold");
+    let s = found(&fake_film(false, 30));
+    assert_eq!(s[0].shown, Some(0), "30 ticks is the 0.125 s hold");
 }
 
 #[test]
@@ -153,7 +156,7 @@ fn a_walk_round_the_puck_is_not_a_fake() {
     assert_eq!(s.len(), 1, "{s:?}");
     assert_eq!(
         s[0].shown, None,
-        "the aim line sweeps the 0.2-0.45 m band in about 8 ticks"
+        "the aim line sweeps the 0.15-0.45 m band in about 9 ticks"
     );
 }
 
@@ -433,7 +436,27 @@ fn a_mallet_beside_the_puck_shows_nothing() {
 }
 
 #[test]
-fn a_show_before_an_earlier_touch_does_not_count() {
+fn a_show_before_the_opponents_touch_does_not_count() {
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    let mut touch = f.frames.last().copied().unwrap();
+    touch.tick += 1;
+    touch.mallets[1] = PUCK + Vec2::new(TOUCH, 0.0);
+    f.frames.push(touch);
+    f.hold(20, PUCK, PUCK - Vec2::new(WINDUP_BACK, 0.0));
+    f.strike(PUCK, 0.084, 30);
+    let s = found(&f);
+    let mine: Vec<&Shot> = s.iter().filter(|s| s.player == 0).collect();
+    assert_eq!(mine.len(), 1, "{s:?}");
+    assert_eq!(
+        mine[0].shown, None,
+        "the opponent's touch starts a new attack"
+    );
+    assert_eq!(mine[0].from, 96);
+}
+
+#[test]
+fn a_glance_of_my_own_keeps_the_show() {
     let mut f = Film::new(false);
     f.hold(96, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
     f.hold(1, PUCK, PUCK - Vec2::new(TOUCH, 0.0));
@@ -441,5 +464,106 @@ fn a_show_before_an_earlier_touch_does_not_count() {
     f.strike(PUCK, 0.084, 30);
     let s = found(&f);
     assert_eq!(s.len(), 1, "{s:?}");
-    assert_eq!(s[0].shown, None, "the touch in between starts a new attack");
+    assert_eq!(
+        s[0].shown,
+        Some(0),
+        "a touch that is not a shot does not end my attack"
+    );
+    assert!(s[0].fake());
+    assert_eq!(s[0].from, 0);
+}
+
+#[test]
+fn my_previous_shot_ends_the_show_window() {
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    let at = f.strike(PUCK, -0.084, 20);
+    f.hold(10, at, at - Vec2::new(WINDUP_BACK, 0.0));
+    f.strike(at, 0.084, 30);
+    let s = found(&f);
+    assert_eq!(s.len(), 2, "{s:?}");
+    assert_eq!(s[0].shown, Some(0));
+    assert_eq!(
+        s[1].shown, None,
+        "the first shot closed the attack its show belonged to"
+    );
+    assert_eq!(s[1].from, 96);
+}
+
+#[test]
+fn a_show_before_a_serve_does_not_count() {
+    let mut f = Film::new(false);
+    let elsewhere = Vec2::new(-0.2, 0.3);
+    f.hold(96, elsewhere, behind(elsewhere, -0.3, WINDUP_BACK));
+    f.hold(20, PUCK, PUCK - Vec2::new(WINDUP_BACK, 0.0));
+    f.strike(PUCK, 0.084, 30);
+    let s = found(&f);
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert_eq!(
+        s[0].shown, None,
+        "the puck jumped to the serve spot: a new point"
+    );
+    assert_eq!(s[0].from, 96);
+}
+
+#[test]
+fn a_mallet_pressed_to_the_puck_shows_nothing() {
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.3, 0.21));
+    f.strike(PUCK, 0.084, 30);
+    assert_eq!(
+        found(&f)[0].shown,
+        None,
+        "a show is a wind-up: 0.21 m is inside contact reach 0.12 plus 0.1"
+    );
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.3, 0.23));
+    f.strike(PUCK, 0.084, 30);
+    assert_eq!(found(&f)[0].shown, Some(0), "0.23 m is a wind-up");
+}
+
+#[test]
+fn the_serve_pause_is_not_a_show() {
+    let mut f = Film::new(false);
+    f.hold(10, Vec2::new(0.9, 0.3), Vec2::new(-0.9, 0.0));
+    f.push(PUCK, behind(PUCK, -0.3, WINDUP_BACK), [0, 1]);
+    f.hold(239, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    f.hold(29, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    f.strike(PUCK, 0.084, 30);
+    let s = found(&f);
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert_eq!(
+        s[0].shown, None,
+        "only 29 ticks of the show come after the 1 s pause"
+    );
+    let mut f = Film::new(false);
+    f.hold(10, Vec2::new(0.9, 0.3), Vec2::new(-0.9, 0.0));
+    f.push(PUCK, behind(PUCK, -0.3, WINDUP_BACK), [0, 1]);
+    f.hold(239 + 30, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    f.strike(PUCK, 0.084, 30);
+    assert_eq!(
+        found(&f)[0].shown,
+        Some(0),
+        "30 ticks after the pause are a show"
+    );
+}
+
+#[test]
+fn a_show_is_an_aim_wider_than_the_mouth_edge() {
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.17, WINDUP_BACK));
+    f.strike(PUCK, 0.084, 30);
+    assert_eq!(
+        found(&f)[0].shown,
+        Some(0),
+        "an aim at y = -0.17 is past the 0.15 line"
+    );
+    let mut f = Film::new(false);
+    f.hold(96, PUCK, behind(PUCK, -0.14, WINDUP_BACK));
+    f.strike(PUCK, 0.084, 30);
+    assert_eq!(
+        found(&f)[0].shown,
+        None,
+        "an aim at y = -0.14 is inside the mouth"
+    );
 }

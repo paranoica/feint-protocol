@@ -1,5 +1,7 @@
 pub mod attacks;
+pub mod calibrate;
 pub mod detect;
+pub mod play;
 
 use std::fmt::Write;
 
