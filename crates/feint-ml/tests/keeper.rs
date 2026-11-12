@@ -283,3 +283,94 @@ fn a_keeper_seat_plays_at_full_body_and_reports_its_counts() {
     assert!(batch.keeper_counts(2).is_none());
     assert_eq!(BITE_TICKS, 120);
 }
+
+#[test]
+fn a_bank_shot_into_the_far_corner_is_saved_and_scores_against_an_absent_keeper() {
+    let limit = Params::default().half_width - Params::default().puck_radius;
+    for seed in (0..40).step_by(2) {
+        let corner = if seed % 4 == 0 { 0.11 } else { -0.11 };
+        let mirrored = if corner > 0.0 {
+            -2.0 * limit - corner
+        } else {
+            2.0 * limit - corner
+        };
+        let mut keeper = Keeper::new(Params::default(), 700);
+        let mut absent = shooter(None, mirrored);
+        assert_eq!(
+            shooter_goals(&mut absent, &mut Aside, seed),
+            1,
+            "seed {seed} misses the goal"
+        );
+        assert_eq!(
+            shooter_goals(&mut shooter(None, mirrored), &mut keeper, seed),
+            0,
+            "seed {seed}"
+        );
+    }
+}
+
+fn jitter(rng: &mut ChaCha8Rng) -> f64 {
+    use rand_chacha::rand_core::RngCore;
+    (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+#[test]
+fn the_scripted_gate_pays_only_for_a_fake_timed_inside_the_commit() {
+    let limit = Params::default().half_width - Params::default().puck_radius;
+    let mut goals = [0u32; 4];
+    let seeds: Vec<u64> = (60_000..60_080).step_by(2).collect();
+    for &seed in &seeds {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let sign = if jitter(&mut rng) < 0.5 { 1.0 } else { -1.0 };
+        let corner = sign * (0.10 + 0.04 * jitter(&mut rng));
+        let show = -sign * (0.2 + 0.2 * jitter(&mut rng));
+        let bank = if corner > 0.0 {
+            -2.0 * limit - corner
+        } else {
+            2.0 * limit - corner
+        };
+        let cases = [
+            Shooter {
+                me: 0,
+                show_y: Some(show),
+                shot_y: corner,
+                strike_at: 70,
+            },
+            Shooter {
+                me: 0,
+                show_y: Some(show),
+                shot_y: corner,
+                strike_at: 400,
+            },
+            Shooter {
+                me: 0,
+                show_y: None,
+                shot_y: corner,
+                strike_at: 70,
+            },
+            Shooter {
+                me: 0,
+                show_y: None,
+                shot_y: bank,
+                strike_at: 70,
+            },
+        ];
+        for (k, mut case) in cases.into_iter().enumerate() {
+            let mut keeper = Keeper::new(Params::default(), 1000);
+            let mut game = AirHockey::new(Params::default(), 0);
+            let ticks = case.strike_at + 300;
+            let report =
+                run_match(&mut game, [&mut case, &mut keeper], header(seed), ticks).unwrap();
+            goals[k] += u32::from(report.score[0] > 0);
+        }
+    }
+    let n = seeds.len() as u32;
+    eprintln!(
+        "of {n}: timed fakes {} late fakes {} honest {} bank {}",
+        goals[0], goals[1], goals[2], goals[3]
+    );
+    assert!(goals[0] * 10 >= n * 8, "timed fakes {}", goals[0]);
+    assert!(goals[1] * 10 <= n, "late fakes {}", goals[1]);
+    assert!(goals[2] * 10 <= n, "honest {}", goals[2]);
+    assert!(goals[3] * 10 <= n, "bank {}", goals[3]);
+}
