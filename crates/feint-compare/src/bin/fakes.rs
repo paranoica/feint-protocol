@@ -58,9 +58,10 @@ fn main() -> ExitCode {
     };
     let five = Difficulty::preset(5).unwrap_or_else(|| panic!("level 5"));
     let mut r = trained_report(5, SEEDS);
-    r.noise = calibrate(honest(five), NOISE_SEEDS)
+    let noise = calibrate(honest(five), NOISE_SEEDS)
         .per_shot()
         .unwrap_or(0.0);
+    r.noise = (noise * 1e6).round() / 1e6;
     report(&r);
     if let Err(error) = std::fs::write(&path, r.to_json()) {
         eprintln!("{path}: {error}");
