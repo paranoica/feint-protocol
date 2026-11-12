@@ -23,6 +23,14 @@
       "quote_substr": "",
       "reason": "strength lost no ignored test: report.rs was the only one",
       "ts": 1794468141.4749699
+    },
+    {
+      "fingerprint": "d59d00740a9f",
+      "category": "maintainability",
+      "file_glob": "crates/feint-ml/src/*",
+      "quote_substr": "pub const MAX_TICKS: u64 = 240 * 60 * 30;",
+      "reason": "feint-ml cannot depend on feint-arena; value pinned by test",
+      "ts": 1794486017.5898652
     }
   ]
 }
