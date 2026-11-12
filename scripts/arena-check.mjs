@@ -52,7 +52,7 @@ if (two.profile !== 2) {
   throw new Error(`second match stored profile ${two.profile}`);
 }
 
-const checkpoint = checkpoints()[0];
+const checkpoint = checkpoints()[2];
 const third = await ticket();
 const trainedRecord = play(WebMatch.create_trained("airhockey", 3, third.seed, checkpoint));
 const three = await upload(trainedRecord, third, null);

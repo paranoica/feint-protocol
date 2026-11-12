@@ -1,5 +1,5 @@
 use feint_ml::mlp::Mlp;
-use feint_ml::registry::{CHECKPOINTS, fnv1a64, lookup};
+use feint_ml::registry::{CHECKPOINTS, fnv1a64, for_level, lookup};
 
 #[test]
 fn fnv1a64_matches_the_published_vectors() {
@@ -38,9 +38,39 @@ fn an_unknown_id_is_not_in_the_registry() {
 }
 
 #[test]
-fn the_registry_ships_the_checkpoint_that_met_the_bar() {
-    assert_eq!(CHECKPOINTS.len(), 1);
-    let shipped = &CHECKPOINTS[0];
+fn each_level_plays_the_checkpoint_picked_for_it() {
+    let names: Vec<&str> = (1..=5).map(|l| for_level(l).unwrap().name).collect();
+    assert_eq!(
+        names,
+        [
+            "airhockey-early",
+            "airhockey-pilot",
+            "airhockey-pilot",
+            "airhockey-pilot",
+            "airhockey-focus"
+        ]
+    );
+    assert_eq!(for_level(1).unwrap().id, 0x11e0_e1c1_a096_28b6);
+    assert_eq!(for_level(2).unwrap().id, 0x3ac0_02e1_2274_846f);
+    assert!(for_level(0).is_none());
+    assert!(for_level(6).is_none());
+}
+
+#[test]
+fn every_registered_checkpoint_serves_a_level() {
+    for c in CHECKPOINTS {
+        assert!(
+            (1..=5).any(|l| for_level(l).map(|f| f.id) == Some(c.id)),
+            "{}",
+            c.name
+        );
+    }
+    assert_eq!(CHECKPOINTS.len(), 3);
+}
+
+#[test]
+fn level_five_is_the_checkpoint_that_met_the_bar() {
+    let shipped = for_level(5).unwrap();
     assert_eq!(shipped.name, "airhockey-focus");
     assert_eq!(shipped.id, 0x1517_1d6c_57a0_caa7);
     let file = feint_ml::safetensors::SafeTensors::parse(shipped.bytes).unwrap();
