@@ -124,7 +124,7 @@
       "heavy": true
     },
     "fakes-of": {
-      "run": "cargo run --release --locked -q -p feint-compare --bin fakes -- /dev/null {args}",
+      "run": "cargo run --release --locked -q -p feint-compare --bin fakes -- --of {args}",
       "heavy": true
     },
     "keeper-gate": {

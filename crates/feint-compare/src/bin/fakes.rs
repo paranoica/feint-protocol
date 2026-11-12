@@ -3,7 +3,9 @@ use std::process::ExitCode;
 use feint_ai::Difficulty;
 use feint_compare::calibrate::calibrate;
 use feint_compare::honest;
-use feint_compare::trained::{Source, TrainedReport, hand_made_leans, trained_report_from, wilson};
+use feint_compare::trained::{
+    FakesRun, Source, TrainedReport, fakes_run, hand_made_leans, trained_report_from, wilson,
+};
 use feint_ml::mlp::Mlp;
 use feint_ml::registry::fnv1a64;
 
@@ -58,14 +60,14 @@ fn report(r: &TrainedReport) {
 }
 
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let Some(path) = args.next() else {
-        eprintln!("usage: fakes <out.json> [<checkpoint.safetensors>]");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some(run) = fakes_run(&args) else {
+        eprintln!("usage: fakes <out.json> | fakes --of <checkpoint.safetensors>");
         return ExitCode::FAILURE;
     };
-    let source = match args.next() {
-        None => Source::Shipped,
-        Some(file) => {
+    let (source, out) = match run {
+        FakesRun::Shipped(out) => (Source::Shipped, Some(out)),
+        FakesRun::Of(file) => {
             let bytes = match std::fs::read(&file) {
                 Ok(bytes) => bytes,
                 Err(error) => {
@@ -74,7 +76,7 @@ fn main() -> ExitCode {
                 }
             };
             match Mlp::from_safetensors(&bytes) {
-                Ok(mlp) => Source::File(Box::new(mlp), fnv1a64(&bytes)),
+                Ok(mlp) => (Source::File(Box::new(mlp), fnv1a64(&bytes)), None),
                 Err(error) => {
                     eprintln!("{file}: {error:?}");
                     return ExitCode::FAILURE;
@@ -95,7 +97,9 @@ fn main() -> ExitCode {
         .unwrap_or(0.0);
     r.noise = (noise * 1e6).round() / 1e6;
     report(&r);
-    if let Err(error) = std::fs::write(&path, r.to_json()) {
+    if let Some(path) = out
+        && let Err(error) = std::fs::write(&path, r.to_json())
+    {
         eprintln!("{path}: {error}");
         return ExitCode::FAILURE;
     }

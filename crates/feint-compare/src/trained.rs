@@ -47,6 +47,23 @@ pub enum Source {
     File(Box<Mlp>, u64),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum FakesRun {
+    Shipped(String),
+    Of(String),
+}
+
+#[must_use]
+pub fn fakes_run(args: &[String]) -> Option<FakesRun> {
+    match args {
+        [flag, file] if flag == "--of" && !file.starts_with("--") => {
+            Some(FakesRun::Of(file.clone()))
+        }
+        [out] if !out.starts_with("--") => Some(FakesRun::Shipped(out.clone())),
+        _ => None,
+    }
+}
+
 #[must_use]
 pub fn leaned_to_shown(frames: &[Frame], shot: &Shot) -> bool {
     let Some(shown) = shot.shown else {
