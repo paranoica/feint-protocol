@@ -21,6 +21,7 @@ fn seat(name: &str) -> PyResult<Seat> {
         "human" => Ok(Seat::Human),
         "reader" => Ok(Seat::Reader { anticipates: false }),
         "reader:anticipating" => Ok(Seat::Reader { anticipates: true }),
+        "keeper" => Ok(Seat::Keeper { bite_permille: 700 }),
         other => {
             let level = other
                 .strip_prefix("level:")
@@ -30,8 +31,14 @@ fn seat(name: &str) -> PyResult<Seat> {
                 .strip_prefix("frozen:")
                 .and_then(|index| index.parse().ok())
                 .map(Seat::Frozen);
+            let keeper = other
+                .strip_prefix("keeper:")
+                .and_then(|permille| permille.parse().ok())
+                .filter(|&permille| permille <= 1000)
+                .map(|bite_permille| Seat::Keeper { bite_permille });
             level
                 .or(frozen)
+                .or(keeper)
                 .ok_or_else(|| PyValueError::new_err(format!("unknown seat {other:?}")))
         }
     }
@@ -47,6 +54,7 @@ fn name(seat: Seat) -> String {
         Seat::Reader { anticipates: true } => "reader:anticipating".into(),
         Seat::Level(level) => format!("level:{level}"),
         Seat::Frozen(index) => format!("frozen:{index}"),
+        Seat::Keeper { bite_permille } => format!("keeper:{bite_permille}"),
     }
 }
 
@@ -210,6 +218,16 @@ impl PyHockeyBatch {
         self.batch()?
             .ticks(env)
             .ok_or_else(|| PyValueError::new_err(format!("no env {env}")))
+    }
+
+    fn keeper_counts(&self, env: usize) -> PyResult<Option<(u64, u64, u64, u64)>> {
+        let batch = self.batch()?;
+        if env >= batch.len() {
+            return Err(PyValueError::new_err(format!("no env {env}")));
+        }
+        Ok(batch
+            .keeper_counts(env)
+            .map(|c| (c.reads, c.bites, c.bite_goals, c.goals)))
     }
 
     fn digest(&self, env: usize) -> PyResult<u64> {

@@ -423,6 +423,7 @@ def parse(argv: list[str] | None = None) -> tuple[argparse.Namespace, TrainConfi
     parser.add_argument("--level5", type=float, default=Budget.level5)
     parser.add_argument("--readers", type=float, default=Budget.readers)
     parser.add_argument("--frozen", type=float, default=Budget.frozen)
+    parser.add_argument("--keepers", type=float, default=Budget.keepers)
     args = parser.parse_args(argv)
     config = TrainConfig(
         opponents=args.opponents.split(","),
@@ -443,7 +444,11 @@ def parse(argv: list[str] | None = None) -> tuple[argparse.Namespace, TrainConfi
         generation_minutes=args.generation_minutes,
         snapshot_minutes=args.snapshot_minutes,
         budget=Budget(
-            hand_made=args.hand_made, level5=args.level5, readers=args.readers, frozen=args.frozen
+            hand_made=args.hand_made,
+            level5=args.level5,
+            readers=args.readers,
+            frozen=args.frozen,
+            keepers=args.keepers,
         ),
         capped_ahead=args.capped_ahead,
         concede_weight=args.concede_weight,

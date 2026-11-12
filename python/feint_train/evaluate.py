@@ -17,6 +17,9 @@ class Result:
     behind_at_cap: int = 0
     goals_for: int = 0
     goals_against: int = 0
+    keeper_reads: int = 0
+    keeper_bites: int = 0
+    keeper_bite_goals: int = 0
 
     @property
     def matches(self) -> int:
@@ -75,6 +78,11 @@ def evaluate(
                 outcome[env] = 3
             else:
                 outcome[env] = 1 if mine > theirs else 2
+    keeper = np.zeros(4, dtype=np.int64)
+    for env in range(matches):
+        counts = batch.keeper_counts(env)
+        if counts is not None:
+            keeper += counts
     return Result(
         opponent=opponent,
         wins=int((outcome == 1).sum()),
@@ -84,4 +92,7 @@ def evaluate(
         behind_at_cap=int(((outcome == 3) & (lead < 0)).sum()),
         goals_for=int(goals[0]),
         goals_against=int(goals[1]),
+        keeper_reads=int(keeper[0]),
+        keeper_bites=int(keeper[1]),
+        keeper_bite_goals=int(keeper[2]),
     )

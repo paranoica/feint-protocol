@@ -4,7 +4,7 @@ from pathlib import Path
 
 from feint_train.evaluate import Result
 from feint_train.export import metadata
-from feint_train.select import best_of, candidates, select
+from feint_train.select import best_of, candidates, fake_candidates, select
 
 CHECKPOINT = Path(__file__).parents[2] / "crates/feint-ml/checkpoints/airhockey-g999.safetensors"
 
@@ -82,3 +82,31 @@ def test_select_exports_the_winner_with_its_evaluation(tmp_path: Path) -> None:
     assert meta["selected_matches"] == "2"
     assert int(meta["selected_wins"]) >= 0
     assert meta["format"] == "feint-mlp-v1"
+
+
+def test_fake_candidates_need_the_level5_floor_and_rank_by_bites(tmp_path: Path) -> None:
+    rows = [
+        ("p1", "level:5", 60, 30, 10, 0),
+        ("p1", "keeper:700", 10, 30, 60, 40),
+        ("p2", "level:5", 50, 40, 10, 0),
+        ("p2", "keeper:700", 10, 30, 60, 90),
+        ("p3", "level:5", 57, 30, 13, 0),
+        ("p3", "keeper:700", 10, 30, 60, 70),
+        ("p4", "level:5", 80, 10, 10, 0),
+    ]
+    with (tmp_path / "evals.jsonl").open("w") as log:
+        for policy, opponent, wins, losses, unfinished, bite_goals in rows:
+            row = {
+                "policy": policy,
+                "opponent": opponent,
+                "wins": wins,
+                "losses": losses,
+                "unfinished": unfinished,
+                "goals_for": 0,
+                "goals_against": 0,
+                "keeper_bite_goals": bite_goals,
+            }
+            log.write(json.dumps(row) + "\n")
+    for name in ("p1", "p2", "p3", "p4"):
+        (tmp_path / f"{name}.safetensors").write_bytes(b"")
+    assert fake_candidates(tmp_path, top=3, floor=0.56) == ["p3", "p1"]

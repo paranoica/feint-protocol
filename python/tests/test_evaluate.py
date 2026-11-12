@@ -1,5 +1,7 @@
 import numpy as np
+import pytest
 
+from feint_train import evaluate as evaluate_module
 from feint_train.evaluate import evaluate, seats_against
 
 
@@ -44,3 +46,32 @@ def test_finished_matches_count_their_goals() -> None:
     result = evaluate(still, "level:5", 6, seed=1, threads=2, goals_to_win=1)
     assert (result.goals_for, result.goals_against) == (0, 6)
     assert (result.ahead_at_cap, result.behind_at_cap) == (0, 0)
+
+
+def test_keeper_counts_are_summed_over_the_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Batch:
+        def __init__(self, seats: list[tuple[str, str]], **kwargs: object) -> None:
+            self.envs = len(seats)
+
+        def reset(self) -> dict[str, np.ndarray]:
+            return self.out(ended=False)
+
+        def step(self, actions: np.ndarray) -> dict[str, np.ndarray]:
+            return self.out(ended=True)
+
+        def out(self, ended: bool) -> dict[str, np.ndarray]:
+            n = self.envs
+            return {
+                "obs": np.zeros((n, 2, 18), np.float32),
+                "ready": np.zeros((n, 2), bool),
+                "terminated": np.full(n, ended),
+                "truncated": np.zeros(n, bool),
+                "score": np.tile(np.array([7, 2]), (n, 1)),
+            }
+
+        def keeper_counts(self, env: int) -> tuple[int, int, int, int]:
+            return (3, 2, 1, 4 + env)
+
+    monkeypatch.setattr(evaluate_module, "HockeyBatch", Batch)
+    result = evaluate_module.evaluate(lambda x: x, "keeper:700", 4, seed=1)
+    assert (result.keeper_reads, result.keeper_bites, result.keeper_bite_goals) == (12, 8, 4)

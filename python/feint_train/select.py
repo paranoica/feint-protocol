@@ -39,6 +39,21 @@ def candidates(logdir: Path, top: int, opponent: str = "level:5") -> list[str]:
     return [name for name in ranked if (logdir / f"{name}.safetensors").exists()][:top]
 
 
+def fake_candidates(logdir: Path, top: int, floor: float, keeper: str = "keeper:700") -> list[str]:
+    level5: dict[str, float] = {}
+    bites: dict[str, float] = {}
+    for line in (logdir / "evals.jsonl").read_text().splitlines():
+        row = json.loads(line)
+        matches = max(1, row["wins"] + row["losses"] + row["unfinished"])
+        if row["opponent"] == "level:5":
+            level5[row["policy"]] = row["wins"] / matches
+        elif row["opponent"] == keeper:
+            bites[row["policy"]] = row.get("keeper_bite_goals", 0) / matches
+    eligible = [name for name in bites if level5.get(name, 0.0) >= floor]
+    ranked = sorted(eligible, key=lambda name: bites[name], reverse=True)
+    return [name for name in ranked if (logdir / f"{name}.safetensors").exists()][:top]
+
+
 def select(
     logdir: Path,
     top: int = 3,
@@ -84,7 +99,12 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=3)
     parser.add_argument("--matches", type=int, default=200)
     parser.add_argument("--threads", type=int, default=6)
+    parser.add_argument("--fakes", type=float, help="list fake candidates above this level-5 share")
     args = parser.parse_args()
+    if args.fakes is not None:
+        for name in fake_candidates(args.logdir, args.top, args.fakes):
+            print(args.logdir / f"{name}.safetensors")
+        return
     select(args.logdir, args.top, args.matches, threads=args.threads)
 
 

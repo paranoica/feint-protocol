@@ -5,6 +5,7 @@ import numpy as np
 
 HAND_MADE = ("level:3", "level:4")
 READERS = ("reader", "reader:anticipating")
+KEEPER = "keeper:700"
 
 
 def match_value(mine: int, theirs: int, finished: bool, ahead: float = 0.75) -> float:
@@ -23,14 +24,15 @@ class Budget:
     level5: float = 0.1
     readers: float = 0.1
     frozen: float = 0.3
+    keepers: float = 0.0
 
     def __post_init__(self) -> None:
-        shares = (self.hand_made, self.level5, self.readers, self.frozen)
+        shares = (self.hand_made, self.level5, self.readers, self.frozen, self.keepers)
         if not all(share >= 0.0 for share in shares):
             raise ValueError(f"negative share in {self}")
         if self.level5 > self.hand_made:
             raise ValueError(f"level 5 is part of the hand-made share: {self}")
-        if self.hand_made + self.readers + self.frozen > 1.0 + 1e-9:
+        if self.hand_made + self.readers + self.frozen + self.keepers > 1.0 + 1e-9:
             raise ValueError(f"shares take more than every seat: {self}")
 
 
@@ -92,6 +94,7 @@ class League:
         out = ["level:5"] * level5
         out += [HAND_MADE[i % len(HAND_MADE)] for i in range(others)]
         out += [READERS[i % len(READERS)] for i in range(int(envs * b.readers))]
+        out += [KEEPER] * int(envs * b.keepers)
         if self.archive:
             weights = self.weights()
             picks = rng.choice(
