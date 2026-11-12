@@ -66,21 +66,31 @@ pub fn play_against_human<C: Controller<AirHockey>>(
     seat: u8,
 ) -> Played<C> {
     let params = human_params();
+    let mut human = Human::new(params, HUMAN_NOISE);
+    play_against(make, &mut human, seed, seat)
+}
+
+pub fn play_against<C: Controller<AirHockey>>(
+    make: impl FnOnce(&GameSpecT, &Params) -> (C, BodyParamsT, Opponent),
+    other: &mut dyn Controller<AirHockey>,
+    seed: u64,
+    seat: u8,
+) -> Played<C> {
+    let params = human_params();
     let mut game = AirHockey::new(params.clone(), 1);
     let spec = game.spec();
     let (mut bot, body, opponent) = make(&spec, &params);
-    let mut human = Human::new(params, HUMAN_NOISE);
     let h = header(seed, seat, body, human_body(&spec), opponent);
     let mut recorder = Recorder {
         inner: &mut bot,
         frames: Vec::new(),
     };
     let report = if seat == 0 {
-        run_match(&mut game, [&mut recorder, &mut human], h, CAP_TICKS)
+        run_match(&mut game, [&mut recorder, other], h, CAP_TICKS)
     } else {
-        run_match(&mut game, [&mut human, &mut recorder], h, CAP_TICKS)
+        run_match(&mut game, [other, &mut recorder], h, CAP_TICKS)
     }
-    .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
+    .unwrap_or_else(|e| panic!("a match against the scripted opponent runs: {e:?}"));
     let mut frames = recorder.frames;
     let last = frame(&game);
     if frames.last().is_none_or(|f| f.tick < last.tick) {

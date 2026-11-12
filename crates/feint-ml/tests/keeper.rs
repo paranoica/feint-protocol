@@ -125,6 +125,7 @@ fn a_held_show_then_the_other_corner_beats_only_a_biting_keeper() {
             "seed {seed}"
         );
         assert_eq!(biting.counts().bites, 1);
+        assert_eq!(biting.bite_ticks().len(), 1);
         assert_eq!(biting.counts().bite_goals, 1);
         let mut steady = Keeper::new(Params::default(), 0);
         assert_eq!(

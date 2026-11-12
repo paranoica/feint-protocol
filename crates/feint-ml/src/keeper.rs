@@ -85,6 +85,7 @@ pub struct Keeper {
     me: PlayerId,
     bite: Option<(u8, u64)>,
     bitten_at: Option<u64>,
+    bite_ticks: Vec<u64>,
     counts: KeeperCounts,
 }
 
@@ -101,6 +102,7 @@ impl Keeper {
             me: 0,
             bite: None,
             bitten_at: None,
+            bite_ticks: Vec::new(),
             counts: KeeperCounts::default(),
         }
     }
@@ -108,6 +110,11 @@ impl Keeper {
     #[must_use]
     pub fn counts(&self) -> KeeperCounts {
         self.counts
+    }
+
+    #[must_use]
+    pub fn bite_ticks(&self) -> &[u64] {
+        &self.bite_ticks
     }
 
     fn crossing(&self, from: Vec2, vel: Vec2) -> f64 {
@@ -147,6 +154,7 @@ impl Controller<AirHockey> for Keeper {
         self.read = Read::new(self.permille, bites);
         self.bite = None;
         self.bitten_at = None;
+        self.bite_ticks.clear();
         self.counts = KeeperCounts::default();
     }
 
@@ -180,6 +188,7 @@ impl Controller<AirHockey> for Keeper {
                     self.counts.bites += 1;
                     self.bite = Some((side, now + BITE_TICKS));
                     self.bitten_at = Some(now);
+                    self.bite_ticks.push(now);
                 }
             }
         }
