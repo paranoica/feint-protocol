@@ -116,7 +116,7 @@
       "heavy": true
     },
     "fakes": {
-      "run": "cargo test --release --locked -q -p feint-compare --test fakes -- --ignored --nocapture",
+      "run": "cargo test --release --locked -q -p feint-compare --test fakes -- --ignored --nocapture && cargo run --release --locked -q -p feint-compare --bin fakes -- web/public/fakes.json",
       "heavy": true
     }
   },

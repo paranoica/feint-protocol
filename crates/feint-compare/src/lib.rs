@@ -2,6 +2,7 @@ pub mod attacks;
 pub mod calibrate;
 pub mod detect;
 pub mod play;
+pub mod trained;
 
 use std::fmt::Write;
 
