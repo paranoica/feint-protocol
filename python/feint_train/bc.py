@@ -14,6 +14,10 @@ from feint_train.evaluate import evaluate
 from feint_train.export import export, loaded
 
 OWN_TARGET = slice(8, 10)
+CHANGED = (
+    "the database, its WAL or a record changed while reading; "
+    "a running arena writes there, stop it before cloning"
+)
 
 
 @dataclass(frozen=True)
@@ -167,7 +171,7 @@ def main() -> None:
         f"matches used {len(data.used)}, refused {len(data.refused)}, decisions {len(data.targets)}"
     )
     if sha256(watched) != before:
-        raise SystemExit("the database or a record changed while reading")
+        raise SystemExit(CHANGED)
     try:
         train, val = split_by_match(data.groups)
     except ValueError as error:
@@ -208,7 +212,7 @@ def main() -> None:
 
     after = sha256(watched)
     if after != before:
-        raise SystemExit("the database or a record changed while reading")
+        raise SystemExit(CHANGED)
     print(
         f"unchanged: {len(before)} files (database, its WAL, records); "
         "the -shm index is not checked"
