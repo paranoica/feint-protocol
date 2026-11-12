@@ -62,6 +62,7 @@ def evaluate(
     outcome = np.zeros(matches, dtype=np.int8)
     lead = np.zeros(matches, dtype=np.int64)
     goals = np.zeros(2, dtype=np.int64)
+    keeper = np.zeros(4, dtype=np.int64)
     while (outcome == 0).any():
         actions = np.zeros((matches, 2, 2), dtype=np.float32)
         ready = out["ready"]
@@ -74,15 +75,13 @@ def evaluate(
             theirs = int(out["score"][env, 1 - learner[env]])
             goals += (mine, theirs)
             lead[env] = mine - theirs
+            counts = batch.keeper_counts(env)
+            if counts is not None:
+                keeper += counts
             if out["truncated"][env]:
                 outcome[env] = 3
             else:
                 outcome[env] = 1 if mine > theirs else 2
-    keeper = np.zeros(4, dtype=np.int64)
-    for env in range(matches):
-        counts = batch.keeper_counts(env)
-        if counts is not None:
-            keeper += counts
     return Result(
         opponent=opponent,
         wins=int((outcome == 1).sum()),

@@ -75,3 +75,35 @@ def test_keeper_counts_are_summed_over_the_batch(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(evaluate_module, "HockeyBatch", Batch)
     result = evaluate_module.evaluate(lambda x: x, "keeper:700", 4, seed=1)
     assert (result.keeper_reads, result.keeper_bites, result.keeper_bite_goals) == (12, 8, 4)
+
+
+def test_keeper_counts_stop_at_each_envs_first_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Batch:
+        def __init__(self, seats: list[tuple[str, str]], **kwargs: object) -> None:
+            self.envs = len(seats)
+            self.steps = 0
+
+        def reset(self) -> dict[str, np.ndarray]:
+            return self.out()
+
+        def step(self, actions: np.ndarray) -> dict[str, np.ndarray]:
+            self.steps += 1
+            return self.out()
+
+        def out(self) -> dict[str, np.ndarray]:
+            n = self.envs
+            ended = np.array([self.steps == 1 + 2 * env for env in range(n)])
+            return {
+                "obs": np.zeros((n, 2, 18), np.float32),
+                "ready": np.zeros((n, 2), bool),
+                "terminated": ended,
+                "truncated": np.zeros(n, bool),
+                "score": np.tile(np.array([7, 2]), (n, 1)),
+            }
+
+        def keeper_counts(self, env: int) -> tuple[int, int, int, int]:
+            return (self.steps, self.steps, self.steps, self.steps)
+
+    monkeypatch.setattr(evaluate_module, "HockeyBatch", Batch)
+    result = evaluate_module.evaluate(lambda x: x, "keeper:700", 3, seed=1)
+    assert (result.keeper_reads, result.keeper_bites, result.keeper_bite_goals) == (9, 9, 9)
