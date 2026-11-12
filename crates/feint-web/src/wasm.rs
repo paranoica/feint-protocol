@@ -187,8 +187,8 @@ pub fn games() -> Vec<String> {
 #[must_use]
 #[wasm_bindgen]
 pub fn checkpoints() -> Vec<String> {
-    feint_ml::registry::CHECKPOINTS
-        .iter()
+    (1..=5)
+        .filter_map(feint_ml::registry::for_level)
         .map(|c| format!("{:016x}", c.id))
         .collect()
 }

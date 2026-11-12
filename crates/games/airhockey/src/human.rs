@@ -3,7 +3,9 @@ use std::collections::VecDeque;
 use crate::analysis::Frame;
 use crate::{AirHockey, HockeyPlaybook, Params, Vec2};
 use feint_ai::{Bot, Controller, Difficulty, Playbook, RunHeader, Stance, Standing, run_match};
-use feint_protocol::{ActionT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId};
+use feint_protocol::{
+    ActionT, BodyParamsT, ChaCha8Rng, EventT, GameAdapter, GameSpecT, ObservationT, PlayerId,
+};
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 pub const READ_DELAY_TICKS: usize = 60;
@@ -260,30 +262,46 @@ const CAP_TICKS: u64 = 240 * 600;
 
 #[must_use]
 pub fn against_human(d: Difficulty, matches: u64) -> Standing {
+    against_human_with(
+        matches,
+        |spec: &GameSpecT, params: &Params, previous: Option<&Bot<AirHockey, HockeyPlaybook>>| {
+            let mut bot = Bot::new(d, HockeyPlaybook::new(params.clone()), spec)
+                .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+            let memory = previous
+                .filter(|_| d.memory == feint_ai::Memory::MatchAndProfile)
+                .and_then(|p| p.profile("airhockey"));
+            if let Some(profile) = memory.as_ref() {
+                bot.load_profile(profile, "airhockey")
+                    .unwrap_or_else(|e| panic!("a profile of this game loads: {e:?}"));
+            }
+            (bot, d.body(spec))
+        },
+    )
+}
+
+pub fn against_human_with<C: Controller<AirHockey>>(
+    matches: u64,
+    mut next: impl FnMut(&GameSpecT, &Params, Option<&C>) -> (C, BodyParamsT),
+) -> Standing {
     let params = Params {
         goals_to_win: HUMAN_GOALS,
         ..Params::default()
     };
     let mut standing = Standing::default();
-    let mut memory: Option<feint_ai::Profile> = None;
+    let mut previous: Option<C> = None;
     for seed in 0..matches {
         let me = (seed % 2) as usize;
         let mut game = AirHockey::new(params.clone(), 1);
         let spec = game.spec();
-        let mut bot = Bot::new(d, HockeyPlaybook::new(params.clone()), &spec)
-            .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
-        if let Some(profile) = memory.as_ref() {
-            bot.load_profile(profile, "airhockey")
-                .unwrap_or_else(|e| panic!("a profile of this game loads: {e:?}"));
-        }
+        let (mut bot, body) = next(&spec, &params, previous.as_ref());
         let mut human = Human::new(params.clone(), HUMAN_NOISE);
         let human_body = Difficulty::preset(5)
             .unwrap_or_else(|| panic!("level 5 exists"))
             .body(&spec);
         let bodies = if me == 0 {
-            vec![d.body(&spec), human_body]
+            vec![body, human_body]
         } else {
-            vec![human_body, d.body(&spec)]
+            vec![human_body, body]
         };
         let header = RunHeader {
             game_id: "airhockey".into(),
@@ -300,9 +318,7 @@ pub fn against_human(d: Difficulty, matches: u64) -> Standing {
         }
         .unwrap_or_else(|e| panic!("a match against the human model runs: {e:?}"));
         standing.add(&report, me);
-        if d.memory == feint_ai::Memory::MatchAndProfile {
-            memory = bot.profile("airhockey");
-        }
+        previous = Some(bot);
     }
     standing
 }

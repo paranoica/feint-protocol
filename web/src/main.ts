@@ -1,9 +1,10 @@
-import init, { games, WebMatch } from "./wasm/feint_web.js";
+import init, { checkpoints, games, WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { again, finish, first, start, watch, type Screen } from "./screens.ts";
+import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
 import { parseComparison, parseResults, renderComparison } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
@@ -80,7 +81,7 @@ function show(next: Screen) {
     $("verdict").style.color = you > bot ? left : right;
     $("final").textContent = pair
       ? `${current.name} · ${you} : ${bot} · level ${pair[0]} vs level ${pair[1]}`
-      : `${current.name} · ${you} : ${bot} · level ${screen.level} · ${screen.nick}`;
+      : `${current.name} · ${you} : ${bot} · level ${screen.level}${screen.bot ? " · trained" : ""} · ${screen.nick}`;
   }
 }
 
@@ -230,10 +231,11 @@ async function upload(record: Uint8Array) {
   }
 }
 
-async function begin(view: GameView, level: number) {
+async function begin(view: GameView, level: number, bot: BotKind) {
   const nick = $<HTMLInputElement>("nick").value;
-  const next = start(screen, view.id, level, nick);
-  if (next.name !== "game" || starting) {
+  const next = start(screen, view.id, level, nick, bot);
+  const checkpoint = trainedCheckpoint(view.id, Array.from(checkpoints()), level);
+  if (next.name !== "game" || starting || (bot === "trained" && checkpoint === null)) {
     return;
   }
   starting = true;
@@ -241,14 +243,20 @@ async function begin(view: GameView, level: number) {
     saveNick(next.nick);
     await saves.settled(SAVE_WAIT_MS);
     const ticket = view.arena ? await fetchTicket() : null;
-    const profile = ticket !== null && level === 5 ? await fetchProfile(next.nick, view.id) : null;
+    const profile = profileWanted(bot, level, ticket !== null) ? await fetchProfile(next.nick, view.id) : null;
     const seed = ticket?.seed ?? localSeed(Math.random);
     playing = { ticket, profile: profile?.version ?? null };
     try {
-      game = profile
-        ? WebMatch.create_with_profile(view.id, level, seed, profile.bytes)
-        : WebMatch.create(view.id, level, seed);
+      game =
+        bot === "trained" && checkpoint !== null
+          ? WebMatch.create_trained(view.id, level, seed, checkpoint)
+          : profile
+            ? WebMatch.create_with_profile(view.id, level, seed, profile.bytes)
+            : WebMatch.create(view.id, level, seed);
     } catch {
+      if (bot === "trained") {
+        throw new Error("the trained bot did not start");
+      }
       playing = { ticket, profile: null };
       game = WebMatch.create(view.id, level, seed);
     }
@@ -266,7 +274,7 @@ async function begin(view: GameView, level: number) {
   dragHint.textContent = view.hint;
   dragHint.hidden = view.hint === "";
   $("who").textContent = next.nick;
-  $("lvl").textContent = `level ${level}`;
+  $("lvl").textContent = bot === "trained" ? `level ${level} · trained` : `level ${level}`;
 }
 
 function enter(view: GameView, match: WebMatch, next: Screen) {
@@ -338,6 +346,26 @@ function buildHub() {
     pitch.textContent = view.pitch;
     const levels = document.createElement("div");
     levels.className = "levels";
+    let bot: BotKind = "hand-made";
+    const kinds = document.createElement("div");
+    kinds.className = "bots";
+    kinds.hidden = !trainedOffered(view.id, Array.from(checkpoints()));
+    for (const [kind, label] of [
+      ["hand-made", "Hand-made bot"],
+      ["trained", "Trained bot"],
+    ] as const) {
+      const button = document.createElement("button");
+      button.dataset.bot = kind;
+      button.textContent = label;
+      button.setAttribute("aria-pressed", String(kind === bot));
+      button.addEventListener("click", () => {
+        bot = kind;
+        for (const b of kinds.querySelectorAll("button")) {
+          b.setAttribute("aria-pressed", String(b.dataset.bot === bot));
+        }
+      });
+      kinds.append(button);
+    }
     names.forEach((name, i) => {
       const button = document.createElement("button");
       button.dataset.game = view.id;
@@ -347,7 +375,7 @@ function buildHub() {
       const span = document.createElement("span");
       span.textContent = name;
       button.append(b, span);
-      button.addEventListener("click", () => void begin(view, i + 1));
+      button.addEventListener("click", () => void begin(view, i + 1, bot));
       levels.append(button);
     });
     const watchRow = document.createElement("div");
@@ -363,7 +391,7 @@ function buildHub() {
     go.dataset.watch = view.id;
     go.addEventListener("click", () => beginWatch(view, Number(left.value), Number(right.value)));
     watchRow.append(caption, left, versus, right, go);
-    card.append(title, pitch, levels, watchRow);
+    card.append(title, pitch, kinds, levels, watchRow);
     holder.append(card);
   }
 }

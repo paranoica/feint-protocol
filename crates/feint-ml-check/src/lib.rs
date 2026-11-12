@@ -2,7 +2,7 @@ use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Difficulty, RunHeader, run_match};
 use feint_ml::Policy;
 use feint_ml::mlp::Mlp;
-use feint_ml::registry::{CHECKPOINTS, fnv1a64};
+use feint_ml::registry::{fnv1a64, for_level};
 use feint_ml::trained::trained_pilot;
 use feint_protocol::GameAdapter;
 
@@ -12,7 +12,7 @@ pub const MATCH_SEED: u64 = 0x05EE_D0B3;
 
 #[must_use]
 pub fn outputs_digest() -> u64 {
-    let mut mlp = Mlp::from_safetensors(CHECKPOINTS[0].bytes).expect("the embedded checkpoint");
+    let mut mlp = Mlp::from_safetensors(level_five().bytes).expect("the embedded checkpoint");
     let width = u32::from_le_bytes([FEATURES[4], FEATURES[5], FEATURES[6], FEATURES[7]]) as usize;
     let values: Vec<f32> = FEATURES[8..]
         .chunks_exact(4)
@@ -35,7 +35,7 @@ pub fn match_digest() -> u64 {
     let spec = game.spec();
     let difficulty = Difficulty::preset(5).expect("level 5");
     let body = difficulty.body(&spec);
-    let mut pilot = trained_pilot(5, CHECKPOINTS[0].id, &spec).expect("the trained pilot");
+    let mut pilot = trained_pilot(5, level_five().id, &spec).expect("the trained pilot");
     let mut bot = Bot::new(difficulty, HockeyPlaybook::new(Params::default()), &spec)
         .expect("the hand-made bot");
     let header = RunHeader {
@@ -69,6 +69,10 @@ pub extern "C" fn run_outputs_digest() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn run_match_digest() -> u64 {
     match_digest()
+}
+
+fn level_five() -> &'static feint_ml::registry::Checkpoint {
+    for_level(5).expect("level 5 has a checkpoint")
 }
 
 #[cfg(test)]

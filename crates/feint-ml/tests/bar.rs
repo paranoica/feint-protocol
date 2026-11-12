@@ -4,7 +4,7 @@ use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, Opponent, RunHeader, run_match};
 use feint_ml::Policy;
 use feint_ml::mlp::Mlp;
-use feint_ml::registry::CHECKPOINTS;
+use feint_ml::registry::for_level;
 use feint_ml::trained::trained_pilot_from;
 use feint_protocol::GameAdapter;
 
@@ -79,8 +79,9 @@ fn model(path: Option<&str>) -> Result<(String, Mlp), String> {
             Ok((shown, mlp))
         }
         None => {
-            let mlp = Mlp::from_safetensors(CHECKPOINTS[0].bytes).map_err(|e| format!("{e:?}"))?;
-            Ok((CHECKPOINTS[0].name.to_string(), mlp))
+            let mlp =
+                Mlp::from_safetensors(for_level(5).unwrap().bytes).map_err(|e| format!("{e:?}"))?;
+            Ok((for_level(5).unwrap().name.to_string(), mlp))
         }
     }
 }
@@ -89,23 +90,23 @@ fn model(path: Option<&str>) -> Result<(String, Mlp), String> {
 fn a_checkpoint_file_on_disk_is_measured_like_the_embedded_one() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/checkpoints/airhockey-g999.safetensors"
+        "/checkpoints/airhockey-focus.safetensors"
     );
     let (name, mut from_disk) = model(Some(path)).unwrap();
     let (embedded_name, mut embedded) = model(None).unwrap();
-    assert!(name.ends_with("checkpoints/airhockey-g999.safetensors"));
-    assert_eq!(embedded_name, CHECKPOINTS[0].name);
+    assert!(name.ends_with("checkpoints/airhockey-focus.safetensors"));
+    assert_eq!(embedded_name, for_level(5).unwrap().name);
     let features: Vec<f32> = (0..18).map(|i| i as f32 / 10.0 - 0.8).collect();
     let (mut a, mut b) = ([0.0f32; 2], [0.0f32; 2]);
     from_disk.act(&features, &mut a);
     embedded.act(&features, &mut b);
     assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
     let (relative, _) = model(Some(
-        "crates/feint-ml/checkpoints/airhockey-g999.safetensors",
+        "crates/feint-ml/checkpoints/airhockey-focus.safetensors",
     ))
     .unwrap();
-    assert!(relative.ends_with("crates/feint-ml/checkpoints/airhockey-g999.safetensors"));
-    assert_eq!(model(Some("")).unwrap().0, CHECKPOINTS[0].name);
+    assert!(relative.ends_with("crates/feint-ml/checkpoints/airhockey-focus.safetensors"));
+    assert_eq!(model(Some("")).unwrap().0, for_level(5).unwrap().name);
     assert!(model(Some("/nonexistent/policy.safetensors")).is_err());
     assert!(model(Some(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))).is_err());
 }

@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
-const [base, glue, wasm] = process.argv.slice(2);
-const { initSync, WebMatch } = await import(glue);
+const [base, glue, wasm, patchedOut] = process.argv.slice(2);
+const { initSync, WebMatch, checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
 function play(game) {
@@ -51,4 +51,51 @@ const two = await upload(play(WebMatch.new_with_profile(5, second.seed, bytes)),
 if (two.profile !== 2) {
   throw new Error(`second match stored profile ${two.profile}`);
 }
-process.stdout.write(`matches ${one.id} ${two.id} profiles ${one.profile} ${two.profile}\n`);
+
+const checkpoint = checkpoints()[2];
+const third = await ticket();
+const trainedRecord = play(WebMatch.create_trained("airhockey", 3, third.seed, checkpoint));
+const three = await upload(trainedRecord, third, null);
+if (three.profile !== null) {
+  throw new Error(`a trained match stored profile ${three.profile}`);
+}
+
+function idBytes(hex) {
+  const bytes = new Uint8Array(8);
+  new DataView(bytes.buffer).setBigUint64(0, BigInt(`0x${hex}`), true);
+  return bytes;
+}
+
+function places(haystack, needle) {
+  const found = [];
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    if (needle.every((b, j) => haystack[i + j] === b)) {
+      found.push(i);
+    }
+  }
+  return found;
+}
+
+const record = new Uint8Array(trainedRecord);
+const headerEnd = 4 + new DataView(record.buffer, record.byteOffset).getUint32(0, true);
+const at = places(record.subarray(4, headerEnd), idBytes(checkpoint));
+if (at.length !== 1) {
+  throw new Error(`the checkpoint id occurs ${at.length} times in the header frame`);
+}
+const unknown = (BigInt(`0x${checkpoint}`) ^ 1n).toString(16).padStart(16, "0");
+const patched = record.slice();
+patched.set(idBytes(unknown), 4 + at[0]);
+writeFileSync(patchedOut, patched);
+const fourth = await ticket();
+const refused = await fetch(`${base}/api/matches?nick=arena-check&ticket=${fourth.ticket}`, {
+  method: "POST",
+  headers: { "x-feint": "1" },
+  body: patched,
+});
+const reason = await refused.json();
+if (refused.status !== 400 || reason.error !== "record") {
+  throw new Error(`an unknown checkpoint got ${refused.status} ${JSON.stringify(reason)}`);
+}
+process.stdout.write(
+  `matches ${one.id} ${two.id} profiles ${one.profile} ${two.profile} trained ${three.id} unknown checkpoint refused\n`,
+);
