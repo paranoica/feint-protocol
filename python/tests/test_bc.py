@@ -14,6 +14,7 @@ from feint_train.bc import (
     collect,
     fit,
     hockey_records,
+    snapshot,
     split_by_match,
 )
 from feint_train.export import export, metadata
@@ -49,14 +50,42 @@ def test_only_finished_hockey_rows_are_read_and_the_file_is_untouched(tmp_path: 
     db = tmp_path / "data" / "feint.db"
     db.parent.mkdir()
     arena_like(db)
-    before = {p.name: digest(p) for p in db.parent.iterdir() if not p.name.endswith("-shm")}
+    before = snapshot(db, [])
+    assert before[str(db.with_name("feint.db-wal"))] is None
     got = hockey_records(db)
-    after = {p.name: digest(p) for p in db.parent.iterdir() if not p.name.endswith("-shm")}
+    assert snapshot(db, []) == before
+    assert sorted(p.name for p in db.parent.iterdir()) == ["feint.db"]
     assert got == [
         Stored(1, tmp_path / "data/matches/1.rec"),
         Stored(5, tmp_path / "data/matches/airhockey/5.rec"),
     ]
-    assert after == before
+
+
+def test_the_snapshot_sees_sidecars_a_plain_read_only_open_creates(tmp_path: Path) -> None:
+    db = tmp_path / "feint.db"
+    arena_like(db)
+    before = snapshot(db, [])
+    with closing(sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+        conn.execute("SELECT count(*) FROM matches").fetchall()
+    assert snapshot(db, []) != before
+
+
+def test_the_snapshot_sees_a_new_shm_next_to_an_existing_wal(tmp_path: Path) -> None:
+    source = tmp_path / "live" / "feint.db"
+    source.parent.mkdir()
+    arena_like(source)
+    copy = tmp_path / "copy" / "feint.db"
+    copy.parent.mkdir()
+    with closing(sqlite3.connect(source)) as writer:
+        writer.execute("INSERT INTO matches VALUES (6, 'airhockey', 1, 'data/matches/6.rec')")
+        writer.commit()
+        for name in ("feint.db", "feint.db-wal"):
+            (copy.parent / name).write_bytes((source.parent / name).read_bytes())
+    before = snapshot(copy, [])
+    with closing(sqlite3.connect(copy.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+        conn.execute("SELECT count(*) FROM matches").fetchall()
+    assert (copy.parent / "feint.db-shm").exists()
+    assert snapshot(copy, []) != before
 
 
 def test_rows_still_in_the_wal_are_read(tmp_path: Path) -> None:
@@ -97,12 +126,17 @@ def test_refused_records_are_reported_with_their_reason(tmp_path: Path) -> None:
     junk = tmp_path / "2.rec"
     junk.write_bytes(b"junk")
     gone = tmp_path / "3.rec"
-    data = collect([Stored(1, good), Stored(2, junk), Stored(3, gone)], reaction_ms=150)
+    locked = tmp_path / "4.rec"
+    locked.write_bytes(b"locked")
+    locked.chmod(0)
+    stored = [Stored(1, good), Stored(2, junk), Stored(3, gone), Stored(4, locked)]
+    data = collect(stored, reaction_ms=150)
     decisions = len([t for t in range(600) if t % 4 == 0 and t >= 36])
     assert data.used == [(1, decisions)]
     assert [(i, reason.split("(")[0]) for i, reason in data.refused] == [
         (2, "Decode"),
         (3, "missing"),
+        (4, "PermissionError"),
     ]
     assert data.features.shape == (decisions, 18)
     assert data.groups.tolist() == [1] * decisions

@@ -288,3 +288,28 @@ fn a_pilot_match_at_an_unknown_level_is_refused() {
         Err(ImitationError::Level)
     );
 }
+
+#[test]
+fn two_human_actions_in_one_tick_are_refused() {
+    let bytes = edited(|r| {
+        let mut twin = r.actions.iter().find(|a| a.player == 0).unwrap().clone();
+        twin.values = Some(vec![-0.2, 0.0]);
+        let at = r.actions.iter().position(|a| a.player == 0).unwrap();
+        r.actions.insert(at + 1, twin);
+    });
+    assert_eq!(imitation(&bytes, 300), Err(ImitationError::Mismatch));
+}
+
+#[test]
+fn an_action_the_game_cannot_apply_is_refused() {
+    let p = Params::default();
+    let bytes = edited(|r| {
+        let late = r
+            .actions
+            .iter_mut()
+            .find(|a| a.player == 0 && a.tick == 100)
+            .unwrap();
+        late.values = Some(vec![p.half_length as f32 * 2.0, 0.0]);
+    });
+    assert_eq!(imitation(&bytes, 300), Err(ImitationError::Mismatch));
+}

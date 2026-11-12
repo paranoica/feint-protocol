@@ -75,6 +75,9 @@ def collect(stored: list[Stored], reaction_ms: int) -> Collected:
         except ValueError as error:
             out.refused.append((s.id, str(error)))
             continue
+        except OSError as error:
+            out.refused.append((s.id, type(error).__name__))
+            continue
         rows = len(got["targets"])
         features.append(got["features"])
         targets.append(got["targets"])
@@ -145,8 +148,13 @@ def fit(
     return Fitted(agent, best[0], loss(x, y), best[2])
 
 
-def sha256(paths: list[Path]) -> dict[str, str]:
-    return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths if p.is_file()}
+def snapshot(db: Path, records: list[Path]) -> dict[str, str | None]:
+    wal = db.with_name(db.name + "-wal")
+    shm = db.with_name(db.name + "-shm")
+    seen: dict[str, str | None] = {str(shm): "present" if shm.exists() else None}
+    for path in [db, wal, *records]:
+        seen[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    return seen
 
 
 def main() -> None:
@@ -159,9 +167,12 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=6)
     args = parser.parse_args()
 
+    before = snapshot(args.db, [])
     stored = hockey_records(args.db)
-    watched = [args.db, args.db.with_name(args.db.name + "-wal")] + [s.path for s in stored]
-    before = sha256(watched)
+    paths = [s.path for s in stored]
+    if snapshot(args.db, []) != before:
+        raise SystemExit(CHANGED)
+    before = snapshot(args.db, paths)
     data = collect(stored, args.reaction_ms)
     for i, rows in data.used:
         print(f"match {i}: {rows} decisions")
@@ -170,7 +181,7 @@ def main() -> None:
     print(
         f"matches used {len(data.used)}, refused {len(data.refused)}, decisions {len(data.targets)}"
     )
-    if sha256(watched) != before:
+    if snapshot(args.db, paths) != before:
         raise SystemExit(CHANGED)
     try:
         train, val = split_by_match(data.groups)
@@ -210,12 +221,12 @@ def main() -> None:
             f"goals {r.goals_for}:{r.goals_against}"
         )
 
-    after = sha256(watched)
+    after = snapshot(args.db, paths)
     if after != before:
         raise SystemExit(CHANGED)
     print(
-        f"unchanged: {len(before)} files (database, its WAL, records); "
-        "the -shm index is not checked"
+        f"unchanged: the database, its WAL and {len(paths)} records hashed before reading "
+        "and after; the -shm index only for being there (a reader writes its read marks in it)"
     )
 
 
