@@ -1,4 +1,5 @@
 pub mod attacks;
+pub mod detect;
 
 use std::fmt::Write;
 
