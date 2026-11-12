@@ -33,6 +33,7 @@ pub enum Seat {
     Human,
     Reader { anticipates: bool },
     Frozen(u16),
+    Keeper { bite_permille: u16 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -256,6 +257,11 @@ impl HockeyBatch {
     #[must_use]
     pub fn digest(&self, env: usize) -> Option<u64> {
         self.envs.get(env).map(|e| e.game.digest(e.game.live()))
+    }
+
+    #[must_use]
+    pub fn keeper_counts(&self, env: usize) -> Option<crate::keeper::KeeperCounts> {
+        self.envs.get(env).and_then(|e| e.keeper)
     }
 
     pub fn reset(&mut self) -> Result<&Outputs, BatchError> {

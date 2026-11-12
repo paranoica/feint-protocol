@@ -1,5 +1,6 @@
 pub mod batch;
 pub mod imitation;
+pub mod keeper;
 pub mod mlp;
 mod pilot;
 pub mod registry;

@@ -5,6 +5,7 @@ use feint_protocol::{ChaCha8Rng, EventKind, GameAdapter, ObservationT, PlayerId}
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use super::{Episode, FEATURES, Fed, OUTPUTS, SEED_FLOOR, Seat};
+use crate::keeper::{Keeper, KeeperCounts};
 use crate::mlp::Mlp;
 use crate::pilot::Pilot;
 
@@ -12,6 +13,7 @@ type Learner = Pilot<AirHockey, HockeyPlaybook, Fed>;
 
 enum Player {
     Learner(Box<Learner>),
+    Keeper(Box<Keeper>),
     Other(Box<dyn Controller<AirHockey> + Send>),
 }
 
@@ -19,6 +21,7 @@ impl Player {
     fn controller(&mut self) -> &mut dyn Controller<AirHockey> {
         match self {
             Self::Learner(pilot) => pilot.as_mut(),
+            Self::Keeper(keeper) => keeper.as_mut(),
             Self::Other(other) => other.as_mut(),
         }
     }
@@ -39,6 +42,7 @@ pub(super) struct Env {
     pub(super) truncated: bool,
     pub(super) score: [i64; 2],
     pub(super) error: Option<String>,
+    pub(super) keeper: Option<KeeperCounts>,
 }
 
 fn unit(rng: &mut ChaCha8Rng) -> f64 {
@@ -58,6 +62,7 @@ fn other(seat: Seat, params: &Params) -> Result<Box<dyn Controller<AirHockey> + 
         Seat::Human => Ok(Box::new(Human::new(params.clone(), HUMAN_NOISE))),
         Seat::Reader { anticipates } => Ok(Box::new(Reader::new(params.clone(), anticipates))),
         Seat::Frozen(index) => Err(format!("frozen checkpoint {index} needs a pilot")),
+        Seat::Keeper { .. } => Err("a keeper is dealt as its own player".into()),
     }
 }
 
@@ -102,7 +107,7 @@ fn deal(
             Seat::Level(level) => Difficulty::preset(level)
                 .map(|d| (d.reaction_ms, d.physique))
                 .ok_or_else(|| format!("level {level}"))?,
-            Seat::Human | Seat::Reader { .. } => (0, 1.0),
+            Seat::Human | Seat::Reader { .. } | Seat::Keeper { .. } => (0, 1.0),
         };
         episode.reaction_ms[index] = reaction;
         episode.physique[index] = strength;
@@ -132,6 +137,9 @@ fn deal(
                 )
                 .map(|pilot| Player::Other(Box::new(pilot)))
                 .map_err(|e| format!("{e:?}"))?
+            }
+            Seat::Keeper { bite_permille } => {
+                Player::Keeper(Box::new(Keeper::new(params.clone(), bite_permille)))
             }
             seat => Player::Other(other(seat, params)?),
         });
@@ -191,10 +199,19 @@ impl Env {
             truncated: false,
             score: [0; 2],
             error: None,
+            keeper: seats
+                .iter()
+                .any(|s| matches!(s, Seat::Keeper { .. }))
+                .then(KeeperCounts::default),
         })
     }
 
     pub(super) fn start(&mut self, ranges: &Ranges, params: &Params) {
+        for player in &self.players {
+            if let (Player::Keeper(keeper), Some(total)) = (player, self.keeper.as_mut()) {
+                *total += keeper.counts();
+            }
+        }
         let started = deal(&mut self.rng, self.seats, ranges, params, &self.game)
             .and_then(|dealt| begin(&mut self.game, dealt));
         match started {
