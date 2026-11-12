@@ -49,7 +49,7 @@ class Fitted:
 
 def hockey_records(db: Path) -> list[Stored]:
     path = db.resolve()
-    root = path.parent.parent
+    root = db.absolute().parent.parent
     if not path.is_file():
         raise sqlite3.OperationalError(f"no database at {path}")
     wal = path.with_name(path.name + "-wal").exists()
@@ -185,7 +185,7 @@ def main() -> None:
     if db.with_name(db.name + "-wal").exists() and not db.with_name(db.name + "-shm").exists():
         raise SystemExit(NO_SHM)
     before = snapshot(db, [])
-    stored = hockey_records(db)
+    stored = hockey_records(args.db)
     paths = [s.path for s in stored]
     if snapshot(db, []) != before:
         raise SystemExit(CHANGED)

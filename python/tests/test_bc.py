@@ -264,3 +264,30 @@ def test_the_snapshot_through_a_link_watches_the_real_sidecars(tmp_path: Path) -
         seen = snapshot(link, [])
         assert seen == snapshot(real, [])
     assert seen[str(real.with_name("feint.db-wal"))] is not None
+
+
+def test_records_resolve_from_the_folder_the_link_is_in(tmp_path: Path) -> None:
+    real = tmp_path / "srv" / "feint.db"
+    real.parent.mkdir()
+    arena_like(real)
+    link = tmp_path / "repo" / "data" / "feint.db"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(real)
+    assert [s.path for s in hockey_records(link)] == [
+        tmp_path / "repo/data/matches/1.rec",
+        tmp_path / "repo/data/matches/airhockey/5.rec",
+    ]
+
+
+def test_main_sees_a_wal_without_shm_behind_a_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = wal_without_shm(tmp_path)
+    link = tmp_path / "elsewhere" / "data" / "feint.db"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(real)
+    monkeypatch.setattr(sys, "argv", ["bc", "--db", str(link), "--out", str(tmp_path / "o")])
+    with pytest.raises(SystemExit) as stop:
+        main()
+    assert stop.value.code == NO_SHM
+    assert not real.with_name("feint.db-shm").exists()
