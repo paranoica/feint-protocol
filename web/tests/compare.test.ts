@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseComparison, parseResults, verdict, yours } from "../src/compare.ts";
+import { fakeLinks, fakesLine, parseComparison, parseFakes, parseResults, verdict, yours } from "../src/compare.ts";
 
 const level = (n: number, share: number) => ({ level: n, matches: 40, won: 20, mine: 100, theirs: 50, share, fakes: 1.5 });
 const good = {
@@ -89,4 +89,82 @@ test("attacks are read and told as scoring rates with and without a fake", async
   assert.equal(parseComparison({ ...withAttacks, games: [{ ...withAttacks.games[0], attacks: { honest: { count: 1, scored: 2 }, fake: withAttacks.games[0].attacks.fake } }] }), null, "more goals than attacks");
   const none = parseComparison({ ...good, games: [{ ...good.games[0], attacks: { honest: { count: 0, scored: 0 }, fake: { count: 0, scored: 0, answered: 0, bitten: 0 } } }] });
   assert.equal(attackLine(none!.games[0]), "level 5 made no attacks");
+});
+
+const fakes = {
+  level: 5,
+  checkpoint: "15171d6c57a0caa7",
+  matches: 200,
+  noise: 0.003,
+  shots: 16134,
+  fake: { count: 7, scored: 0, low: 0.0, high: 0.3543 },
+  honest: { count: 16127, scored: 1242, low: 0.073, high: 0.0812 },
+  links: [
+    { seed: 30030, seat: 0, from: 5748, scored: false },
+    { seed: 30081, seat: 1, from: 6953, scored: false },
+  ],
+};
+
+test("the trained bot's fakes are read whole and anything malformed is refused", () => {
+  const f = parseFakes(fakes);
+  assert.equal(f?.fake.count, 7);
+  assert.equal(f?.links.length, 2);
+  assert.deepEqual(f?.links[1], { seed: 30081, seat: 1, from: 6953, scored: false });
+  const none = parseFakes({ ...fakes, shots: 16127, fake: { count: 0, scored: 0, low: null, high: null }, links: [] });
+  assert.equal(none?.fake.low, null);
+  const link = fakes.links[0];
+  for (const broken of [
+    null,
+    [],
+    { ...fakes, level: 6 },
+    { ...fakes, checkpoint: "xyz" },
+    { ...fakes, matches: -1 },
+    { ...fakes, fake: { ...fakes.fake, scored: 8 } },
+    { ...fakes, fake: { ...fakes.fake, high: 1.5 } },
+    { ...fakes, fake: { ...fakes.fake, low: "0" } },
+    { ...fakes, honest: undefined },
+    { ...fakes, shots: 10 },
+    { ...fakes, links: [link, link, link, link] },
+    { ...fakes, links: [{ ...link, seat: 2 }] },
+    { ...fakes, links: [{ ...link, seed: 4294967296 }] },
+    { ...fakes, links: [{ ...link, from: -1 }] },
+    { ...fakes, links: [{ ...link, from: 144001 }] },
+    { ...fakes, noise: -0.1 },
+    { ...fakes, noise: "0.49" },
+    { ...fakes, noise: Infinity },
+    { ...fakes, links: [{ ...link, scored: "no" }] },
+    { ...fakes, links: "none" },
+  ]) {
+    assert.equal(parseFakes(broken), null, JSON.stringify(broken));
+  }
+});
+
+test("the fake line says how often faked and honest attacks score, or that none were found", () => {
+  const f = parseFakes(fakes);
+  assert.ok(f);
+  assert.equal(
+    fakesLine(f),
+    "trained level 5 against the human model, 200 matches: 7 of 16134 shots look like fakes (0.04%), no more than the 0.30% of shots the detector flags in a bot that never fakes: no sign of fakes",
+  );
+  const many = parseFakes({ ...fakes, fake: { ...fakes.fake, count: 200, scored: 30 }, shots: 16327 });
+  assert.ok(many);
+  assert.equal(
+    fakesLine(many),
+    "trained level 5 against the human model, 200 matches: 200 faked attacks of 16327 shots (1.22% against 0.30% of false alarms), scored 15% (95% up to 35%), honest ones 8%",
+  );
+  const none = parseFakes({ ...fakes, shots: 16127, fake: { count: 0, scored: 0, low: null, high: null }, links: [] });
+  assert.ok(none);
+  assert.equal(
+    fakesLine(none),
+    "trained level 5 against the human model, 200 matches: no faked attack among 16127 shots",
+  );
+});
+
+test("replay links are offered only for the checkpoint this build ships", () => {
+  const f = parseFakes(fakes);
+  assert.ok(f);
+  const shipped = ["11e0e1c1a09628b6", "3ac002e12274846f", "3ac002e12274846f", "3ac002e12274846f", "15171d6c57a0caa7"];
+  assert.equal(fakeLinks(f, shipped).length, 2);
+  assert.deepEqual(fakeLinks(f, shipped.slice(0, 4).concat("0000000000000001")), []);
+  assert.deepEqual(fakeLinks(f, []), []);
 });

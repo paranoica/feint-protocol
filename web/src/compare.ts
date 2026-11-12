@@ -26,6 +26,31 @@ export interface Comparison {
   games: GameRow[];
 }
 
+export interface FakeSide {
+  count: number;
+  scored: number;
+  low: number | null;
+  high: number | null;
+}
+
+export interface FakeLink {
+  seed: number;
+  seat: 0 | 1;
+  from: number;
+  scored: boolean;
+}
+
+export interface Fakes {
+  level: number;
+  checkpoint: string;
+  matches: number;
+  noise: number;
+  shots: number;
+  fake: FakeSide;
+  honest: FakeSide;
+  links: FakeLink[];
+}
+
 export interface Result {
   game: string;
   level: number;
@@ -100,6 +125,109 @@ export function parseComparison(json: unknown): Comparison | null {
     games.push({ id: row.id, levels: levels as LevelRow[], honest, payoff: row.payoff, attacks });
   }
   return { matches: r.matches, games };
+}
+
+const MAX_LINKS = 3;
+const MAX_SEED = 0xffffffff;
+const MAX_TICK = 240 * 600;
+
+function sideOf(v: unknown): FakeSide | null {
+  const r = record(v);
+  if (!r || !isCount(r.count) || !isCount(r.scored) || r.scored > r.count) {
+    return null;
+  }
+  const bound = (b: unknown) => b === null || isShare(b);
+  if (!bound(r.low) || !bound(r.high)) {
+    return null;
+  }
+  return { count: r.count, scored: r.scored, low: r.low as number | null, high: r.high as number | null };
+}
+
+function linkOf(v: unknown): FakeLink | null {
+  const r = record(v);
+  if (!r || !isCount(r.seed) || r.seed > MAX_SEED || (r.seat !== 0 && r.seat !== 1)) {
+    return null;
+  }
+  if (!isCount(r.from) || r.from > MAX_TICK) {
+    return null;
+  }
+  return typeof r.scored === "boolean" ? { seed: r.seed, seat: r.seat, from: r.from, scored: r.scored } : null;
+}
+
+export function parseFakes(json: unknown): Fakes | null {
+  const r = record(json);
+  if (!r || !isCount(r.level) || r.level < 1 || r.level > 5 || !isCount(r.matches) || !isCount(r.shots)) {
+    return null;
+  }
+  if (typeof r.checkpoint !== "string" || !/^[0-9a-f]{16}$/.test(r.checkpoint) || !Array.isArray(r.links)) {
+    return null;
+  }
+  if (typeof r.noise !== "number" || !Number.isFinite(r.noise) || r.noise < 0) {
+    return null;
+  }
+  const fake = sideOf(r.fake);
+  const honest = sideOf(r.honest);
+  const links = r.links.map(linkOf);
+  if (!fake || !honest || fake.count + honest.count !== r.shots || links.length > MAX_LINKS) {
+    return null;
+  }
+  if (links.some((l) => l === null)) {
+    return null;
+  }
+  return {
+    level: r.level,
+    checkpoint: r.checkpoint,
+    matches: r.matches,
+    noise: r.noise,
+    shots: r.shots,
+    fake,
+    honest,
+    links: links as FakeLink[],
+  };
+}
+
+export function fakesLine(f: Fakes): string {
+  const head = `trained level ${f.level} against the human model, ${f.matches} matches`;
+  if (f.fake.count === 0) {
+    return `${head}: no faked attack among ${f.shots} shots`;
+  }
+  const rate = f.shots === 0 ? 0 : f.fake.count / f.shots;
+  const percent = (v: number) => `${(100 * v).toFixed(2)}%`;
+  if (rate <= f.noise) {
+    return `${head}: ${f.fake.count} of ${f.shots} shots look like fakes (${percent(rate)}), no more than the ${percent(f.noise)} of shots the detector flags in a bot that never fakes: no sign of fakes`;
+  }
+  const pct = (a: number, b: number) => (b === 0 ? "—" : `${Math.round((100 * a) / b)}%`);
+  const up = f.fake.high === null ? "" : ` (95% up to ${Math.round(100 * f.fake.high)}%)`;
+  return `${head}: ${f.fake.count} faked attacks of ${f.shots} shots (${percent(rate)} against ${percent(f.noise)} of false alarms), scored ${pct(f.fake.scored, f.fake.count)}${up}, honest ones ${pct(f.honest.scored, f.honest.count)}`;
+}
+
+export function fakeLinks(f: Fakes, shipped: readonly string[]): FakeLink[] {
+  return shipped[f.level - 1] === f.checkpoint ? f.links : [];
+}
+
+export function renderFakes(holder: HTMLElement, f: Fakes, links: FakeLink[], link: (l: FakeLink) => string) {
+  const card = document.createElement("div");
+  card.className = "compare-game";
+  const head = document.createElement("h3");
+  head.textContent = "Does the trained bot fake?";
+  const line = document.createElement("p");
+  line.className = "hint";
+  line.textContent = fakesLine(f);
+  card.append(head, line);
+  if (links.length > 0) {
+    const list = document.createElement("ul");
+    list.className = "replays";
+    for (const l of links) {
+      const item = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = link(l);
+      a.textContent = `replay of a detection: seed ${l.seed}, ${l.scored ? "scored" : "no goal"}`;
+      item.append(a);
+      list.append(item);
+    }
+    card.append(list);
+  }
+  holder.append(card);
 }
 
 export function parseResults(json: unknown): Result[] {

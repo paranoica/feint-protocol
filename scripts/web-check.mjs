@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const [glue, wasm, out, trainedOut] = process.argv.slice(2);
+const [glue, wasm, out, trainedOut, fakesJson] = process.argv.slice(2);
 const { initSync, WebMatch, checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
@@ -49,4 +49,24 @@ if (trainedOut) {
   }
   writeFileSync(trainedOut, trained.record());
   process.stdout.write(`${trained.digest_hex()}\n`);
+}
+
+if (fakesJson) {
+  const fakes = JSON.parse(readFileSync(fakesJson, "utf8"));
+  if (fakes.checkpoint !== checkpoints()[fakes.level - 1]) {
+    throw new Error(`fakes.json measured ${fakes.checkpoint}, level ${fakes.level} ships ${checkpoints()[fakes.level - 1]}`);
+  }
+  const link = fakes.links[0];
+  if (!link) {
+    process.stdout.write("none\n");
+  } else {
+    const rerun = WebMatch.rerun("trained", fakes.level, link.seed, link.seat);
+    if (!rerun.spectating() || rerun.record().length !== 0) {
+      throw new Error("a rerun must be watched and leave no record");
+    }
+    while (!rerun.finished()) {
+      rerun.advance(4800);
+    }
+    process.stdout.write(`${rerun.digest_hex()} ${fakes.level} ${link.seed} ${link.seat}\n`);
+  }
 }

@@ -6,7 +6,7 @@ use penalty::Penalty;
 use wasm_bindgen::prelude::*;
 
 use crate::hub::HubGame;
-use crate::session::{Play, Session, SessionError, parse_checkpoint};
+use crate::session::{Play, Rerun, Session, SessionError, parse_checkpoint};
 
 trait Live {
     fn advance(&mut self, ticks: u32) -> u32;
@@ -243,6 +243,19 @@ impl WebMatch {
         checkpoint: &str,
     ) -> Result<WebMatch, JsValue> {
         start_trained(game, level, seed, checkpoint).map(|session| WebMatch { session })
+    }
+
+    pub fn rerun(kind: &str, level: u8, seed: u32, seat: u8) -> Result<WebMatch, JsValue> {
+        let kind = match kind {
+            "trained" => Rerun::Trained,
+            "hand-made" => Rerun::HandMade,
+            _ => return Err(JsValue::from_str("unknown bot kind")),
+        };
+        Session::rerun_human(kind, level, u64::from(seed), seat)
+            .map(|session| WebMatch {
+                session: Box::new(session),
+            })
+            .map_err(|_| JsValue::from_str("level must be 1 to 5 and seat 0 or 1"))
     }
 
     pub fn watch(game: &str, left: u8, right: u8, seed: u32) -> Result<WebMatch, JsValue> {

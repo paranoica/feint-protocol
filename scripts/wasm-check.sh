@@ -39,8 +39,9 @@ trained_record="target/web-check-trained.record"
 {
   read -r browser rate
   read -r trained_browser
+  read -r rerun_browser rerun_level rerun_seed rerun_seat
 } < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
-  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record")
+  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json)
 native="$(cargo run -q --locked --release -p feint-web --bin replay -- "$record")"
 echo "browser record: $browser at $rate ticks/s"
 echo "native replay:  $native"
@@ -60,3 +61,15 @@ if [[ "$trained_browser" != "$trained_native" ]]; then
   echo "a browser match against the trained bot does not verify natively" >&2
   exit 1
 fi
+
+if [[ "$rerun_browser" != "none" ]]; then
+  rerun_native="$(cargo run -q --locked --release -p feint-compare --bin rerun -- "$rerun_level" "$rerun_seed" "$rerun_seat")"
+  echo "browser replay link:    $rerun_browser (level $rerun_level, seed $rerun_seed, seat $rerun_seat)"
+  echo "native harness:         $rerun_native"
+  if [[ "$rerun_browser" != "$rerun_native" ]]; then
+    echo "a replay link does not rerun the same match in the browser" >&2
+    exit 1
+  fi
+fi
+
+cargo test -q --locked --release -p feint-web --test rerun -- --ignored

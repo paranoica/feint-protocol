@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { again, cleanNick, finish, first, start, watch } from "../src/screens.ts";
+import {
+  again,
+  cleanNick,
+  finish,
+  first,
+  parseReplay,
+  replay,
+  replayLink,
+  replayStart,
+  start,
+  watch,
+} from "../src/screens.ts";
 
 test("level, game with score, result, again", () => {
   const level = first("ann");
@@ -80,4 +91,53 @@ test("start refuses an unknown bot kind", () => {
   const level = first("ann");
   assert.equal(start(level, "airhockey", 3, "ann", "neural" as never), level);
   assert.equal(start(level, "airhockey", 3, "ann", "" as never), level);
+});
+
+test("a replay link is read only when every part is valid", () => {
+  const good = "?replay=trained&level=5&seed=30030&seat=0&from=5748";
+  assert.deepEqual(parseReplay(good), { kind: "trained", level: 5, seed: 30030, seat: 0, from: 5748 });
+  assert.deepEqual(parseReplay("?replay=hand-made&level=1&seed=0&seat=1&from=0"), {
+    kind: "hand-made",
+    level: 1,
+    seed: 0,
+    seat: 1,
+    from: 0,
+  });
+  assert.equal(parseReplay("?replay=trained&level=5&seed=4294967295&seat=1&from=144000")?.seed, 4294967295);
+  for (const bad of [
+    "",
+    "?level=5&seed=1&seat=0&from=1",
+    "?replay=robot&level=5&seed=1&seat=0&from=1",
+    "?replay=trained&level=0&seed=1&seat=0&from=1",
+    "?replay=trained&level=6&seed=1&seat=0&from=1",
+    "?replay=trained&level=2.5&seed=1&seat=0&from=1",
+    "?replay=trained&level=5&seed=4294967296&seat=0&from=1",
+    "?replay=trained&level=5&seed=-1&seat=0&from=1",
+    "?replay=trained&level=5&seed=1e3&seat=0&from=1",
+    "?replay=trained&level=5&seed=1&seat=2&from=1",
+    "?replay=trained&level=5&seed=1&seat=0&from=-5",
+    "?replay=trained&level=5&seed=1&seat=0&from=144001",
+    "?replay=trained&level=5&seed=1&seat=0",
+    "?replay=trained&level=5&seed=&seat=0&from=1",
+  ]) {
+    assert.equal(parseReplay(bad), null, bad);
+  }
+});
+
+test("a replay link round-trips and starts two seconds before its moment", () => {
+  const r = { kind: "trained", level: 5, seed: 30081, seat: 1, from: 6953 } as const;
+  assert.equal(replayLink(r), "/?replay=trained&level=5&seed=30081&seat=1&from=6953");
+  assert.deepEqual(parseReplay(replayLink(r).slice(1)), r);
+  assert.equal(replayStart(r), 6953 - 480);
+  assert.equal(replayStart({ ...r, from: 100 }), 0);
+});
+
+test("a replay screen is watched and carries the replay into the result", () => {
+  const r = { kind: "trained", level: 5, seed: 30030, seat: 0, from: 5748 } as const;
+  const s = replay(first("ann"), "airhockey", r, "ann");
+  assert.equal(s.name, "game");
+  assert.deepEqual(s.name === "game" ? s.replay : null, r);
+  const done = finish(s, [7, 0]);
+  assert.deepEqual(done.name === "result" ? done.replay : null, r);
+  assert.equal(replay(done, "airhockey", r, "ann"), done, "only from the level screen");
 });

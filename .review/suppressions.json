@@ -15,6 +15,14 @@
       "quote_substr": "const AIM_SCALE: f64 = 2.0;",
       "reason": "play area means the 2 m table length; a puck centre within the 0.125 m mouth scores, so ~10 % of corner aims leave it, not 35 %",
       "ts": 1794186869.641741
+    },
+    {
+      "fingerprint": "7711d465617b",
+      "category": "test-coverage",
+      "file_glob": ".claude/*",
+      "quote_substr": "",
+      "reason": "strength lost no ignored test: report.rs was the only one",
+      "ts": 1794468141.4749699
     }
   ]
 }
