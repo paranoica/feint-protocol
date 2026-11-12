@@ -1,4 +1,5 @@
 pub mod batch;
+pub mod imitation;
 pub mod mlp;
 mod pilot;
 pub mod registry;

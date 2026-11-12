@@ -1,10 +1,14 @@
 use feint_ml::Params;
 use feint_ml::batch::{FEATURES, OUTPUTS, feature_scales};
+use feint_ml::imitation::{
+    ImitationError, encode_record, imitation as extract, pilot_match as play,
+};
+use feint_ml::mlp::Mlp;
 use feint_ml::{BatchError, BatchSpec, HockeyBatch, Outputs, Seat};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 use std::sync::{Mutex, MutexGuard, TryLockError};
 
 fn refused(error: BatchError) -> PyErr {
@@ -215,7 +219,59 @@ impl PyHockeyBatch {
     }
 }
 
+fn unusable(error: ImitationError) -> PyErr {
+    PyValueError::new_err(format!("{error:?}"))
+}
+
+#[pyfunction]
+#[pyo3(signature = (record, reaction_ms = 300))]
+fn imitation<'py>(
+    py: Python<'py>,
+    record: &[u8],
+    reaction_ms: u32,
+) -> PyResult<Bound<'py, PyDict>> {
+    let got = py
+        .detach(|| extract(record, reaction_ms))
+        .map_err(unusable)?;
+    let dict = PyDict::new(py);
+    dict.set_item(
+        "features",
+        PyArray1::from_slice(py, &got.features).reshape([got.decisions, FEATURES])?,
+    )?;
+    dict.set_item(
+        "targets",
+        PyArray1::from_slice(py, &got.targets).reshape([got.decisions, OUTPUTS])?,
+    )?;
+    dict.set_item("ticks", got.ticks)?;
+    Ok(dict)
+}
+
+#[pyfunction]
+#[pyo3(signature = (weights, level, seed, reaction_ms = 150, max_ticks = 240 * 600))]
+fn pilot_match<'py>(
+    py: Python<'py>,
+    weights: &[u8],
+    level: u8,
+    seed: u64,
+    reaction_ms: u32,
+    max_ticks: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mlp = Mlp::from_safetensors(weights)
+        .map_err(|error| PyValueError::new_err(format!("bad weights: {error:?}")))?;
+    let report = py
+        .detach(|| play(mlp, level, seed, reaction_ms, max_ticks))
+        .map_err(unusable)?;
+    let dict = PyDict::new(py);
+    dict.set_item("record", PyBytes::new(py, &encode_record(&report.record())))?;
+    dict.set_item("score", (report.score[0], report.score[1]))?;
+    dict.set_item("ticks", report.ticks)?;
+    dict.set_item("finished", report.finished)?;
+    Ok(dict)
+}
+
 #[pymodule]
 fn feint_gym(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<PyHockeyBatch>()
+    module.add_class::<PyHockeyBatch>()?;
+    module.add_function(wrap_pyfunction!(imitation, module)?)?;
+    module.add_function(wrap_pyfunction!(pilot_match, module)?)
 }
