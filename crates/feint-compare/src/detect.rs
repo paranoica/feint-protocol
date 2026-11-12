@@ -1,16 +1,15 @@
 use airhockey::analysis::Frame;
 use airhockey::{Params, Vec2};
+use feint_ml::show::{class, seen};
 use feint_protocol::PlayerId;
+
+pub use feint_ml::show::{
+    BEHIND_COS, CORNER_SPLIT, SHOW_BACK, SHOW_HOLD_TICKS, SHOW_MIN, SHOW_REACH,
+};
 
 pub const CONTACT_SLACK: f64 = 0.01;
 pub const SHOT_SPEED: f64 = 1.4;
-pub const SHOW_MIN: f64 = 0.15;
-pub const SHOW_HOLD_TICKS: usize = 30;
-pub const SHOW_REACH: f64 = 0.5;
-pub const SHOW_BACK: f64 = 0.1;
 pub const SHOW_WINDOW_TICKS: u64 = 360;
-pub const BEHIND_COS: f64 = 0.5;
-pub const CORNER_SPLIT: f64 = 0.035;
 pub const SEPARATION_TICKS: usize = 24;
 pub const READ_TICKS: usize = 12;
 pub const MIN_READ_TICKS: usize = 2;
@@ -35,20 +34,6 @@ impl Shot {
     }
 }
 
-fn seen(player: PlayerId, v: Vec2) -> Vec2 {
-    if player == 0 { v } else { -v }
-}
-
-fn class(y: f64) -> u8 {
-    if y < -CORNER_SPLIT {
-        0
-    } else if y > CORNER_SPLIT {
-        2
-    } else {
-        1
-    }
-}
-
 fn goal_y(params: &Params, from: Vec2, dir: Vec2) -> Option<f64> {
     if dir.x <= 0.0 {
         return None;
@@ -69,20 +54,12 @@ fn goal_y(params: &Params, from: Vec2, dir: Vec2) -> Option<f64> {
 }
 
 fn shown_side(params: &Params, frame: &Frame, player: PlayerId) -> Option<u8> {
-    let me = usize::from(player);
-    let puck = seen(player, frame.puck);
-    let line = puck - seen(player, frame.mallets[me]);
-    let length = line.length();
-    let back = params.puck_radius + params.mallet_radius + SHOW_BACK;
-    if length < back || length > SHOW_REACH || line.x < BEHIND_COS * length {
-        return None;
-    }
-    let y = puck.y + (params.half_length - puck.x) * line.y / line.x;
-    let limit = params.half_width - params.puck_radius;
-    if y.abs() > limit || y.abs() < SHOW_MIN {
-        return None;
-    }
-    Some(class(y))
+    feint_ml::show::shown_side(
+        params,
+        frame.puck,
+        frame.mallets[usize::from(player)],
+        player,
+    )
 }
 
 fn touch_starts(frames: &[Frame], reach: f64) -> Vec<[bool; 2]> {

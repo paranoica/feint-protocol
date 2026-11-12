@@ -97,6 +97,7 @@ fn json_names_counts_rates_and_links() {
         fake_scored: 0,
         honest: 20,
         honest_scored: 20,
+        leaned: 0,
         links: vec![Link {
             seed: 30_001,
             seat: 1,
@@ -125,6 +126,7 @@ fn json_of_a_bot_without_fakes_has_no_rate_and_no_links() {
         fake_scored: 0,
         honest: 0,
         honest_scored: 0,
+        leaned: 0,
         links: Vec::new(),
     };
     assert_eq!(

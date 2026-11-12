@@ -2,6 +2,7 @@ use airhockey::human::{HUMAN_NOISE, Human, Reader};
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, RunHeader, run_match};
 use feint_ml::batch::{FEATURES, OUTPUTS};
+use feint_ml::keeper::Keeper;
 use feint_ml::mlp::Mlp;
 use feint_ml::registry::CHECKPOINTS;
 use feint_ml::{BatchError, BatchSpec, Episode, HockeyBatch, Outputs, Pilot, Policy, Seat};
@@ -129,6 +130,7 @@ fn replayed(seats: [Seat; 2], episode: Episode, ticks: u64) -> u64 {
             }
             Seat::Human => Box::new(Human::new(params.clone(), HUMAN_NOISE)),
             Seat::Reader { anticipates } => Box::new(Reader::new(params.clone(), anticipates)),
+            Seat::Keeper { bite_permille } => Box::new(Keeper::new(params.clone(), bite_permille)),
             Seat::Frozen(_) => Box::new(
                 Pilot::new(
                     HockeyPlaybook::new(params.clone()),
@@ -162,6 +164,7 @@ fn the_batch_plays_what_run_match_plays() {
         [Seat::Learner, Seat::Level(2)],
         [Seat::Human, Seat::Learner],
         [Seat::Learner, Seat::Learner],
+        [Seat::Keeper { bite_permille: 700 }, Seat::Learner],
     ] {
         let mut spec = BatchSpec::new(vec![seats], 9);
         spec.threads = 2;

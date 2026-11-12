@@ -1,9 +1,11 @@
 pub mod batch;
 pub mod imitation;
+pub mod keeper;
 pub mod mlp;
 mod pilot;
 pub mod registry;
 pub mod safetensors;
+pub mod show;
 pub mod trained;
 
 pub use airhockey::Params;

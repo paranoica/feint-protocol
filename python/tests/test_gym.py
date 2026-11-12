@@ -256,3 +256,18 @@ def test_pilot_match_refuses_a_bad_level_or_weights() -> None:
         pilot_match(FOCUS.read_bytes(), level=6, seed=7)
     with pytest.raises(ValueError, match="weights"):
         pilot_match(b"junk", level=1, seed=7)
+
+
+def test_keeper_seats_parse_and_report_counts() -> None:
+    batch = HockeyBatch(
+        [("learner", "keeper"), ("keeper:250", "learner"), ("learner", "level:1")], seed=3
+    )
+    batch.reset()
+    assert batch.seats(0) == ("learner", "keeper:700")
+    assert batch.seats(1) == ("keeper:250", "learner")
+    assert batch.keeper_counts(0) == (0, 0, 0, 0)
+    assert batch.keeper_counts(2) is None
+    with pytest.raises(ValueError):
+        batch.keeper_counts(3)
+    with pytest.raises(ValueError, match="unknown seat"):
+        HockeyBatch([("learner", "keeper:1001")], seed=3)

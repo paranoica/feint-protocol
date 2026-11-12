@@ -17,6 +17,9 @@ class Result:
     behind_at_cap: int = 0
     goals_for: int = 0
     goals_against: int = 0
+    keeper_reads: int = 0
+    keeper_bites: int = 0
+    keeper_bite_goals: int = 0
 
     @property
     def matches(self) -> int:
@@ -59,6 +62,7 @@ def evaluate(
     outcome = np.zeros(matches, dtype=np.int8)
     lead = np.zeros(matches, dtype=np.int64)
     goals = np.zeros(2, dtype=np.int64)
+    keeper = np.zeros(4, dtype=np.int64)
     while (outcome == 0).any():
         actions = np.zeros((matches, 2, 2), dtype=np.float32)
         ready = out["ready"]
@@ -71,6 +75,9 @@ def evaluate(
             theirs = int(out["score"][env, 1 - learner[env]])
             goals += (mine, theirs)
             lead[env] = mine - theirs
+            counts = batch.keeper_counts(env)
+            if counts is not None:
+                keeper += counts
             if out["truncated"][env]:
                 outcome[env] = 3
             else:
@@ -84,4 +91,7 @@ def evaluate(
         behind_at_cap=int(((outcome == 3) & (lead < 0)).sum()),
         goals_for=int(goals[0]),
         goals_against=int(goals[1]),
+        keeper_reads=int(keeper[0]),
+        keeper_bites=int(keeper[1]),
+        keeper_bite_goals=int(keeper[2]),
     )

@@ -159,3 +159,38 @@ def test_a_budget_whose_shares_add_to_one_up_to_rounding_is_allowed() -> None:
 def test_a_budget_share_that_is_not_a_number_is_refused(name: str) -> None:
     with pytest.raises(ValueError):
         Budget(**{name: float("nan")})
+
+
+def test_keepers_take_their_share_and_the_rest_add_up() -> None:
+    budget = Budget(hand_made=0.40, level5=0.30, readers=0.05, frozen=0.20, keepers=0.35)
+    league = League(budget=budget)
+    for i in range(5):
+        league.add(f"snap-{i}", CHECKPOINT)
+    opponents = league.table(256, np.random.default_rng(1)).opponents
+    assert opponents.count("keeper:700") == 89
+    assert opponents.count("level:5") == 76
+    assert sum(o in ("level:3", "level:4") for o in opponents) == 26
+    assert sum(o.startswith("reader") for o in opponents) == 12
+    assert sum(o.startswith("snap-") for o in opponents) == 51
+    assert opponents.count("learner") == 2
+
+
+@pytest.mark.parametrize(
+    "shares",
+    [
+        {"hand_made": 0.4, "level5": 0.3, "readers": 0.05, "frozen": 0.2, "keepers": 0.4},
+        {"keepers": -0.1},
+        {"keepers": float("nan")},
+    ],
+)
+def test_keeper_shares_that_do_not_fit_are_refused(shares: dict[str, float]) -> None:
+    with pytest.raises(ValueError):
+        Budget(**shares)
+
+
+def test_a_checkpoint_without_keepers_resumes() -> None:
+    state = League(budget=Budget(hand_made=0.45, level5=0.35, readers=0.1, frozen=0.2)).state()
+    del state["budget"]["keepers"]
+    league = League.from_state(state)
+    assert league.budget.keepers == 0.0
+    assert league.budget.level5 == 0.35
