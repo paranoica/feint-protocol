@@ -173,7 +173,6 @@ impl Controller<AirHockey> for Keeper {
         let vel = state.world.puck.vel;
         if self.bite.is_some_and(|(_, until)| now >= until) {
             self.bite = None;
-            self.read.forget();
         }
         if self.bite.is_none() {
             let shown = shown_side(

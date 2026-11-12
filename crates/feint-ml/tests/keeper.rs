@@ -138,6 +138,21 @@ fn a_held_show_then_the_other_corner_beats_only_a_biting_keeper() {
     }
 }
 
+#[test]
+fn a_show_held_past_the_bite_is_not_drawn_again() {
+    for seed in (0..20).step_by(2) {
+        let mut keeper = Keeper::new(Params::default(), 1000);
+        let mut held = Shooter {
+            strike_at: 330,
+            ..shooter(Some(0.3), -0.13)
+        };
+        let mut game = AirHockey::new(Params::default(), 0);
+        run_match(&mut game, [&mut held, &mut keeper], header(seed), 320).unwrap();
+        assert_eq!(keeper.counts().reads, 1, "seed {seed}");
+        assert_eq!(keeper.counts().bites, 1, "seed {seed}");
+    }
+}
+
 fn read(permille: u16) -> Read {
     Read::new(permille, ChaCha8Rng::seed_from_u64(9))
 }
