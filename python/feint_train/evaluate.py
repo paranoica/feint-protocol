@@ -42,6 +42,7 @@ def evaluate(
     threads: int = 6,
     cap_ticks: int = EVAL_CAP_TICKS,
     goals_to_win: int | None = None,
+    reaction_ms: int = 150,
 ) -> Result:
     seats = seats_against(opponent, matches)
     learner = np.array([0 if a == "learner" else 1 for a, _ in seats])
@@ -50,7 +51,7 @@ def evaluate(
         seed=seed,
         cap_ticks=cap_ticks,
         threads=threads,
-        reaction_ms=(150, 150),
+        reaction_ms=(reaction_ms, reaction_ms),
         physique=(1.0, 1.0),
         goals_to_win=goals_to_win,
     )
