@@ -85,3 +85,17 @@ fn the_parity_checkpoint_is_not_in_the_registry() {
     assert_eq!(fnv1a64(parity), 0xdaf7_bada_17a0_1ab0);
     assert!(lookup(0xdaf7_bada_17a0_1ab0).is_none());
 }
+
+#[test]
+fn every_shipped_checkpoint_stays_registered_so_its_records_verify() {
+    for id in [
+        0x11e0_e1c1_a096_28b6_u64,
+        0x3ac0_02e1_2274_846f,
+        0x1517_1d6c_57a0_caa7,
+    ] {
+        assert!(
+            lookup(id).is_some(),
+            "{id:016x} was shipped and must stay in the registry"
+        );
+    }
+}

@@ -73,6 +73,7 @@ jobs:
           (cd web && npm test --silent && npm run typecheck --silent)
       - run: scripts/arena-check.sh
       - run: cargo test --release --locked -q -p airhockey --test strength -- --ignored
+      - run: cargo test --release --locked -q -p airhockey --test against_human -- --ignored
       - run: cargo test --release --locked -q -p penalty --test strength -- --ignored
       - run: cargo test --release --locked -q -p duel --test strength -- --ignored
       - run: cargo test --release --locked -q -p feint-compare -- --ignored
