@@ -63,6 +63,10 @@
       "run": "FEINT_CHECKPOINT={args} cargo test --release --locked -q -p feint-ml --test bar -- --ignored --nocapture",
       "heavy": true
     },
+    "bc": {
+      "run": "cd python && uv run python -m feint_train.bc",
+      "heavy": true
+    },
     "compare": {
       "run": "cargo run --release --locked -q -p feint-compare -- web/public/compare.json 40",
       "heavy": true

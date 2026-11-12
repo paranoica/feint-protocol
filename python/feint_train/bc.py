@@ -166,7 +166,14 @@ def main() -> None:
     print(
         f"matches used {len(data.used)}, refused {len(data.refused)}, decisions {len(data.targets)}"
     )
-    train, val = split_by_match(data.groups)
+    if sha256(watched) != before:
+        raise SystemExit("the database or a record changed while reading")
+    try:
+        train, val = split_by_match(data.groups)
+    except ValueError as error:
+        raise SystemExit(
+            f"{error}; play more matches on the arena at the current version"
+        ) from None
     fitted = fit(data.features, data.targets, train, val, seed=args.seed)
     mean, hold = baselines(data.targets[train], data.features[val], data.targets[val])
     held = int(data.groups[val][0])
