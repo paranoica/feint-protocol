@@ -1,9 +1,15 @@
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
-use feint_ai::{BotError, Controller, Record, RecordError, Runner, decode_record, encode_record};
+use feint_ai::{
+    Bot, BotError, Controller, Difficulty, Opponent, Record, RecordError, RunHeader, RunReport,
+    Runner, decode_record, run_match,
+};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 
 use crate::batch::{FEATURES, OUTPUTS};
+use crate::mlp::Mlp;
 use crate::{Pilot, Policy};
+
+pub use feint_ai::encode_record;
 
 pub const MAX_TICKS: u64 = 240 * 60 * 30;
 const HUMAN: PlayerId = 0;
@@ -19,6 +25,7 @@ pub enum ImitationError {
     NoHuman,
     Reaction(BotError),
     Mismatch,
+    Level,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -189,4 +196,36 @@ pub fn imitation(bytes: &[u8], reaction_ms: u32) -> Result<Imitation, ImitationE
         decisions,
         ticks: report.ticks,
     })
+}
+
+pub fn pilot_match(
+    mlp: Mlp,
+    level: u8,
+    seed: u64,
+    reaction_ms: u32,
+    max_ticks: u64,
+) -> Result<RunReport, ImitationError> {
+    let difficulty = Difficulty::preset(level).ok_or(ImitationError::Level)?;
+    let mut game = AirHockey::new(Params::default(), level);
+    let spec = game.spec();
+    let mut pilot = Pilot::new(
+        HockeyPlaybook::new(Params::default()),
+        mlp,
+        &spec,
+        reaction_ms,
+        PHYSIQUE,
+    )
+    .map_err(ImitationError::Reaction)?;
+    let mut bot = Bot::new(difficulty, HockeyPlaybook::new(Params::default()), &spec)
+        .map_err(ImitationError::Reaction)?;
+    let header = RunHeader {
+        game_id: spec.game_id.clone().unwrap_or_default(),
+        game_version: GAME_VERSION,
+        seed,
+        bodies: vec![human_body(&spec), difficulty.body(&spec)],
+        levels: [0, level],
+        opponent: Opponent::HandMade,
+    };
+    run_match(&mut game, [&mut pilot, &mut bot], header, max_ticks)
+        .map_err(|_| ImitationError::Bodies)
 }

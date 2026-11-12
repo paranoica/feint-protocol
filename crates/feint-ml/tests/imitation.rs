@@ -1,6 +1,6 @@
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
 use feint_ai::{Bot, Controller, Difficulty, Opponent, RunHeader, encode_record, run_match};
-use feint_ml::imitation::{ImitationError, MAX_TICKS, imitation};
+use feint_ml::imitation::{ImitationError, MAX_TICKS, imitation, pilot_match};
 use feint_ml::mlp::Mlp;
 use feint_ml::registry::CHECKPOINTS;
 use feint_ml::{Pilot, Policy};
@@ -82,21 +82,17 @@ fn decisions_from_the_spec(ticks: u64, delay_ticks: u64) -> usize {
         .count()
 }
 
-fn pilot_match(ticks: u64) -> (Vec<u8>, Logged) {
+fn logged_match(ticks: u64) -> (Vec<u8>, Logged) {
     let mut game = AirHockey::new(Params::default(), 1);
     let spec = game.spec();
-    let focus = CHECKPOINTS
-        .iter()
-        .find(|c| c.name == "airhockey-focus")
-        .unwrap();
-    let logged = Logged {
-        mlp: Mlp::from_safetensors(focus.bytes).unwrap(),
+    let fresh = || Logged {
+        mlp: focus(),
         features: Vec::new(),
         outs: Vec::new(),
     };
     let mut pilot = Pilot::new(
         HockeyPlaybook::new(Params::default()),
-        logged,
+        fresh(),
         &spec,
         150,
         1.0,
@@ -110,32 +106,13 @@ fn pilot_match(ticks: u64) -> (Vec<u8>, Logged) {
     .unwrap();
     let head = header(21, 1, &game);
     let report = run_match(&mut game, [&mut pilot, &mut bot], head, ticks).unwrap();
-    let bytes = encode_record(&report.record());
-    let Logged {
-        mlp,
-        features,
-        outs,
-    } = std::mem::replace(
-        pilot.policy_mut(),
-        Logged {
-            mlp: Mlp::from_safetensors(focus.bytes).unwrap(),
-            features: Vec::new(),
-            outs: Vec::new(),
-        },
-    );
-    (
-        bytes,
-        Logged {
-            mlp,
-            features,
-            outs,
-        },
-    )
+    let log = std::mem::replace(pilot.policy_mut(), fresh());
+    (encode_record(&report.record()), log)
 }
 
 #[test]
 fn a_pilots_own_match_gives_back_its_features_and_targets() {
-    let (bytes, log) = pilot_match(240 * 40);
+    let (bytes, log) = logged_match(240 * 40);
     let ticks = feint_ai::decode_record(&bytes).unwrap().ticks;
     let got = imitation(&bytes, 150).unwrap();
     assert_eq!(got.ticks, ticks);
@@ -277,4 +254,37 @@ fn a_reaction_past_the_limit_is_refused() {
         imitation(&bytes, u32::MAX),
         Err(ImitationError::Reaction(_))
     ));
+}
+
+fn focus() -> Mlp {
+    let file = CHECKPOINTS
+        .iter()
+        .find(|c| c.name == "airhockey-focus")
+        .unwrap();
+    Mlp::from_safetensors(file.bytes).unwrap()
+}
+
+#[test]
+fn a_pilot_match_seats_the_pilot_as_the_human_and_extracts() {
+    let report = pilot_match(focus(), 1, 7, 150, 2400).unwrap();
+    assert_eq!(report.ticks, 2400);
+    assert_eq!(report.header.bodies[0], human_body());
+    assert_eq!(report.header.levels, [0, 1]);
+    assert_eq!(report.header.seed, 7);
+    let first = report.actions.iter().find(|a| a.player == 0).unwrap().tick;
+    assert_eq!(first, 36);
+    let got = imitation(&encode_record(&report.record()), 150).unwrap();
+    assert_eq!(got.decisions, decisions_from_the_spec(2400, 36));
+}
+
+#[test]
+fn a_pilot_match_at_an_unknown_level_is_refused() {
+    assert_eq!(
+        pilot_match(focus(), 0, 7, 150, 2400).map(|r| r.ticks),
+        Err(ImitationError::Level)
+    );
+    assert_eq!(
+        pilot_match(focus(), 6, 7, 150, 2400).map(|r| r.ticks),
+        Err(ImitationError::Level)
+    );
 }

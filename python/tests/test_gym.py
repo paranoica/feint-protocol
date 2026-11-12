@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from feint_gym import HockeyBatch
+from feint_gym import HockeyBatch, imitation, pilot_match
 
 from feint_train.throughput import mix
 
@@ -226,3 +226,33 @@ def test_frozen_seats_are_named_and_need_their_bytes() -> None:
         HockeyBatch([("learner", "frozen:0")], seed=1, frozen=[b"junk"])
     with pytest.raises(ValueError, match="unknown seat"):
         HockeyBatch([("learner", "frozen:x")], seed=1)
+
+
+FOCUS = Path(__file__).parents[2] / "crates/feint-ml/checkpoints/airhockey-focus.safetensors"
+
+
+def test_a_pilot_match_extracts_into_batch_shaped_arrays() -> None:
+    played = pilot_match(FOCUS.read_bytes(), level=1, seed=7, reaction_ms=150, max_ticks=2400)
+    assert played["ticks"] == 2400
+    assert played["finished"] is False
+    assert len(played["score"]) == 2
+    got = imitation(played["record"], reaction_ms=150)
+    decisions = len([t for t in range(2400) if t % 4 == 0 and t >= 36])
+    assert got["features"].shape == (decisions, 18)
+    assert got["targets"].shape == (decisions, 2)
+    assert got["features"].dtype == np.float32 and got["targets"].dtype == np.float32
+    assert got["ticks"] == 2400
+    assert np.abs(got["targets"]).max() <= 1.0
+    assert np.all(got["features"][:, 16] == np.float32(0.15))
+
+
+def test_imitation_refuses_what_it_cannot_replay() -> None:
+    with pytest.raises(ValueError, match="Decode"):
+        imitation(b"not a record")
+
+
+def test_pilot_match_refuses_a_bad_level_or_weights() -> None:
+    with pytest.raises(ValueError, match="Level"):
+        pilot_match(FOCUS.read_bytes(), level=6, seed=7)
+    with pytest.raises(ValueError, match="weights"):
+        pilot_match(b"junk", level=1, seed=7)
