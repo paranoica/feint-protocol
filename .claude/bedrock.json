@@ -123,6 +123,10 @@
       "run": "cd python && uv run python -m feint_train.train --logdir runs/fakes --league --hours {args} --init runs/focus/checkpoint.pt --init-actor runs/focus/best.safetensors --gamma 0.999 --lr 1e-4 --shaping 0 --critic-warmup 30 --concede-weight 0.8 --capped-ahead 0.5 --hand-made 0.40 --level5 0.30 --readers 0.05 --frozen 0.20 --keepers 0.35 --eval-opponents level:5,keeper:700 --eval-every 20 --eval-matches 100 --resume auto",
       "heavy": true
     },
+    "fakes-of": {
+      "run": "cargo run --release --locked -q -p feint-compare --bin fakes -- /dev/null {args}",
+      "heavy": true
+    },
     "keeper-gate": {
       "run": "cargo test --release --locked -q -p feint-compare --test keeper -- --ignored --nocapture",
       "heavy": true
