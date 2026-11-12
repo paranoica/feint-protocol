@@ -3,10 +3,22 @@ import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
-import { again, finish, first, start, watch, type Screen } from "./screens.ts";
+import {
+  again,
+  finish,
+  first,
+  parseReplay,
+  replay,
+  replayLink,
+  replayStart,
+  start,
+  watch,
+  type Replay,
+  type Screen,
+} from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
-import { parseComparison, parseResults, renderComparison } from "./compare.ts";
+import { parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
 const TICK_CAP = 12;
@@ -69,7 +81,13 @@ function show(next: Screen) {
     $<HTMLInputElement>("nick").value = screen.nick;
     void loadComparison(screen.nick);
   }
-  if (screen.name === "result") {
+  if (screen.name === "result" && screen.replay) {
+    const r = screen.replay;
+    const [left, right] = screen.score;
+    $("verdict").textContent = "Replay over";
+    $("verdict").style.color = "";
+    $("final").textContent = `${current.name} · ${left} : ${right} · ${r.kind} level ${r.level} vs the human model · seed ${r.seed}`;
+  } else if (screen.name === "result") {
     const [you, bot] = screen.score;
     const pair = screen.watch;
     const [left, right] = current.sideColors();
@@ -184,6 +202,17 @@ async function loadComparison(nick: string) {
     }
     renderComparison(holder, comparison, results, (id) => gameById(id)?.name ?? id);
     holder.hidden = false;
+    try {
+      const found = await fetch("./fakes.json");
+      const fakes = found.ok ? parseFakes(await found.json()) : null;
+      if (fakes) {
+        renderFakes(holder, fakes, (l) =>
+          replayLink({ kind: "trained", level: fakes.level, seed: l.seed, seat: l.seat, from: l.from }),
+        );
+      }
+    } catch {
+      return;
+    }
   } catch {
     holder.hidden = true;
   }
@@ -290,7 +319,32 @@ function enter(view: GameView, match: WebMatch, next: Screen) {
 }
 
 function speedLabel(): string {
+  if (screen.name === "game" && screen.replay) {
+    return `replay · seed ${screen.replay.seed} · ×${watchSpeed} (F)`;
+  }
   return watching ? `level ${watching[1]} · ×${watchSpeed} (F)` : "";
+}
+
+function beginReplay(view: GameView, r: Replay) {
+  const next = replay(screen, view.id, r, $<HTMLInputElement>("nick").value);
+  if (next.name !== "game" || starting) {
+    return;
+  }
+  try {
+    game = WebMatch.rerun(r.kind, r.level, r.seed, r.seat);
+    game.advance(replayStart(r));
+  } catch {
+    game = null;
+    return;
+  }
+  playing = { ticket: null, profile: null };
+  watching = r.seat === 0 ? [r.level, 5] : [5, r.level];
+  watchSpeed = 1;
+  enter(view, game, next);
+  startAt = performance.now();
+  dragHint.hidden = true;
+  $("who").textContent = r.seat === 0 ? `${r.kind} level ${r.level}` : "human model";
+  $("lvl").textContent = speedLabel();
 }
 
 function beginWatch(view: GameView, left: number, right: number) {
@@ -456,6 +510,11 @@ async function boot() {
     feintGame: (id: string) => gameById(id)?.name ?? null,
   });
   show(screen);
+  const asked = parseReplay(location.search);
+  const hockey = gameById("airhockey");
+  if (asked && hockey) {
+    beginReplay(hockey, asked);
+  }
   requestAnimationFrame(frame);
 }
 

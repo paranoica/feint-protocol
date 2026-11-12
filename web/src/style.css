@@ -110,6 +110,14 @@ body {
 .compare-game .hint {
   text-align: left;
 }
+.replays {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.replays a {
+  color: inherit;
+}
 .compare-verdict {
   margin: 12px 0 4px;
   font-weight: 600;

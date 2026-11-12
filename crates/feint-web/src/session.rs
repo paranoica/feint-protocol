@@ -1,6 +1,7 @@
 use std::num::NonZeroU64;
 
-use airhockey::{AirHockey, Params};
+use airhockey::human::{HUMAN_GOALS, HUMAN_NOISE, Human};
+use airhockey::{AirHockey, HockeyPlaybook, Params};
 use feint_ai::{
     Bot, Controller, Difficulty, InsightView, Memory, Opponent, Profile, RunHeader, RunReport,
     Runner, encode_record,
@@ -84,6 +85,16 @@ impl Controller<AirHockey> for Pointer {
     }
 }
 
+fn blank() -> InsightView {
+    InsightView {
+        current: None,
+        intent: None,
+        memory: false,
+        likely_shot: None,
+        likely_cover: Vec::new(),
+    }
+}
+
 enum Seat<G: HubGame> {
     HandMade(Box<Bot<G, G::Book>>),
     Trained(Box<dyn Controller<G>>, G::Book),
@@ -100,13 +111,7 @@ impl<G: HubGame> Seat<G> {
     fn insight(&self) -> InsightView {
         match self {
             Self::HandMade(bot) => bot.insight(),
-            Self::Trained(..) => InsightView {
-                current: None,
-                intent: None,
-                memory: false,
-                likely_shot: None,
-                likely_cover: Vec::new(),
-            },
+            Self::Trained(..) => blank(),
         }
     }
 
@@ -118,10 +123,37 @@ impl<G: HubGame> Seat<G> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rerun {
+    Trained,
+    HandMade,
+}
+
+fn order<'a, G: HubGame>(
+    bot: &'a mut Seat<G>,
+    left: &'a mut Option<Bot<G, G::Book>>,
+    model: &'a mut Option<Box<dyn Controller<G>>>,
+    human: &'a mut G::Human,
+    bot_seat: PlayerId,
+) -> [&'a mut dyn Controller<G>; 2] {
+    let other: &mut dyn Controller<G> = match (left, model) {
+        (Some(left), _) => left,
+        (None, Some(model)) => model.as_mut(),
+        (None, None) => human,
+    };
+    if bot_seat == 0 {
+        [bot.controller(), other]
+    } else {
+        [other, bot.controller()]
+    }
+}
+
 pub struct Play<G: HubGame> {
     game: G,
     bot: Seat<G>,
+    bot_seat: PlayerId,
     left: Option<Bot<G, G::Book>>,
+    model: Option<Box<dyn Controller<G>>>,
     human: G::Human,
     runner: Option<Runner>,
     report: Option<RunReport>,
@@ -212,7 +244,9 @@ impl<G: HubGame> Play<G> {
         Ok(Self {
             game,
             bot,
+            bot_seat: 1,
             left: None,
+            model: None,
             human,
             runner: Some(runner),
             report: None,
@@ -243,7 +277,9 @@ impl<G: HubGame> Play<G> {
         Ok(Self {
             game,
             bot: Seat::HandMade(Box::new(bot)),
+            bot_seat: 1,
             left: Some(left_bot),
+            model: None,
             human: G::Human::default(),
             runner: Some(runner),
             report: None,
@@ -253,13 +289,14 @@ impl<G: HubGame> Play<G> {
 
     #[must_use]
     pub fn spectating(&self) -> bool {
-        self.left.is_some()
+        self.left.is_some() || self.model.is_some()
     }
 
     #[must_use]
     pub fn insight_of(&self, seat: PlayerId) -> InsightView {
         match (seat, &self.left) {
             (0, Some(left)) => left.insight(),
+            _ if self.model.is_some() && seat != self.bot_seat => blank(),
             _ => self.bot.insight(),
         }
     }
@@ -299,11 +336,14 @@ impl<G: HubGame> Play<G> {
             let Some(runner) = self.runner.as_mut() else {
                 break;
             };
-            let first: &mut dyn Controller<G> = match self.left.as_mut() {
-                Some(left) => left,
-                None => &mut self.human,
-            };
-            if !runner.step(&mut self.game, [first, self.bot.controller()]) {
+            let pair = order(
+                &mut self.bot,
+                &mut self.left,
+                &mut self.model,
+                &mut self.human,
+                self.bot_seat,
+            );
+            if !runner.step(&mut self.game, pair) {
                 break;
             }
             self.events.extend_from_slice(runner.events());
@@ -311,11 +351,14 @@ impl<G: HubGame> Play<G> {
         if self.game.result().is_some()
             && let Some(runner) = self.runner.take()
         {
-            let first: &mut dyn Controller<G> = match self.left.as_mut() {
-                Some(left) => left,
-                None => &mut self.human,
-            };
-            self.report = Some(runner.finish(&mut self.game, [first, self.bot.controller()]));
+            let pair = order(
+                &mut self.bot,
+                &mut self.left,
+                &mut self.model,
+                &mut self.human,
+                self.bot_seat,
+            );
+            self.report = Some(runner.finish(&mut self.game, pair));
         }
         &self.events
     }
@@ -390,6 +433,72 @@ impl<G: HubGame> Play<G> {
 }
 
 impl Play<AirHockey> {
+    pub fn rerun_human(kind: Rerun, level: u8, seed: u64, seat: u8) -> Result<Self, SessionError> {
+        let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
+        let five = Difficulty::preset(5).ok_or(SessionError::Level)?;
+        if seat > 1 {
+            return Err(SessionError::Level);
+        }
+        let params = Params {
+            goals_to_win: HUMAN_GOALS,
+            ..Params::default()
+        };
+        let mut game = AirHockey::new(params.clone(), 1);
+        let spec = game.spec();
+        let (mut bot, opponent) = match kind {
+            Rerun::Trained => {
+                let checkpoint = feint_ml::registry::for_level(level)
+                    .ok_or(SessionError::Checkpoint)?
+                    .id;
+                let id = NonZeroU64::new(checkpoint).ok_or(SessionError::Checkpoint)?;
+                let pilot = <AirHockey as HubGame>::trained(level, checkpoint, &spec)?;
+                (
+                    Seat::Trained(pilot, HockeyPlaybook::new(params.clone())),
+                    Opponent::Trained(id),
+                )
+            }
+            Rerun::HandMade => {
+                let bot = Bot::new(difficulty, HockeyPlaybook::new(params.clone()), &spec)
+                    .map_err(|_| SessionError::Level)?;
+                (Seat::HandMade(Box::new(bot)), Opponent::HandMade)
+            }
+        };
+        let (mine, model_body) = (difficulty.body(&spec), five.body(&spec));
+        let header = RunHeader {
+            game_id: GAME_ID.into(),
+            game_version: airhockey::GAME_VERSION,
+            seed,
+            bodies: if seat == 0 {
+                vec![mine, model_body]
+            } else {
+                vec![model_body, mine]
+            },
+            levels: [0, 0],
+            opponent,
+        };
+        let mut model: Option<Box<dyn Controller<AirHockey>>> =
+            Some(Box::new(Human::new(params, HUMAN_NOISE)));
+        let mut left = None;
+        let mut human = Pointer::new();
+        let runner = Runner::start(
+            &mut game,
+            order(&mut bot, &mut left, &mut model, &mut human, seat),
+            header,
+        )
+        .map_err(|_| SessionError::Level)?;
+        Ok(Self {
+            game,
+            bot,
+            bot_seat: seat,
+            left,
+            model,
+            human,
+            runner: Some(runner),
+            report: None,
+            events: Vec::new(),
+        })
+    }
+
     pub fn set_pointer(&mut self, x: f32, y: f32) {
         self.human.aim(x, y);
     }

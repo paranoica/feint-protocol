@@ -5,4 +5,6 @@ mod session;
 mod wasm;
 
 pub use hub::{Column, HubGame, HumanInput, Pad, body};
-pub use session::{GAME_ID, Play, Pointer, Replayer, Session, SessionError, parse_checkpoint};
+pub use session::{
+    GAME_ID, Play, Pointer, Replayer, Rerun, Session, SessionError, parse_checkpoint,
+};
