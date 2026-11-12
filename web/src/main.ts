@@ -4,7 +4,7 @@ import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import { again, finish, first, start, watch, type Screen } from "./screens.ts";
-import { profileWanted, trainedCheckpoint, type BotKind } from "./bots.ts";
+import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
 import { parseComparison, parseResults, renderComparison } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
@@ -234,7 +234,7 @@ async function upload(record: Uint8Array) {
 async function begin(view: GameView, level: number, bot: BotKind) {
   const nick = $<HTMLInputElement>("nick").value;
   const next = start(screen, view.id, level, nick, bot);
-  const checkpoint = trainedCheckpoint(view.id, Array.from(checkpoints()));
+  const checkpoint = trainedCheckpoint(view.id, Array.from(checkpoints()), level);
   if (next.name !== "game" || starting || (bot === "trained" && checkpoint === null)) {
     return;
   }
@@ -349,7 +349,7 @@ function buildHub() {
     let bot: BotKind = "hand-made";
     const kinds = document.createElement("div");
     kinds.className = "bots";
-    kinds.hidden = trainedCheckpoint(view.id, Array.from(checkpoints())) === null;
+    kinds.hidden = !trainedOffered(view.id, Array.from(checkpoints()));
     for (const [kind, label] of [
       ["hand-made", "Hand-made bot"],
       ["trained", "Trained bot"],
