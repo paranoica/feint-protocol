@@ -52,7 +52,7 @@ impl Read {
         }
     }
 
-    pub fn see(&mut self, side: Option<u8>) -> Option<(u8, bool)> {
+    pub fn track(&mut self, side: Option<u8>) {
         match (side, self.run) {
             (Some(s), Some((r, n))) if s == r => self.run = Some((r, n + 1)),
             (Some(s), _) => {
@@ -61,6 +61,10 @@ impl Read {
             }
             (None, _) => self.forget(),
         }
+    }
+
+    pub fn see(&mut self, side: Option<u8>) -> Option<(u8, bool)> {
+        self.track(side);
         let (side, held) = self.run?;
         if held < SHOW_HOLD_TICKS || self.drawn {
             return None;
@@ -174,21 +178,21 @@ impl Controller<AirHockey> for Keeper {
         if self.bite.is_some_and(|(_, until)| now >= until) {
             self.bite = None;
         }
-        if self.bite.is_none() {
-            let shown = shown_side(
-                &self.params,
-                puck,
-                state.world.mallets[usize::from(attacker)].pos,
-                attacker,
-            );
-            if let Some((side, bites)) = self.read.see(shown) {
-                self.counts.reads += 1;
-                if bites {
-                    self.counts.bites += 1;
-                    self.bite = Some((side, now + BITE_TICKS));
-                    self.bitten_at = Some(now);
-                    self.bite_ticks.push(now);
-                }
+        let shown = shown_side(
+            &self.params,
+            puck,
+            state.world.mallets[usize::from(attacker)].pos,
+            attacker,
+        );
+        if self.bite.is_some() {
+            self.read.track(shown);
+        } else if let Some((side, bites)) = self.read.see(shown) {
+            self.counts.reads += 1;
+            if bites {
+                self.counts.bites += 1;
+                self.bite = Some((side, now + BITE_TICKS));
+                self.bitten_at = Some(now);
+                self.bite_ticks.push(now);
             }
         }
         let p = &self.params;

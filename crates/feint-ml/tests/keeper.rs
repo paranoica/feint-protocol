@@ -153,6 +153,43 @@ fn a_show_held_past_the_bite_is_not_drawn_again() {
     }
 }
 
+struct Phases(Vec<(u64, Option<f64>)>);
+
+impl Controller<AirHockey> for Phases {
+    fn new_match(&mut self, _spec: &GameSpecT, _me: PlayerId, _seed: u64) {}
+
+    fn on_tick(&mut self, _game: &AirHockey, obs: &ObservationT) -> Option<ActionT> {
+        let s = obs.state.as_deref()?;
+        let puck = [f64::from(s[0]), f64::from(s[1])];
+        let shown = self
+            .0
+            .iter()
+            .find(|(until, _)| obs.tick < *until)
+            .and_then(|(_, y)| *y);
+        let dir = aim(puck, shown.unwrap_or(0.0));
+        let mut action = ActionT::default();
+        action.tick = obs.tick;
+        action.player = 0;
+        action.values = Some(vec![
+            (puck[0] - dir[0] * 0.3) as f32,
+            (puck[1] - dir[1] * 0.3) as f32,
+        ]);
+        Some(action)
+    }
+}
+
+#[test]
+fn a_show_broken_during_the_bite_and_shown_again_is_drawn_again() {
+    for seed in (0..20).step_by(2) {
+        let mut keeper = Keeper::new(Params::default(), 1000);
+        let mut attacker = Phases(vec![(100, Some(0.3)), (130, None), (400, Some(0.3))]);
+        let mut game = AirHockey::new(Params::default(), 0);
+        run_match(&mut game, [&mut attacker, &mut keeper], header(seed), 320).unwrap();
+        assert_eq!(keeper.counts().bites, 2, "seed {seed}");
+        assert!(keeper.bite_ticks()[1] >= keeper.bite_ticks()[0] + BITE_TICKS);
+    }
+}
+
 fn read(permille: u16) -> Read {
     Read::new(permille, ChaCha8Rng::seed_from_u64(9))
 }
