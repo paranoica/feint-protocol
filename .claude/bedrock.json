@@ -48,7 +48,7 @@
       "heavy": true
     },
     "strength": {
-      "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored && cargo test --release --locked -q -p penalty --test strength -- --ignored && cargo test --release --locked -q -p duel --test strength -- --ignored && cargo test --release --locked -q -p feint-compare -- --ignored",
+      "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored && cargo test --release --locked -q -p airhockey --test against_human -- --ignored && cargo test --release --locked -q -p penalty --test strength -- --ignored && cargo test --release --locked -q -p duel --test strength -- --ignored && cargo test --release --locked -q -p feint-compare -- --ignored",
       "heavy": true
     },
     "bar": {
@@ -56,7 +56,7 @@
       "heavy": true
     },
     "ml-ladder": {
-      "run": "cargo test --release --locked -q -p feint-ml --test ladder -- --ignored --nocapture",
+      "run": "cargo test --release --locked -q -p feint-ml --test ladder trained_levels_climb -- --ignored --nocapture",
       "heavy": true
     },
     "s2-eval": {
