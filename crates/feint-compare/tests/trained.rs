@@ -91,7 +91,7 @@ fn json_names_counts_rates_and_links() {
         level: 5,
         checkpoint: 0x1517_1d6c_57a0_caa7,
         matches: 200,
-        noise: 0.49,
+        noise: 0.003,
         shots: 30,
         fakes: 10,
         fake_scored: 0,
@@ -106,7 +106,7 @@ fn json_names_counts_rates_and_links() {
     };
     assert_eq!(
         r.to_json(),
-        "{\"level\":5,\"checkpoint\":\"15171d6c57a0caa7\",\"matches\":200,\"noise\":0.4900,\"shots\":30,\
+        "{\"level\":5,\"checkpoint\":\"15171d6c57a0caa7\",\"matches\":200,\"noise\":0.003000,\"shots\":30,\
 \"fake\":{\"count\":10,\"scored\":0,\"low\":0.0000,\"high\":0.2775},\
 \"honest\":{\"count\":20,\"scored\":20,\"low\":0.8389,\"high\":1.0000},\
 \"links\":[{\"seed\":30001,\"seat\":1,\"from\":4321,\"scored\":false}]}"
@@ -129,7 +129,7 @@ fn json_of_a_bot_without_fakes_has_no_rate_and_no_links() {
     };
     assert_eq!(
         r.to_json(),
-        "{\"level\":5,\"checkpoint\":\"0000000000000001\",\"matches\":2,\"noise\":0.0000,\"shots\":0,\
+        "{\"level\":5,\"checkpoint\":\"0000000000000001\",\"matches\":2,\"noise\":0.000000,\"shots\":0,\
 \"fake\":{\"count\":0,\"scored\":0,\"low\":null,\"high\":null},\
 \"honest\":{\"count\":0,\"scored\":0,\"low\":null,\"high\":null},\
 \"links\":[]}"

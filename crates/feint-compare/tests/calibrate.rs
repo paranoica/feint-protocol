@@ -39,6 +39,7 @@ fn rates_and_ratios_of_an_empty_calibration_are_defined() {
     assert_eq!(c.precision(), None);
     assert_eq!(c.recall(), None);
     let c = Calibration {
+        shots: 16,
         reached: 5,
         agreed: 4,
         unshot: 0,
@@ -54,6 +55,8 @@ fn rates_and_ratios_of_an_empty_calibration_are_defined() {
     assert_eq!(c.precision(), Some(0.75));
     assert_eq!(c.recall(), Some(0.7));
     assert_eq!(c.agreement(), Some(0.8));
+    assert_eq!(c.per_shot(), Some(0.5));
+    assert_eq!(Calibration::default().per_shot(), None);
     assert_eq!(Calibration::default().agreement(), None);
 }
 
@@ -157,7 +160,6 @@ fn a_fake_too_short_or_dropped_before_the_contact_is_not_labelled() {
     assert_eq!(c.unshot, 1, "the shot came 25 ticks after its end: {c:?}");
     let c = judged(&run(30, 102, 0));
     assert_eq!(c.unshot, 0, "the shot came 24 ticks after its end: {c:?}");
-    let c = judged(&run(30, 102, 0));
     assert_eq!(c.labelled, 1, "it ended 24 ticks before the contact: {c:?}");
 }
 

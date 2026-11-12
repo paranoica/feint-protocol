@@ -156,7 +156,7 @@ impl TrainedReport {
     #[must_use]
     pub fn to_json(&self) -> String {
         let mut out = format!(
-            "{{\"level\":{},\"checkpoint\":\"{:016x}\",\"matches\":{},\"noise\":{:.4},\"shots\":{},",
+            "{{\"level\":{},\"checkpoint\":\"{:016x}\",\"matches\":{},\"noise\":{:.6},\"shots\":{},",
             self.level, self.checkpoint, self.matches, self.noise, self.shots
         );
         side(&mut out, "fake", self.fakes, self.fake_scored);

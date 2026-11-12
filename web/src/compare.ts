@@ -191,14 +191,14 @@ export function fakesLine(f: Fakes): string {
   if (f.fake.count === 0) {
     return `${head}: no faked attack among ${f.shots} shots`;
   }
-  const rate = f.matches === 0 ? 0 : f.fake.count / f.matches;
-  const noise = f.noise.toFixed(2);
+  const rate = f.shots === 0 ? 0 : f.fake.count / f.shots;
+  const percent = (v: number) => `${(100 * v).toFixed(2)}%`;
   if (rate <= f.noise) {
-    return `${head}: ${f.fake.count} of ${f.shots} shots look like fakes, ${rate.toFixed(2)} a match, no more than the ${noise} a match the detector finds in a bot that never fakes: no sign of fakes`;
+    return `${head}: ${f.fake.count} of ${f.shots} shots look like fakes (${percent(rate)}), no more than the ${percent(f.noise)} of shots the detector flags in a bot that never fakes: no sign of fakes`;
   }
   const pct = (a: number, b: number) => (b === 0 ? "—" : `${Math.round((100 * a) / b)}%`);
   const up = f.fake.high === null ? "" : ` (95% up to ${Math.round(100 * f.fake.high)}%)`;
-  return `${head}: ${f.fake.count} faked attacks of ${f.shots} shots, ${rate.toFixed(2)} a match against ${noise} of false alarms, scored ${pct(f.fake.scored, f.fake.count)}${up}, honest ones ${pct(f.honest.scored, f.honest.count)}`;
+  return `${head}: ${f.fake.count} faked attacks of ${f.shots} shots (${percent(rate)} against ${percent(f.noise)} of false alarms), scored ${pct(f.fake.scored, f.fake.count)}${up}, honest ones ${pct(f.honest.scored, f.honest.count)}`;
 }
 
 export function fakeLinks(f: Fakes, shipped: readonly string[]): FakeLink[] {

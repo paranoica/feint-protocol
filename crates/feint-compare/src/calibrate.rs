@@ -19,6 +19,7 @@ const THREADS: usize = 7;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Calibration {
     pub matches: u64,
+    pub shots: u32,
     pub reached: u32,
     pub agreed: u32,
     pub unshot: u32,
@@ -53,6 +54,11 @@ impl Calibration {
     }
 
     #[must_use]
+    pub fn per_shot(&self) -> Option<f64> {
+        ratio(self.detected, self.shots)
+    }
+
+    #[must_use]
     pub fn agreement(&self) -> Option<f64> {
         ratio(self.agreed, self.reached)
     }
@@ -69,6 +75,7 @@ impl Calibration {
 
     fn add(&mut self, o: &Self) {
         self.matches += o.matches;
+        self.shots += o.shots;
         self.reached += o.reached;
         self.agreed += o.agreed;
         self.unshot += o.unshot;
@@ -196,6 +203,7 @@ pub fn judge<C>(params: &Params, played: &Played<C>, shows: &[Shown]) -> Calibra
         .collect();
     let mut out = Calibration {
         matches: 1,
+        shots: u32::try_from(mine.len()).unwrap_or(u32::MAX),
         ..Calibration::default()
     };
     let held = held_shows(shows);

@@ -2,7 +2,7 @@ use airhockey::HockeyPlaybook;
 use feint_ai::{Bot, Difficulty, Opponent};
 use feint_compare::play::play_against_human;
 use feint_compare::trained::play_trained;
-use feint_web::{Rerun, Session, SessionError};
+use feint_web::{RERUN_CAP_TICKS, Rerun, Session, SessionError};
 
 fn web(kind: Rerun, level: u8, seed: u64, seat: u8) -> (u64, Vec<i64>, u64) {
     let mut p = Session::rerun_human(kind, level, seed, seat).unwrap();
@@ -77,4 +77,9 @@ fn a_rerun_has_no_record() {
     let p = Session::rerun_human(Rerun::Trained, 5, 30_030, 0).unwrap();
     assert!(p.record().is_empty());
     assert!(p.profile().is_none());
+}
+
+#[test]
+fn the_rerun_cap_is_the_native_harness_cap() {
+    assert_eq!(RERUN_CAP_TICKS, feint_compare::play::CAP_TICKS);
 }

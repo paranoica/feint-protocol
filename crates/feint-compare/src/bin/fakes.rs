@@ -19,19 +19,20 @@ fn report(r: &TrainedReport) {
         "trained level {} ({:016x}) against the human model: {} matches, {} shots",
         r.level, r.checkpoint, r.matches, r.shots
     );
-    let per_match = if r.matches == 0 {
+    let per_shot = if r.shots == 0 {
         0.0
     } else {
-        f64::from(r.fakes) / r.matches as f64
+        f64::from(r.fakes) / f64::from(r.shots)
+    };
+    let verdict = if per_shot <= r.noise {
+        " -> no sign of fakes"
+    } else {
+        ""
     };
     println!(
-        "  detected fakes {per_match:.3} a match; the detector's false alarms on a bot that never fakes: {:.3} a match{}",
-        r.noise,
-        if per_match <= r.noise {
-            " -> no sign of fakes"
-        } else {
-            ""
-        }
+        "  detected fakes {:.3}% of shots; the detector's false alarms on a bot that never fakes: {:.3}% of shots{verdict}",
+        100.0 * per_shot,
+        100.0 * r.noise
     );
     rate("faked", r.fakes, r.fake_scored);
     rate("honest", r.honest, r.honest_scored);
@@ -57,7 +58,9 @@ fn main() -> ExitCode {
     };
     let five = Difficulty::preset(5).unwrap_or_else(|| panic!("level 5"));
     let mut r = trained_report(5, SEEDS);
-    r.noise = calibrate(honest(five), NOISE_SEEDS).detected_rate();
+    r.noise = calibrate(honest(five), NOISE_SEEDS)
+        .per_shot()
+        .unwrap_or(0.0);
     report(&r);
     if let Err(error) = std::fs::write(&path, r.to_json()) {
         eprintln!("{path}: {error}");

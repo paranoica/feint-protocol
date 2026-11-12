@@ -95,7 +95,7 @@ const fakes = {
   level: 5,
   checkpoint: "15171d6c57a0caa7",
   matches: 200,
-  noise: 0.49,
+  noise: 0.003,
   shots: 16134,
   fake: { count: 7, scored: 0, low: 0.0, high: 0.3543 },
   honest: { count: 16127, scored: 1242, low: 0.073, high: 0.0812 },
@@ -144,13 +144,13 @@ test("the fake line says how often faked and honest attacks score, or that none 
   assert.ok(f);
   assert.equal(
     fakesLine(f),
-    "trained level 5 against the human model, 200 matches: 7 of 16134 shots look like fakes, 0.04 a match, no more than the 0.49 a match the detector finds in a bot that never fakes: no sign of fakes",
+    "trained level 5 against the human model, 200 matches: 7 of 16134 shots look like fakes (0.04%), no more than the 0.30% of shots the detector flags in a bot that never fakes: no sign of fakes",
   );
   const many = parseFakes({ ...fakes, fake: { ...fakes.fake, count: 200, scored: 30 }, shots: 16327 });
   assert.ok(many);
   assert.equal(
     fakesLine(many),
-    "trained level 5 against the human model, 200 matches: 200 faked attacks of 16327 shots, 1.00 a match against 0.49 of false alarms, scored 15% (95% up to 35%), honest ones 8%",
+    "trained level 5 against the human model, 200 matches: 200 faked attacks of 16327 shots (1.22% against 0.30% of false alarms), scored 15% (95% up to 35%), honest ones 8%",
   );
   const none = parseFakes({ ...fakes, shots: 16127, fake: { count: 0, scored: 0, low: null, high: null }, links: [] });
   assert.ok(none);

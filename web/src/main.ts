@@ -200,7 +200,7 @@ async function loadComparison(nick: string) {
     const measured = await fetch("./compare.json");
     const comparison = measured.ok ? parseComparison(await measured.json()) : null;
     if (!comparison) {
-      holder.hidden = true;
+      holder.hidden ||= turn === comparing;
       return;
     }
     let results = parseResults([]);
@@ -229,7 +229,7 @@ async function loadComparison(nick: string) {
     }
     holder.hidden = false;
   } catch {
-    holder.hidden = true;
+    holder.hidden ||= turn === comparing;
   }
 }
 
