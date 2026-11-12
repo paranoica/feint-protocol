@@ -14,6 +14,10 @@ from feint_train.evaluate import evaluate
 from feint_train.export import export, loaded
 
 OWN_TARGET = slice(8, 10)
+NO_SHM = (
+    "the database has a WAL but no -shm index (a copied data folder?); "
+    "a read-only open would create one, so bc stops: open the folder once with the arena"
+)
 CHANGED = (
     "the database, its WAL or a record changed while reading; "
     "a running arena writes there, stop it before cloning"
@@ -148,12 +152,22 @@ def fit(
     return Fitted(agent, best[0], loss(x, y), best[2])
 
 
+def fingerprint(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        return f"unreadable: {type(error).__name__}"
+
+
 def snapshot(db: Path, records: list[Path]) -> dict[str, str | None]:
+    db = db.resolve()
     wal = db.with_name(db.name + "-wal")
     shm = db.with_name(db.name + "-shm")
     seen: dict[str, str | None] = {str(shm): "present" if shm.exists() else None}
     for path in [db, wal, *records]:
-        seen[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        seen[str(path)] = fingerprint(path)
     return seen
 
 
@@ -167,12 +181,15 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=6)
     args = parser.parse_args()
 
-    before = snapshot(args.db, [])
-    stored = hockey_records(args.db)
+    db = args.db.resolve()
+    if db.with_name(db.name + "-wal").exists() and not db.with_name(db.name + "-shm").exists():
+        raise SystemExit(NO_SHM)
+    before = snapshot(db, [])
+    stored = hockey_records(db)
     paths = [s.path for s in stored]
-    if snapshot(args.db, []) != before:
+    if snapshot(db, []) != before:
         raise SystemExit(CHANGED)
-    before = snapshot(args.db, paths)
+    before = {**before, **{str(path): fingerprint(path) for path in paths}}
     data = collect(stored, args.reaction_ms)
     for i, rows in data.used:
         print(f"match {i}: {rows} decisions")
@@ -181,7 +198,7 @@ def main() -> None:
     print(
         f"matches used {len(data.used)}, refused {len(data.refused)}, decisions {len(data.targets)}"
     )
-    if snapshot(args.db, paths) != before:
+    if snapshot(db, paths) != before:
         raise SystemExit(CHANGED)
     try:
         train, val = split_by_match(data.groups)
@@ -221,7 +238,7 @@ def main() -> None:
             f"goals {r.goals_for}:{r.goals_against}"
         )
 
-    after = snapshot(args.db, paths)
+    after = snapshot(db, paths)
     if after != before:
         raise SystemExit(CHANGED)
     print(
