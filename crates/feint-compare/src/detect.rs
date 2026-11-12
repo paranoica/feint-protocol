@@ -210,12 +210,13 @@ pub fn shots(params: &Params, frames: &[Frame]) -> Vec<Shot> {
             since = [k, k];
             in_play = frames[k].tick + u64::from(params.serve_pause_ticks());
         }
+        let mut next = since;
         for player in 0..2u8 {
             let me = usize::from(player);
             if !starts[k][me] {
                 continue;
             }
-            since[1 - me] = k;
+            next[1 - me] = k;
             if let Some(side) = realised(params, frames, &starts, k, player, reach) {
                 out.push(Shot {
                     player,
@@ -225,9 +226,10 @@ pub fn shots(params: &Params, frames: &[Frame]) -> Vec<Shot> {
                     realised: side,
                     scored: false,
                 });
-                since[me] = k;
+                next[me] = k;
             }
         }
+        since = next;
     }
     for player in 0..2u8 {
         credit(frames, &starts, &mut out, player);

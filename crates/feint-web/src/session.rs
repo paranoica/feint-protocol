@@ -11,6 +11,7 @@ use feint_protocol::{ActionT, EventT, GameAdapter, GameSpecT, ObservationT, Play
 use crate::hub::{HubGame, HumanInput};
 
 pub const GAME_ID: &str = "airhockey";
+pub const RERUN_CAP_TICKS: u64 = 240 * 600;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionError {
@@ -154,6 +155,7 @@ pub struct Play<G: HubGame> {
     bot_seat: PlayerId,
     left: Option<Bot<G, G::Book>>,
     model: Option<Box<dyn Controller<G>>>,
+    cap: Option<u64>,
     human: G::Human,
     runner: Option<Runner>,
     report: Option<RunReport>,
@@ -247,6 +249,7 @@ impl<G: HubGame> Play<G> {
             bot_seat: 1,
             left: None,
             model: None,
+            cap: None,
             human,
             runner: Some(runner),
             report: None,
@@ -280,6 +283,7 @@ impl<G: HubGame> Play<G> {
             bot_seat: 1,
             left: Some(left_bot),
             model: None,
+            cap: None,
             human: G::Human::default(),
             runner: Some(runner),
             report: None,
@@ -336,6 +340,9 @@ impl<G: HubGame> Play<G> {
             let Some(runner) = self.runner.as_mut() else {
                 break;
             };
+            if self.cap.is_some_and(|cap| runner.ticks() >= cap) {
+                break;
+            }
             let pair = order(
                 &mut self.bot,
                 &mut self.left,
@@ -348,7 +355,12 @@ impl<G: HubGame> Play<G> {
             }
             self.events.extend_from_slice(runner.events());
         }
-        if self.game.result().is_some()
+        let capped = self
+            .runner
+            .as_ref()
+            .zip(self.cap)
+            .is_some_and(|(runner, cap)| runner.ticks() >= cap);
+        if (self.game.result().is_some() || capped)
             && let Some(runner) = self.runner.take()
         {
             let pair = order(
@@ -492,6 +504,7 @@ impl Play<AirHockey> {
             bot_seat: seat,
             left,
             model,
+            cap: Some(RERUN_CAP_TICKS),
             human,
             runner: Some(runner),
             report: None,

@@ -12,11 +12,16 @@ use crate::play::{Played, human_params, play_against_human};
 pub const MATCH_TICKS: u64 = 12;
 pub const LIVE_TICKS: u64 = 24;
 pub const HELD_TICKS: u64 = 48;
+pub const REACH_X: f64 = 0.9;
+const REACH_SPLIT: f64 = 0.035;
 const THREADS: usize = 7;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Calibration {
     pub matches: u64,
+    pub reached: u32,
+    pub agreed: u32,
+    pub unshot: u32,
     pub labelled: u32,
     pub botched: u32,
     pub detected: u32,
@@ -48,6 +53,11 @@ impl Calibration {
     }
 
     #[must_use]
+    pub fn agreement(&self) -> Option<f64> {
+        ratio(self.agreed, self.reached)
+    }
+
+    #[must_use]
     pub fn precision(&self) -> Option<f64> {
         ratio(self.found, self.detected)
     }
@@ -59,6 +69,9 @@ impl Calibration {
 
     fn add(&mut self, o: &Self) {
         self.matches += o.matches;
+        self.reached += o.reached;
+        self.agreed += o.agreed;
+        self.unshot += o.unshot;
         self.labelled += o.labelled;
         self.botched += o.botched;
         self.detected += o.detected;
@@ -133,6 +146,47 @@ pub fn held_shows(shows: &[Shown]) -> Vec<(u64, u64, u8)> {
     runs
 }
 
+fn seen(player: u8, v: airhockey::Vec2) -> airhockey::Vec2 {
+    if player == 0 { v } else { -v }
+}
+
+#[must_use]
+pub fn reached_side(
+    params: &Params,
+    frames: &[airhockey::analysis::Frame],
+    contact: u64,
+    player: u8,
+) -> Option<u8> {
+    let reach = params.puck_radius + params.mallet_radius + crate::detect::CONTACT_SLACK;
+    let jump = params.puck_speed_cap * params.tick_dt() * 2.0;
+    let start = frames.partition_point(|f| f.tick < contact);
+    let first = frames.get(start)?;
+    let mut touching = [0, 1].map(|i| (first.puck - first.mallets[i]).length() <= reach);
+    for k in start + 1..frames.len() {
+        let f = &frames[k];
+        let prev = &frames[k - 1];
+        if f.score != first.score || (f.puck - prev.puck).length() > jump {
+            return None;
+        }
+        let now = [0, 1].map(|i| (f.puck - f.mallets[i]).length() <= reach);
+        if (now[0] && !touching[0]) || (now[1] && !touching[1]) {
+            return None;
+        }
+        touching = now;
+        let p = seen(player, f.puck);
+        if p.x >= REACH_X * params.half_length {
+            return Some(if p.y < -REACH_SPLIT {
+                0
+            } else if p.y > REACH_SPLIT {
+                2
+            } else {
+                1
+            });
+        }
+    }
+    None
+}
+
 #[must_use]
 pub fn judge<C>(params: &Params, played: &Played<C>, shows: &[Shown]) -> Calibration {
     let bot = played.seat;
@@ -147,14 +201,33 @@ pub fn judge<C>(params: &Params, played: &Played<C>, shows: &[Shown]) -> Calibra
     let held = held_shows(shows);
     let mut fakes = Vec::new();
     for s in &mine {
-        let live = s.contact.saturating_sub(LIVE_TICKS).max(s.from);
-        let shown = held
-            .iter()
+        if let Some(side) = reached_side(params, &played.frames, s.contact, bot) {
+            out.reached += 1;
+            out.agreed += u32::from(side == s.realised);
+        }
+    }
+    let live_at = |contact: u64, from: u64| {
+        let live = contact.saturating_sub(LIVE_TICKS).max(from);
+        held.iter()
             .rev()
             .find(|&&(start, end, _)| {
-                start < s.contact && end >= live && end.min(s.contact - 1) + 1 - start >= HELD_TICKS
+                start < contact && end >= live && end.min(contact - 1) + 1 - start >= HELD_TICKS
             })
-            .map(|&(_, _, class)| class);
+            .map(|&(_, _, class)| class)
+    };
+    out.unshot = u32::try_from(
+        held.iter()
+            .filter(|&&(start, end, _)| end + 1 - start >= HELD_TICKS)
+            .filter(|&&(start, end, _)| {
+                !mine
+                    .iter()
+                    .any(|s| s.contact > start && s.contact <= end + LIVE_TICKS)
+            })
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
+    for s in &mine {
+        let shown = live_at(s.contact, s.from);
         match shown {
             Some(class) if class != s.realised => fakes.push(s.contact),
             Some(_) => out.botched += 1,

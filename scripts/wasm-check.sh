@@ -71,3 +71,5 @@ if [[ "$rerun_browser" != "none" ]]; then
     exit 1
   fi
 fi
+
+cargo test -q --locked --release -p feint-web --test rerun -- --ignored

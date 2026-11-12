@@ -29,8 +29,18 @@ fn rerun_of_the_trained_bot_matches_the_native_harness_in_both_seats() {
 
 #[test]
 fn rerun_of_the_hand_made_bot_matches_the_native_harness_in_both_seats() {
-    let d = Difficulty::preset(1).unwrap();
-    for (seed, seat) in [(40, 0), (41, 1)] {
+    hand_made_parity(&[(1, 40, 0), (1, 41, 1)]);
+}
+
+#[test]
+#[ignore = "release only: bedrock cmd wasm-check"]
+fn a_rerun_stops_at_the_native_cap() {
+    hand_made_parity(&[(2, 6, 0)]);
+}
+
+fn hand_made_parity(cases: &[(u8, u64, u8)]) {
+    for &(level, seed, seat) in cases {
+        let d = Difficulty::preset(level).unwrap();
         let native = play_against_human(
             |spec, params| {
                 let bot = Bot::new(d, HockeyPlaybook::new(params.clone()), spec).unwrap();
@@ -40,8 +50,9 @@ fn rerun_of_the_hand_made_bot_matches_the_native_harness_in_both_seats() {
             seat,
         );
         let r = native.report;
+        assert_eq!(r.finished, seed != 6, "seed 6 at level 2 runs into the cap");
         assert_eq!(
-            web(Rerun::HandMade, 1, seed, seat),
+            web(Rerun::HandMade, level, seed, seat),
             (r.digest, r.score, r.ticks),
             "seed {seed} seat {seat}"
         );

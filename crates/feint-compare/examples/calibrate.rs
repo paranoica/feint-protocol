@@ -5,7 +5,9 @@ use feint_compare::honest;
 fn line(name: &str, c: &Calibration) {
     let show = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.2}"));
     println!(
-        "{name}: {} matches, labelled {} ({:.2}/match), detected {} ({:.2}/match), precision {}, recall {}, botched {}",
+        "{name}: side agreement {} of {}, {} matches, labelled {} ({:.2}/match), detected {} ({:.2}/match), precision {}, recall {}, botched {}, held fakes with no shot {}",
+        c.agreed,
+        c.reached,
         c.matches,
         c.labelled,
         c.labelled_rate(),
@@ -13,7 +15,8 @@ fn line(name: &str, c: &Calibration) {
         c.detected_rate(),
         show(c.precision()),
         show(c.recall()),
-        c.botched
+        c.botched,
+        c.unshot
     );
 }
 

@@ -18,13 +18,14 @@ import {
 } from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
-import { parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
+import { fakeLinks, parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
 const TICK_CAP = 12;
 const NICK_KEY = "feint.nick";
 const COUNTDOWN_STEP = 600;
 const WATCH_SPEEDS = [1, 2, 4];
+const SKIP_CHUNK = 2400;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("table");
@@ -52,6 +53,7 @@ const saves = new Saves();
 const SAVE_WAIT_MS = 10_000;
 let watching: Pair | null = null;
 let watchSpeed = 1;
+let skipTo = 0;
 
 function readNick(): string {
   try {
@@ -115,6 +117,11 @@ function resize() {
 }
 
 function step(match: WebMatch, now: number) {
+  if (match.tick() < skipTo) {
+    match.advance(Math.min(SKIP_CHUNK, skipTo - match.tick()));
+    clock = makeClock();
+    return;
+  }
   if (now < startAt) {
     clock = makeClock();
     return;
@@ -184,8 +191,11 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 
+let comparing = 0;
+
 async function loadComparison(nick: string) {
   const holder = $("compare");
+  const turn = ++comparing;
   try {
     const measured = await fetch("./compare.json");
     const comparison = measured.ok ? parseComparison(await measured.json()) : null;
@@ -200,19 +210,24 @@ async function loadComparison(nick: string) {
     } catch {
       results = parseResults([]);
     }
-    renderComparison(holder, comparison, results, (id) => gameById(id)?.name ?? id);
-    holder.hidden = false;
+    let fakes = null;
     try {
       const found = await fetch("./fakes.json");
-      const fakes = found.ok ? parseFakes(await found.json()) : null;
-      if (fakes) {
-        renderFakes(holder, fakes, (l) =>
-          replayLink({ kind: "trained", level: fakes.level, seed: l.seed, seat: l.seat, from: l.from }),
-        );
-      }
+      fakes = found.ok ? parseFakes(await found.json()) : null;
     } catch {
+      fakes = null;
+    }
+    if (turn !== comparing) {
       return;
     }
+    renderComparison(holder, comparison, results, (id) => gameById(id)?.name ?? id);
+    if (fakes) {
+      const f = fakes;
+      renderFakes(holder, f, fakeLinks(f, Array.from(checkpoints())), (l) =>
+        replayLink({ kind: "trained", level: f.level, seed: l.seed, seat: l.seat, from: l.from }),
+      );
+    }
+    holder.hidden = false;
   } catch {
     holder.hidden = true;
   }
@@ -308,6 +323,7 @@ async function begin(view: GameView, level: number, bot: BotKind) {
 
 function enter(view: GameView, match: WebMatch, next: Screen) {
   current = view;
+  skipTo = 0;
   inputTick = -Infinity;
   scorer = null;
   clock = makeClock();
@@ -332,7 +348,6 @@ function beginReplay(view: GameView, r: Replay) {
   }
   try {
     game = WebMatch.rerun(r.kind, r.level, r.seed, r.seat);
-    game.advance(replayStart(r));
   } catch {
     game = null;
     return;
@@ -342,6 +357,7 @@ function beginReplay(view: GameView, r: Replay) {
   watchSpeed = 1;
   enter(view, game, next);
   startAt = performance.now();
+  skipTo = replayStart(r);
   dragHint.hidden = true;
   $("who").textContent = r.seat === 0 ? `${r.kind} level ${r.level}` : "human model";
   $("lvl").textContent = speedLabel();

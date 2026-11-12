@@ -53,6 +53,9 @@ if (trainedOut) {
 
 if (fakesJson) {
   const fakes = JSON.parse(readFileSync(fakesJson, "utf8"));
+  if (fakes.checkpoint !== checkpoints()[fakes.level - 1]) {
+    throw new Error(`fakes.json measured ${fakes.checkpoint}, level ${fakes.level} ships ${checkpoints()[fakes.level - 1]}`);
+  }
   const link = fakes.links[0];
   if (!link) {
     process.stdout.write("none\n");

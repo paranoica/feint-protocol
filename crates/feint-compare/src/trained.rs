@@ -23,11 +23,12 @@ pub struct Link {
     pub scored: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrainedReport {
     pub level: u8,
     pub checkpoint: u64,
     pub matches: u64,
+    pub noise: f64,
     pub shots: u32,
     pub fakes: u32,
     pub fake_scored: u32,
@@ -77,6 +78,7 @@ pub fn trained_report(level: u8, seeds: Range<u64>) -> TrainedReport {
             level,
             checkpoint: for_level(level).map_or(0, |c| c.id),
             matches: 0,
+            noise: 0.0,
             shots: 0,
             fakes: 0,
             fake_scored: 0,
@@ -154,8 +156,8 @@ impl TrainedReport {
     #[must_use]
     pub fn to_json(&self) -> String {
         let mut out = format!(
-            "{{\"level\":{},\"checkpoint\":\"{:016x}\",\"matches\":{},\"shots\":{},",
-            self.level, self.checkpoint, self.matches, self.shots
+            "{{\"level\":{},\"checkpoint\":\"{:016x}\",\"matches\":{},\"noise\":{:.4},\"shots\":{},",
+            self.level, self.checkpoint, self.matches, self.noise, self.shots
         );
         side(&mut out, "fake", self.fakes, self.fake_scored);
         out.push(',');

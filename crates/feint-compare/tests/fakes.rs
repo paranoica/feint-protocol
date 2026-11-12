@@ -6,7 +6,9 @@ const GATE: std::ops::Range<u64> = 20_000..20_100;
 
 fn line(name: &str, c: &Calibration) {
     eprintln!(
-        "{name}: {} matches, labelled {} ({:.2}/match), detected {} ({:.2}/match), precision {:?}, recall {:?}, botched {}",
+        "{name}: side agreement {}/{}, {} matches, labelled {} ({:.2}/match), detected {} ({:.2}/match), precision {:?}, recall {:?}, botched {}, held fakes with no shot {}",
+        c.agreed,
+        c.reached,
         c.matches,
         c.labelled,
         c.labelled_rate(),
@@ -14,7 +16,8 @@ fn line(name: &str, c: &Calibration) {
         c.detected_rate(),
         c.precision(),
         c.recall(),
-        c.botched
+        c.botched,
+        c.unshot
     );
 }
 
@@ -38,6 +41,10 @@ fn detector_recovers_the_hand_made_fake_rate() {
     );
     assert!(faking.precision().unwrap() >= 0.7, "{faking:?}");
     assert!(faking.recall().unwrap() >= 0.7, "{faking:?}");
+    assert!(
+        faking.agreement().unwrap() >= 0.9,
+        "the shot's side read ahead disagrees with where the puck went: {faking:?}"
+    );
     assert_eq!(plain.labelled, 0, "deception 0 labels no fakes: {plain:?}");
     assert!(
         plain.detected_rate() <= 0.2 * labelled,

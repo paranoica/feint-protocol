@@ -567,3 +567,20 @@ fn a_show_is_an_aim_wider_than_the_mouth_edge() {
         "an aim at y = -0.14 is inside the mouth"
     );
 }
+
+#[test]
+fn a_touch_by_both_on_one_frame_keeps_each_ones_show() {
+    let mut f = Film::new(true);
+    f.hold(96, PUCK, behind(PUCK, -0.3, WINDUP_BACK));
+    f.strike(PUCK, 0.084, 30);
+    let puck = f.frames[96].puck;
+    f.frames[96].mallets[0] = puck + Vec2::new(0.0, TOUCH);
+    let s = found(&f);
+    let mine: Vec<&Shot> = s.iter().filter(|s| s.player == 1).collect();
+    assert_eq!(mine.len(), 1, "{s:?}");
+    assert_eq!(
+        mine[0].shown,
+        Some(0),
+        "seat 0 touching on the same frame does not cut seat 1's window"
+    );
+}

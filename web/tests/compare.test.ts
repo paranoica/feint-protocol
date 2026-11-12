@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fakesLine, parseComparison, parseFakes, parseResults, verdict, yours } from "../src/compare.ts";
+import { fakeLinks, fakesLine, parseComparison, parseFakes, parseResults, verdict, yours } from "../src/compare.ts";
 
 const level = (n: number, share: number) => ({ level: n, matches: 40, won: 20, mine: 100, theirs: 50, share, fakes: 1.5 });
 const good = {
@@ -95,6 +95,7 @@ const fakes = {
   level: 5,
   checkpoint: "15171d6c57a0caa7",
   matches: 200,
+  noise: 0.49,
   shots: 16134,
   fake: { count: 7, scored: 0, low: 0.0, high: 0.3543 },
   honest: { count: 16127, scored: 1242, low: 0.073, high: 0.0812 },
@@ -127,6 +128,10 @@ test("the trained bot's fakes are read whole and anything malformed is refused",
     { ...fakes, links: [{ ...link, seat: 2 }] },
     { ...fakes, links: [{ ...link, seed: 4294967296 }] },
     { ...fakes, links: [{ ...link, from: -1 }] },
+    { ...fakes, links: [{ ...link, from: 144001 }] },
+    { ...fakes, noise: -0.1 },
+    { ...fakes, noise: "0.49" },
+    { ...fakes, noise: Infinity },
     { ...fakes, links: [{ ...link, scored: "no" }] },
     { ...fakes, links: "none" },
   ]) {
@@ -139,7 +144,13 @@ test("the fake line says how often faked and honest attacks score, or that none 
   assert.ok(f);
   assert.equal(
     fakesLine(f),
-    "trained level 5 against the human model, 200 matches: 7 faked attacks of 16134 shots scored 0% (95% up to 35%), honest ones 8%",
+    "trained level 5 against the human model, 200 matches: 7 of 16134 shots look like fakes, 0.04 a match, no more than the 0.49 a match the detector finds in a bot that never fakes: no sign of fakes",
+  );
+  const many = parseFakes({ ...fakes, fake: { ...fakes.fake, count: 200, scored: 30 }, shots: 16327 });
+  assert.ok(many);
+  assert.equal(
+    fakesLine(many),
+    "trained level 5 against the human model, 200 matches: 200 faked attacks of 16327 shots, 1.00 a match against 0.49 of false alarms, scored 15% (95% up to 35%), honest ones 8%",
   );
   const none = parseFakes({ ...fakes, shots: 16127, fake: { count: 0, scored: 0, low: null, high: null }, links: [] });
   assert.ok(none);
@@ -147,4 +158,13 @@ test("the fake line says how often faked and honest attacks score, or that none 
     fakesLine(none),
     "trained level 5 against the human model, 200 matches: no faked attack among 16127 shots",
   );
+});
+
+test("replay links are offered only for the checkpoint this build ships", () => {
+  const f = parseFakes(fakes);
+  assert.ok(f);
+  const shipped = ["11e0e1c1a09628b6", "3ac002e12274846f", "3ac002e12274846f", "3ac002e12274846f", "15171d6c57a0caa7"];
+  assert.equal(fakeLinks(f, shipped).length, 2);
+  assert.deepEqual(fakeLinks(f, shipped.slice(0, 4).concat("0000000000000001")), []);
+  assert.deepEqual(fakeLinks(f, []), []);
 });
