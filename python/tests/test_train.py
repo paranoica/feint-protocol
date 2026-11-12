@@ -1,3 +1,4 @@
+import json
 import os
 import pickle
 import signal
@@ -237,7 +238,30 @@ def test_a_killed_run_resumes_from_its_last_checkpoint(tmp_path: Path) -> None:
     assert final["updates"] > killed["updates"]
     assert final["spent"] >= 1.2 * 60
     assert final["generation"] > killed["generation"]
-    assert (tmp_path / "policy-final.safetensors").exists()
+    assert (tmp_path / f"policy-{final['updates']:05d}.safetensors").exists()
+
+
+def test_a_resumed_run_keeps_the_final_policy_of_the_leg_before(tmp_path: Path) -> None:
+    def leg(minutes: float, resume: Path | None) -> Trainer:
+        config = TrainConfig(
+            envs=4, threads=1, torch_threads=1, steps=8, minutes=minutes, eval_matches=1
+        )
+        trainer = Trainer(config, tmp_path, resume=resume)
+        trainer.run()
+        return trainer
+
+    first = leg(0.0, None)
+    first_name = f"policy-{first.updates:05d}"
+    first_bytes = (tmp_path / f"{first_name}.safetensors").read_bytes()
+    second = leg(first.elapsed() / 60.0 + 0.02, tmp_path / "checkpoint.pt")
+    second_name = f"policy-{second.updates:05d}"
+    assert second.updates > first.updates
+    assert (tmp_path / f"{first_name}.safetensors").read_bytes() == first_bytes
+    assert (tmp_path / f"{second_name}.safetensors").exists()
+    evaluated = [
+        json.loads(line)["policy"] for line in (tmp_path / "evals.jsonl").read_text().splitlines()
+    ]
+    assert evaluated == [first_name, second_name]
 
 
 def test_stats_value_capped_matches_by_the_lead() -> None:

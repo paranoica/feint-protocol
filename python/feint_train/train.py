@@ -349,8 +349,8 @@ class Trainer:
                 self.next_generation_now()
                 self.save()
         if evaluated != self.updates:
-            self.evaluate("policy-final")
-        self.checkpoint("policy-final")
+            self.evaluate(f"policy-{self.updates:05d}")
+        self.checkpoint(f"policy-{self.updates:05d}")
         self.writer.close()
         return self.agent
 
