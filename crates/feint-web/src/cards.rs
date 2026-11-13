@@ -1,5 +1,6 @@
 use std::num::NonZeroU64;
 
+use believe::ledger::{Fact, Ledger};
 use believe::{Believe, GAME_VERSION, Move, Params};
 use feint_ai::{Controller, Opponent, RunHeader, RunReport, Runner, encode_record};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
@@ -21,8 +22,11 @@ pub enum CardEvent {
     Call {
         seat: u8,
         honest: bool,
-        taker: u8,
+        taker: Option<u8>,
         revealed: Vec<u8>,
+    },
+    Out {
+        seat: u8,
     },
 }
 
@@ -35,7 +39,7 @@ impl CardEvent {
     #[must_use]
     pub fn seat(&self) -> u8 {
         match self {
-            Self::Lay { seat, .. } | Self::Call { seat, .. } => *seat,
+            Self::Lay { seat, .. } | Self::Call { seat, .. } | Self::Out { seat } => *seat,
         }
     }
 
@@ -57,10 +61,14 @@ impl CardEvent {
                 out[0] = 1;
                 out[1] = i32::from(*seat);
                 out[2] = i32::from(*honest);
-                out[3] = i32::from(*taker);
+                out[3] = taker.map_or(-1, i32::from);
                 for (slot, &c) in out[4..].iter_mut().zip(revealed) {
                     *slot = i32::from(c);
                 }
+            }
+            Self::Out { seat } => {
+                out[0] = 2;
+                out[1] = i32::from(*seat);
             }
         }
         out
@@ -170,7 +178,7 @@ pub struct CardMatch {
     bot: TurnPilot,
     events: Vec<CardEvent>,
     read: usize,
-    last_lay: Option<(u8, u8, Vec<u8>)>,
+    ledger: Ledger,
 }
 
 #[must_use]
@@ -197,6 +205,7 @@ impl CardMatch {
             .map_err(|_| SessionError::Unsupported)?;
         Ok(Self {
             game,
+            ledger: Ledger::new(&params),
             params,
             runner: Some(runner),
             report: None,
@@ -204,7 +213,6 @@ impl CardMatch {
             bot,
             events: Vec::new(),
             read: 0,
-            last_lay: None,
         })
     }
 
@@ -290,31 +298,32 @@ impl CardMatch {
         let Some(m) = self.game.moves().decode(action.discrete) else {
             return;
         };
-        let seat = action.player;
-        match m {
-            Move::Lay { claim, counts } => {
-                let ranks = usize::from(self.params.ranks);
-                let real = counts[..ranks].to_vec();
-                let count = real.iter().sum();
-                self.events.push(CardEvent::Lay { seat, claim, count });
-                self.last_lay = Some((seat, claim, real));
-            }
-            Move::Call => {
-                let Some((layer, claim, revealed)) = self.last_lay.take() else {
-                    return;
-                };
-                let honest = revealed
-                    .iter()
-                    .enumerate()
-                    .all(|(rank, &c)| c == 0 || rank == usize::from(claim));
-                let taker = if honest { seat } else { layer };
-                self.events.push(CardEvent::Call {
+        let ranks = usize::from(self.params.ranks);
+        for fact in self.ledger.record(action.player, &m) {
+            self.events.push(match fact {
+                Fact::Lay {
+                    seat,
+                    claim,
+                    counts,
+                } => CardEvent::Lay {
+                    seat,
+                    claim,
+                    count: counts[..ranks].iter().sum(),
+                },
+                Fact::Call {
                     seat,
                     honest,
                     taker,
                     revealed,
-                });
-            }
+                    ..
+                } => CardEvent::Call {
+                    seat,
+                    honest,
+                    taker,
+                    revealed: revealed[..ranks].to_vec(),
+                },
+                Fact::Out { seat } => CardEvent::Out { seat },
+            });
         }
     }
 

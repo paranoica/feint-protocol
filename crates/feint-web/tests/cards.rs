@@ -146,7 +146,13 @@ fn a_call_reveals_the_called_batch_and_who_takes_the_pile() {
                 .enumerate()
                 .all(|(rank, &c)| c == 0 || rank == usize::from(*claim));
             assert_eq!(*honest, truthful);
-            assert_eq!(*taker, if truthful { *seat } else { *layer });
+            if taker.is_none() {
+                assert!(truthful, "only an honest last batch ends the match");
+                assert_eq!(i + 2, events.len());
+                assert_eq!(events[i + 1], CardEvent::Out { seat: *layer });
+            } else {
+                assert_eq!(*taker, Some(if truthful { *seat } else { *layer }));
+            }
             seen += 1;
         }
     }
@@ -299,16 +305,61 @@ fn events_flatten_to_a_fixed_stride() {
     let call = CardEvent::Call {
         seat: 0,
         honest: false,
-        taker: 1,
+        taker: Some(1),
         revealed: vec![0, 1, 0, 1, 0],
     };
     assert_eq!(call.flat(ranks), vec![1, 0, 0, 1, 0, 1, 0, 1, 0]);
     let honest = CardEvent::Call {
         seat: 1,
         honest: true,
-        taker: 1,
+        taker: Some(1),
         revealed: vec![2],
     };
     assert_eq!(honest.flat(ranks), vec![1, 1, 1, 1, 2, 0, 0, 0, 0]);
+    let last = CardEvent::Call {
+        seat: 0,
+        honest: true,
+        taker: None,
+        revealed: vec![0, 0, 3],
+    };
+    assert_eq!(last.flat(ranks), vec![1, 0, 1, -1, 0, 0, 3, 0, 0]);
+    let out = CardEvent::Out { seat: 1 };
+    assert_eq!(out.flat(ranks), vec![2, 1, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(feint_web::cards::event_stride(ranks), 9);
+}
+
+#[test]
+fn a_match_won_by_an_empty_hand_ends_with_that_seat_out() {
+    let (mut human, mut bot) = (0, 0);
+    for seed in 40..100 {
+        let m = play_out(seed);
+        let view = m.view();
+        let events = &view.events;
+        let outs: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e, CardEvent::Out { .. }))
+            .map(|(i, _)| i)
+            .collect();
+        let emptied = if view.actions_left == 0 {
+            None
+        } else if view.hand.iter().all(|&c| c == 0) {
+            Some(0)
+        } else if view.their_cards == 0 {
+            Some(1)
+        } else {
+            None
+        };
+        match emptied {
+            Some(seat) => {
+                assert_eq!(outs, vec![events.len() - 1], "seed {seed}: {events:?}");
+                assert_eq!(events.last(), Some(&CardEvent::Out { seat }));
+                assert_eq!(view.outcome, Some(if seat == 0 { 1 } else { -1 }));
+                if seat == 0 { human += 1 } else { bot += 1 }
+            }
+            None => assert!(outs.is_empty(), "seed {seed}: {events:?}"),
+        }
+    }
+    assert!(bot > 5, "only {bot} matches won by the bot's empty hand");
+    let _ = human;
 }

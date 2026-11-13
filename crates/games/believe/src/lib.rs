@@ -1,5 +1,6 @@
 mod adapter;
 pub mod check;
+pub mod ledger;
 mod moves;
 mod rules;
 mod sample;

@@ -50,7 +50,7 @@ fn a_lay_is_false_when_a_card_is_not_of_the_claimed_rank() {
 #[test]
 fn lies_calls_and_hits_are_counted_from_the_move_stream() {
     let bot = 1u8;
-    let mut referee = Referee::new(bot);
+    let mut referee = Referee::new(bot, &Params::default());
     let stream = [
         (0, lay(1, [0, 2, 0, 0, 0])),
         (1, lay(1, [1, 0, 0, 0, 0])),
@@ -87,7 +87,7 @@ fn the_seat_decides_who_won() {
         (1, [-1, 1], (1, 0, 0)),
         (0, [0, 0], (0, 1, 0)),
     ] {
-        let mut referee = Referee::new(me);
+        let mut referee = Referee::new(me, &Params::default());
         referee.end_match(score);
         let t = referee.tally();
         assert_eq!((t.wins, t.draws, t.losses), want, "seat {me} {score:?}");
@@ -138,4 +138,19 @@ fn a_uniform_policy_loses_to_the_counter_player() {
     let (_, high) = tally.interval();
     assert!(high < 0.5, "uniform play should lose: {tally:?}");
     assert!(tally.lays > 0 && tally.false_lays > 0, "{tally:?}");
+}
+
+#[test]
+fn a_lay_onto_an_emptied_hand_is_not_a_lay() {
+    let params = Params {
+        hand: 2,
+        ..Params::default()
+    };
+    let mut referee = Referee::new(1, &params);
+    referee.record(0, &lay(1, [0, 2, 0, 0, 0]));
+    referee.record(1, &lay(1, [0, 0, 0, 1, 0]));
+    referee.end_match([1, -1]);
+    let t = referee.tally();
+    assert_eq!((t.lays, t.false_lays, t.lies_survived), (0, 0, 0));
+    assert_eq!(t.losses, 1);
 }

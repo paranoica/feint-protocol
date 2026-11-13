@@ -4,6 +4,7 @@ use feint_ai::{Controller, Opponent, RunHeader, run_match};
 use feint_protocol::BodyParamsT;
 use feint_turn::{TurnPilot, TurnPolicy};
 
+use crate::ledger::{Fact, Ledger};
 use crate::rules::{Move, Params};
 use crate::{Believe, GAME_VERSION, Scripted, Style};
 
@@ -84,6 +85,7 @@ pub fn false_lay(m: &Move) -> bool {
 #[derive(Clone, Debug)]
 pub struct Referee {
     me: u8,
+    ledger: Ledger,
     last_false: bool,
     pending_lie: bool,
     tally: Tally,
@@ -91,9 +93,10 @@ pub struct Referee {
 
 impl Referee {
     #[must_use]
-    pub fn new(me: u8) -> Self {
+    pub fn new(me: u8, params: &Params) -> Self {
         Self {
             me,
+            ledger: Ledger::new(params),
             last_false: false,
             pending_lie: false,
             tally: Tally::default(),
@@ -102,29 +105,35 @@ impl Referee {
 
     pub fn record(&mut self, player: u8, m: &Move) {
         let mine = player == self.me;
-        match m {
-            Move::Call => {
-                if mine {
-                    self.tally.calls += 1;
-                    self.tally.calls_hit += u32::from(self.last_false);
-                } else if self.pending_lie {
-                    self.tally.lies_called += 1;
-                }
-                self.pending_lie = false;
-            }
-            Move::Lay { .. } => {
-                let lie = false_lay(m);
-                if mine {
-                    self.tally.lays += 1;
-                    self.tally.false_lays += u32::from(lie);
-                    self.pending_lie = lie;
-                } else if self.pending_lie {
-                    self.tally.lies_survived += 1;
-                    self.pending_lie = false;
-                }
-                self.last_false = lie;
+        for fact in self.ledger.record(player, m) {
+            match fact {
+                Fact::Out { .. } => {}
+                Fact::Call { .. } => self.call(mine),
+                Fact::Lay { .. } => self.lay(mine, false_lay(m)),
             }
         }
+    }
+
+    fn call(&mut self, mine: bool) {
+        if mine {
+            self.tally.calls += 1;
+            self.tally.calls_hit += u32::from(self.last_false);
+        } else if self.pending_lie {
+            self.tally.lies_called += 1;
+        }
+        self.pending_lie = false;
+    }
+
+    fn lay(&mut self, mine: bool, lie: bool) {
+        if mine {
+            self.tally.lays += 1;
+            self.tally.false_lays += u32::from(lie);
+            self.pending_lie = lie;
+        } else if self.pending_lie {
+            self.tally.lies_survived += 1;
+            self.pending_lie = false;
+        }
+        self.last_false = lie;
     }
 
     pub fn end_match(&mut self, score: [i64; 2]) {
@@ -179,7 +188,7 @@ pub fn check_against(
         if !report.finished {
             return Err(format!("seed {seed}: the match did not finish"));
         }
-        let mut referee = Referee::new(me);
+        let mut referee = Referee::new(me, &params);
         for action in &report.actions {
             let m = moves
                 .decode(action.discrete)
