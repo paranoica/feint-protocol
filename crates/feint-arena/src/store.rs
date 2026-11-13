@@ -67,7 +67,7 @@ pub struct ResultRow {
 
 pub struct Staged {
     rec: PathBuf,
-    parquet: PathBuf,
+    parquet: Option<PathBuf>,
 }
 
 pub fn stage(dir: &Path, upload: &Upload<'_>) -> Result<Staged, StoreError> {
@@ -75,11 +75,14 @@ pub fn stage(dir: &Path, upload: &Upload<'_>) -> Result<Staged, StoreError> {
     let stem = format!("upload-{}-{attempt}", upload.token);
     let staged = Staged {
         rec: dir.join(format!("{stem}.rec.tmp")),
-        parquet: dir.join(format!("{stem}.parquet.tmp")),
+        parquet: (!upload.verified.columns.is_empty())
+            .then(|| dir.join(format!("{stem}.parquet.tmp"))),
     };
     if let Err(error) = write_files(&staged, upload.bytes, upload.verified) {
         let _ = fs::remove_file(&staged.rec);
-        let _ = fs::remove_file(&staged.parquet);
+        if let Some(parquet) = &staged.parquet {
+            let _ = fs::remove_file(parquet);
+        }
         return Err(error);
     }
     Ok(staged)
@@ -245,7 +248,7 @@ impl Store {
                     SUM(m.score_human > m.score_bot), SUM(m.score_human < m.score_bot),
                     SUM(m.score_human), SUM(m.score_bot)
              FROM matches m JOIN players p ON p.id = m.player_id
-             WHERE p.nick = ?1 AND m.finished = 1 AND m.checkpoint = ''
+             WHERE p.nick = ?1 AND m.finished = 1 AND (m.checkpoint = '' OR m.game = 'believe')
              GROUP BY m.game, m.level ORDER BY m.game, m.level",
         )?;
         let count = |v: i64| u32::try_from(v).unwrap_or(u32::MAX);
@@ -299,7 +302,9 @@ impl Store {
         let result = self.commit(upload, &dir, &staged);
         if result.is_err() {
             let _ = fs::remove_file(&staged.rec);
-            let _ = fs::remove_file(&staged.parquet);
+            if let Some(parquet) = &staged.parquet {
+                let _ = fs::remove_file(parquet);
+            }
         }
         result
     }
@@ -382,21 +387,32 @@ impl Store {
         let dir = dir.join(verified.game);
         fs::create_dir_all(&dir)?;
         let rec = dir.join(format!("{id}.rec"));
-        let pq = dir.join(format!("{id}.parquet"));
+        let pq = temp
+            .parquet
+            .as_ref()
+            .map(|_| dir.join(format!("{id}.parquet")));
         fs::rename(&temp.rec, &rec)?;
-        if let Err(error) = fs::rename(&temp.parquet, &pq) {
+        if let (Some(from), Some(to)) = (&temp.parquet, &pq)
+            && let Err(error) = fs::rename(from, to)
+        {
             let _ = fs::remove_file(&rec);
             return Err(error.into());
         }
         let finished = tx
             .execute(
                 "UPDATE matches SET record_path = ?1, parquet_path = ?2 WHERE id = ?3",
-                params![rec.to_string_lossy(), pq.to_string_lossy(), id],
+                params![
+                    rec.to_string_lossy(),
+                    pq.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                    id
+                ],
             )
             .and_then(|_| tx.commit());
         if let Err(error) = finished {
             let _ = fs::remove_file(&rec);
-            let _ = fs::remove_file(&pq);
+            if let Some(pq) = &pq {
+                let _ = fs::remove_file(pq);
+            }
             return Err(error.into());
         }
         Ok(Saved {
@@ -412,7 +428,10 @@ impl Store {
 
 fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), StoreError> {
     fs::write(&temp.rec, bytes)?;
-    let file = fs::File::create(&temp.parquet)?;
+    let Some(parquet) = &temp.parquet else {
+        return Ok(());
+    };
+    let file = fs::File::create(parquet)?;
     let header = &verified.record.header;
     parquet_out::write(
         &verified.frames,
