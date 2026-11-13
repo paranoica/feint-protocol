@@ -12,6 +12,7 @@ export interface Replay {
 
 export type Screen =
   | { name: "level"; nick: string }
+  | { name: "cards"; nick: string }
   | {
       name: "game";
       game: string;
@@ -125,4 +126,12 @@ export function again(screen: Screen): Screen {
     return screen;
   }
   return { name: "level", nick: screen.nick };
+}
+
+export function cards(screen: Screen, nick: string): Screen {
+  return screen.name === "level" ? { name: "cards", nick: cleanNick(nick) } : screen;
+}
+
+export function leaveCards(screen: Screen): Screen {
+  return screen.name === "cards" ? { name: "level", nick: screen.nick } : screen;
 }

@@ -141,6 +141,13 @@
     "kuhn-cfr": {
       "run": "cargo run --release --locked -q -p kuhn --bin kuhn_cfr -- {args}"
     },
+    "believe-check": {
+      "run": "cargo run --release --locked -q -p believe --bin believe_check -- {args}"
+    },
+    "train-believe": {
+      "run": "cd python && uv run python -m feint_train.turns --game believe --logdir runs/believe-{args} --seed {args} --envs 512 --updates 1000000 --hours 3 --mix learner=0.25,frozen=0.15,honest=0.15,liar:300=0.15,caller:300=0.15,counter=0.15 --evaluate honest,liar:300,caller:300,counter --eval-every 25 --eval-matches 1000 --resume",
+      "heavy": true
+    },
     "kuhn-cfr-gate": {
       "run": "cargo test --release --locked -q -p kuhn --test cfr -- --ignored --nocapture"
     },

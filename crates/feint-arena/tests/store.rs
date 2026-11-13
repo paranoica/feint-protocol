@@ -236,3 +236,79 @@ fn a_trained_match_is_stored_with_its_checkpoint_and_a_hand_made_one_without() {
         .unwrap();
     assert_eq!(profiles, 0);
 }
+
+#[test]
+fn card_results_are_listed_although_their_bot_is_trained() {
+    let root = std::env::temp_dir().join(format!("feint-store-cards-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = Store::open(&root).unwrap();
+    store
+        .connection()
+        .execute_batch(
+            "INSERT INTO players (id, nick) VALUES (1, 'ann');
+             INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks, finished, digest, created, checkpoint) VALUES
+               (1, 'believe', 5, 1, 1, -1, 10, 1, 'a', 1, '00000000000000aa'),
+               (1, 'believe', 5, 2, -1, 1, 10, 1, 'b', 1, '00000000000000aa'),
+               (1, 'believe', 5, 3, 0, 0, 10, 1, 'c', 1, '00000000000000aa'),
+               (1, 'airhockey', 5, 4, 1, 7, 10, 1, 'd', 1, 'daf7bada17a01ab0');",
+        )
+        .unwrap();
+    assert_eq!(
+        store.results("ann").unwrap(),
+        vec![feint_arena::ResultRow {
+            game: "believe".into(),
+            level: 5,
+            matches: 3,
+            won: 1,
+            lost: 1,
+            mine: 0,
+            theirs: 0,
+        }]
+    );
+}
+
+#[test]
+fn a_match_without_columns_is_stored_without_parquet() {
+    let root = std::env::temp_dir().join(format!("feint-store-noparquet-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut store = Store::open(&root).unwrap();
+    let mut hand = feint_web::Session::new(5, 41).unwrap();
+    for _ in 0..50 {
+        let p = hand.positions();
+        hand.set_pointer(p[0], p[1]);
+        hand.advance(4);
+    }
+    let bytes = hand.record();
+    let mut verified = feint_arena::verify(&bytes, None).unwrap();
+    verified.columns = &[];
+    verified.game = "believe";
+    store.issue_ticket(100, "t1", 41).unwrap();
+    let upload = feint_arena::Upload {
+        now: 200,
+        nick: "ann",
+        token: "t1",
+        used: None,
+        bytes: &bytes,
+        verified: &verified,
+        profile: None,
+    };
+    let saved = store.save(&upload).unwrap();
+    let dir = store.matches_dir().join("believe");
+    assert!(dir.join(format!("{}.rec", saved.id)).exists());
+    assert!(!dir.join(format!("{}.parquet", saved.id)).exists());
+    let leftovers: Vec<_> = std::fs::read_dir(store.matches_dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    let parquet: Option<String> = store
+        .connection()
+        .query_row(
+            "SELECT parquet_path FROM matches WHERE id = ?1",
+            [saved.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(parquet, None);
+}

@@ -1,3 +1,4 @@
+pub mod cards;
 mod hub;
 mod session;
 #[cfg(target_arch = "wasm32")]

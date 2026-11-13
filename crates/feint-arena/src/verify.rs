@@ -1,10 +1,13 @@
 use airhockey::AirHockey;
+use believe::Believe;
 use duel::QuickDraw;
 use feint_ai::{
     Bot, Controller, Difficulty, Memory, Opponent, Profile, Record, RecordError, Runner,
     decode_record, encode_record,
 };
 use feint_protocol::ActionT;
+use feint_turn::TurnPilot;
+use feint_web::cards::{CARD_CAP_TICKS, CARD_GAME_ID, CARD_LEVEL, card_header};
 use feint_web::{Column, HubGame, Play, Replayer, SessionError};
 use penalty::Penalty;
 
@@ -81,6 +84,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
         AirHockey::ID => verify_game::<AirHockey>(record, bytes, profile),
         Penalty::ID => verify_game::<Penalty>(record, bytes, profile),
         QuickDraw::ID => verify_game::<QuickDraw>(record, bytes, profile),
+        CARD_GAME_ID => verify_cards(record, bytes, profile),
         _ => Err(VerifyError::Game),
     }
 }
@@ -181,6 +185,53 @@ fn verify_game<G: HubGame>(
                 .filter(|_| difficulty_keeps_profiles(level)),
             Seat::Trained(_) => None,
         },
+    })
+}
+
+fn verify_cards(
+    record: Record,
+    bytes: &[u8],
+    profile: Option<&Profile>,
+) -> Result<Verified, VerifyError> {
+    if record.header.game_version != believe::GAME_VERSION {
+        return Err(VerifyError::Game);
+    }
+    if profile.is_some() {
+        return Err(VerifyError::Profile);
+    }
+    let Opponent::Trained(checkpoint) = record.header.opponent else {
+        return Err(VerifyError::Level);
+    };
+    if record.header.levels != [0, CARD_LEVEL] {
+        return Err(VerifyError::Level);
+    }
+    if record.ticks == 0 || record.ticks > CARD_CAP_TICKS {
+        return Err(VerifyError::Ticks);
+    }
+    let policy = believe::trained::policy(checkpoint.get()).map_err(|_| VerifyError::Checkpoint)?;
+    let header = card_header(record.header.seed, checkpoint);
+    if header != record.header {
+        return Err(VerifyError::Bodies);
+    }
+    let mut game = Believe::default();
+    let mut human = Replayer::new(human_actions(&record)?);
+    let mut bot = TurnPilot::new(policy);
+    let mut runner = Runner::start(&mut game, [&mut human, &mut bot], header)
+        .map_err(|_| VerifyError::Bodies)?;
+    while runner.ticks() < record.ticks && runner.step(&mut game, [&mut human, &mut bot]) {}
+    let report = runner.finish(&mut game, [&mut human, &mut bot]);
+    if encode_record(&report.record()) != bytes {
+        return Err(VerifyError::Mismatch);
+    }
+    Ok(Verified {
+        game: CARD_GAME_ID,
+        columns: &[],
+        record,
+        frames: Vec::new(),
+        finished: report.finished,
+        score: report.score,
+        digest: report.digest,
+        profile: None,
     })
 }
 

@@ -75,6 +75,23 @@ pub fn masked_softmax(logits: &[f32], legal: &[u8], out: &mut Vec<f32>) {
     out.extend((0..logits.len()).map(|i| if allowed(i) { 1.0 / count } else { 0.0 }));
 }
 
+#[must_use]
+pub fn sample_index(probabilities: &[f32], legal: &[u8], u: f32) -> Option<usize> {
+    let mut sum = 0.0f32;
+    let mut last = None;
+    for (i, &p) in probabilities.iter().enumerate() {
+        if legal.get(i) != Some(&1) {
+            continue;
+        }
+        sum += p;
+        last = Some(i);
+        if u < sum {
+            return last;
+        }
+    }
+    last
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyError {
     Format(SafeTensorsError),

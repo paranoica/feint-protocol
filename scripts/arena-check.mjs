@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const [base, glue, wasm, patchedOut] = process.argv.slice(2);
-const { initSync, WebMatch, checkpoints } = await import(glue);
+const { initSync, WebMatch, checkpoints, WebCards, card_checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
 function play(game) {
@@ -96,6 +96,27 @@ const reason = await refused.json();
 if (refused.status !== 400 || reason.error !== "record") {
   throw new Error(`an unknown checkpoint got ${refused.status} ${JSON.stringify(reason)}`);
 }
+const fifth = await ticket();
+const cards = new WebCards(fifth.seed, card_checkpoints()[0]);
+for (let i = 0; i < 36000 && !cards.finished(); i++) {
+  if (cards.my_turn()) {
+    const legal = cards.legal();
+    cards.play(legal[i % legal.length]);
+  }
+  cards.advance(1);
+}
+if (!cards.finished()) {
+  throw new Error("the card match did not finish");
+}
+const five = await upload(cards.record(), fifth, null);
+if (five.profile !== null) {
+  throw new Error(`a card match stored profile ${five.profile}`);
+}
+const results = await (await fetch(`${base}/api/results?nick=arena-check`)).json();
+const row = results.find((r) => r.game === "believe");
+if (!row || row.level !== 5 || row.matches !== 1) {
+  throw new Error(`the card match is not in the results: ${JSON.stringify(results)}`);
+}
 process.stdout.write(
-  `matches ${one.id} ${two.id} profiles ${one.profile} ${two.profile} trained ${three.id} unknown checkpoint refused\n`,
+  `matches ${one.id} ${two.id} profiles ${one.profile} ${two.profile} trained ${three.id} cards ${five.id} unknown checkpoint refused\n`,
 );

@@ -37,6 +37,20 @@
         <button id="again" class="primary">Play again</button>
       </div>
     </section>
+    <section id="cards" class="screen" hidden>
+      <div class="card cards-table">
+        <header class="cards-head">
+          <h2>Верю — не верю</h2>
+          <span id="cards-who" class="side-label"></span>
+        </header>
+        <div id="cards-board" class="cards-board"></div>
+        <div id="cards-end" class="cards-end" hidden>
+          <h2 id="cards-verdict"></h2>
+          <p id="cards-saved" class="hint"></p>
+        </div>
+        <button id="cards-leave">В хаб</button>
+      </div>
+    </section>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

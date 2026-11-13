@@ -959,3 +959,75 @@ fn results_add_up_each_players_matches_by_game_and_level() {
     assert_eq!(call(s.addr, "GET", "/api/results?nick=", &[]).status, 400);
     assert_eq!(call(s.addr, "GET", "/api/results", &[]).status, 400);
 }
+
+fn card_match(seed: u64) -> feint_web::cards::CardMatch {
+    let id = believe::trained::CHECKPOINTS[0].id;
+    let mut m = feint_web::cards::CardMatch::new(seed, id).unwrap();
+    while !m.finished() {
+        if m.view().my_turn {
+            let legal = m.legal();
+            assert!(m.play(legal[legal.len() / 2]));
+        }
+        m.advance(1);
+    }
+    m
+}
+
+#[test]
+fn a_card_match_is_stored_without_parquet_and_counted_in_results() {
+    let s = start("cards");
+    let (t, seed) = ticket(&s);
+    let game = card_match(seed);
+    let bytes = game.record();
+    let r = call(
+        s.addr,
+        "POST",
+        &format!("/api/matches?nick=cara&ticket={t}"),
+        &bytes,
+    );
+    assert_eq!(r.status, 201, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(json_field(&r.body, "profile"), "null");
+    let id: i64 = json_field(&r.body, "id").parse().unwrap();
+    assert_eq!(
+        std::fs::read(s.data.join(format!("matches/believe/{id}.rec"))).unwrap(),
+        bytes
+    );
+    assert!(
+        !s.data
+            .join(format!("matches/believe/{id}.parquet"))
+            .exists()
+    );
+    assert_eq!(
+        count(
+            &s,
+            &format!(
+                "SELECT COUNT(*) FROM matches WHERE id = {id} AND game = 'believe' AND parquet_path IS NULL"
+            )
+        ),
+        1
+    );
+    let score = feint_ai::decode_record(&bytes).unwrap().score;
+    let (you, bot) = (score[0], score[1]);
+    let r = call(s.addr, "GET", "/api/results?nick=cara", &[]);
+    assert_eq!(
+        String::from_utf8_lossy(&r.body),
+        format!(
+            "[{{\"game\":\"believe\",\"level\":5,\"matches\":1,\"won\":{},\"lost\":{},\"mine\":{you},\"theirs\":{bot}}}]",
+            u32::from(you > bot),
+            u32::from(you < bot),
+        )
+    );
+
+    let (t, seed) = ticket(&s);
+    let mut half =
+        feint_web::cards::CardMatch::new(seed, believe::trained::CHECKPOINTS[0].id).unwrap();
+    half.advance(1);
+    let r = call(
+        s.addr,
+        "POST",
+        &format!("/api/matches?nick=cara&ticket={t}"),
+        &half.record(),
+    );
+    assert_eq!(r.status, 400, "an unfinished card match is refused");
+    assert_eq!(count(&s, "SELECT COUNT(*) FROM matches"), 1);
+}

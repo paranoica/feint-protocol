@@ -452,10 +452,12 @@ dependencies = [
  "airhockey",
  "arrow",
  "axum",
+ "believe",
  "duel",
  "feint-ai",
  "feint-ml",
  "feint-protocol",
+ "feint-turn",
  "feint-web",
  "parquet",
  "penalty",
@@ -534,11 +536,13 @@ name = "feint-web"
 version = "0.1.0"
 dependencies = [
  "airhockey",
+ "believe",
  "duel",
  "feint-ai",
  "feint-compare",
  "feint-ml",
  "feint-protocol",
+ "feint-turn",
  "penalty",
  "wasm-bindgen",
 ]
