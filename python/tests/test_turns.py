@@ -155,3 +155,45 @@ def test_turn_export_round_trips_through_numpy(tmp_path: Path) -> None:
     assert meta["layout"] == "turn-v1:kuhn:4:2"
     assert meta["features"] == "4" and meta["outputs"] == "2"
     assert meta["game"] == "kuhn"
+
+
+def test_kuhn_learner_beats_always_bet(tmp_path: Path) -> None:
+    from feint_train.turns import TurnConfig, evaluate, train
+
+    config = TurnConfig(
+        game="kuhn",
+        envs=256,
+        updates=60,
+        mix={"bet": 1.0},
+        evaluate=("bet",),
+        eval_every=1000,
+        eval_matches=2000,
+        seed=3,
+        logdir=tmp_path,
+        lr=3e-3,
+        entropy=0.01,
+    )
+    agent = train(config)
+    result = evaluate(agent, "kuhn", "bet", matches=4000, seed=11)
+    assert result["mean_reward"] > 0.25, result
+    assert (tmp_path / "policy-00060.safetensors").exists()
+    assert (tmp_path / "checkpoint.pt").exists()
+
+
+def test_seat_plan_alternates_the_learner_and_follows_the_mix() -> None:
+    from feint_train.turns import seat_plan
+
+    rng = np.random.default_rng(0)
+    seats, learner = seat_plan(1000, {"learner": 0.5, "honest": 0.3, "frozen": 0.2}, 4, rng)
+    assert len(seats) == 1000
+    assert learner.tolist()[:4] == [0, 1, 0, 1]
+    for (a, b), side in zip(seats, learner, strict=True):
+        assert (a, b)[side] == "learner"
+    others = [pair[1 - side] for pair, side in zip(seats, learner, strict=True)]
+    assert 420 < sum(o == "learner" for o in others) < 580
+    assert 230 < sum(o == "honest" for o in others) < 370
+    frozen = [o for o in others if o.startswith("frozen:")]
+    assert 140 < len(frozen) < 260
+    assert {int(o.split(":")[1]) for o in frozen} <= {0, 1, 2, 3}
+    seats, _ = seat_plan(10, {"learner": 0.5, "frozen": 0.5}, 0, rng)
+    assert all(not s.startswith("frozen") for pair in seats for s in pair)
