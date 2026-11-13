@@ -1,0 +1,20 @@
+[package]
+name = "cards-check"
+description = "Plays scripted Kuhn and Believe-or-not matches and returns their digests, natively and as wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+believe.workspace = true
+feint-ai.workspace = true
+feint-protocol.workspace = true
+kuhn.workspace = true
+
+[lints]
+workspace = true

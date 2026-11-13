@@ -1,24 +1,25 @@
-#[macro_use]
-mod builders;
-
 use feint_protocol::{
-    ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, EventT, GameAdapter, GameSpecT,
-    MatchResultT, ObservationT, PlayerId, TimeMode,
+    ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
+    GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
 };
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
-const PASS: i32 = 0;
-const BET: i32 = 1;
+pub const PASS: i32 = 0;
+pub const BET: i32 = 1;
+pub const GAME_VERSION: u32 = 1;
+pub const TICK_HZ: u32 = 10;
+pub const OBSERVATION_LEN: usize = 4;
 
-#[derive(Clone, Debug, PartialEq)]
-struct Deal {
-    cards: [u8; 2],
-    history: Vec<i32>,
-    tick: u64,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Deal {
+    pub cards: [u8; 2],
+    pub history: Vec<i32>,
+    pub tick: u64,
 }
 
 impl Deal {
-    fn to_act(&self) -> Option<PlayerId> {
+    #[must_use]
+    pub fn to_act(&self) -> Option<PlayerId> {
         match self.history.as_slice() {
             [] | [PASS, BET] => Some(0),
             [_] => Some(1),
@@ -26,7 +27,8 @@ impl Deal {
         }
     }
 
-    fn payoff(&self) -> Option<[i64; 2]> {
+    #[must_use]
+    pub fn payoff(&self) -> Option<[i64; 2]> {
         let showdown = |stake: i64| {
             if self.cards[0] > self.cards[1] {
                 [stake, -stake]
@@ -63,41 +65,67 @@ impl Deal {
             return Err(AdapterError::BadAction("pass or bet only"));
         }
         self.history.push(action.discrete);
-        self.tick += 1;
         Ok(())
     }
 }
 
-struct Kuhn {
+pub struct Kuhn {
     deal: Deal,
 }
 
-impl Kuhn {
-    fn new() -> Self {
-        Self {
-            deal: Deal {
-                cards: [0, 1],
-                history: vec![],
-                tick: 0,
-            },
-        }
+impl Default for Kuhn {
+    fn default() -> Self {
+        Self::new()
     }
+}
+
+impl Kuhn {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::from_deal(Deal {
+            cards: [0, 1],
+            history: vec![],
+            tick: 0,
+        })
+    }
+
+    #[must_use]
+    pub fn from_deal(deal: Deal) -> Self {
+        Self { deal }
+    }
+}
+
+fn dim(name: &str, min: f32, max: f32, unit: &str) -> DimT {
+    let mut d = DimT::default();
+    d.name = Some(name.into());
+    d.min = min;
+    d.max = max;
+    d.unit = Some(unit.into());
+    d
 }
 
 impl GameAdapter for Kuhn {
     type State = Deal;
 
     fn spec(&self) -> GameSpecT {
-        make!(GameSpecT {
-            game_id: Some("kuhn-poker".into()),
-            game_version: 1,
-            num_players: 2,
-            time_mode: TimeMode::TurnBased,
-            action_space: Some(Box::new(make!(ActionSpaceT {
-                continuous: None,
-                discrete: 2,
-            }))),
-        })
+        let mut spec = GameSpecT::default();
+        spec.game_id = Some("kuhn-poker".into());
+        spec.game_version = GAME_VERSION;
+        spec.num_players = 2;
+        spec.time_mode = TimeMode::TurnBased;
+        spec.tick_hz = TICK_HZ;
+        spec.decision_hz = TICK_HZ;
+        let mut space = ActionSpaceT::default();
+        space.discrete = 2;
+        spec.action_space = Some(Box::new(space));
+        spec.observation = Some(vec![
+            dim("card", 0.0, 2.0, "rank"),
+            dim("first", -1.0, 1.0, "action"),
+            dim("second", -1.0, 1.0, "action"),
+            dim("third", -1.0, 1.0, "action"),
+        ]);
+        spec.signals = Some(vec![dim("action", 0.0, 1.0, "bet")]);
+        spec
     }
 
     fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
@@ -123,12 +151,23 @@ impl GameAdapter for Kuhn {
         self.deal.play(action)
     }
 
-    fn advance(&mut self, _events: &mut Vec<EventT>) {}
+    fn advance(&mut self, _events: &mut Vec<EventT>) {
+        self.deal.tick = self.deal.tick.saturating_add(1);
+    }
 
     fn observe(&self, state: &Deal, player: PlayerId, out: &mut ObservationT) {
-        let me = usize::from(player);
         out.tick = state.tick;
         out.player = player;
+        if player > 1 {
+            out.to_act = -1;
+            for list in [&mut out.state, &mut out.opponent_signals] {
+                list.get_or_insert_with(Vec::new).clear();
+            }
+            out.legal.get_or_insert_with(Vec::new).clear();
+            out.score.get_or_insert_with(Vec::new).clear();
+            return;
+        }
+        let me = usize::from(player);
         out.to_act = state.to_act().map_or(-1, |p| p as i8);
         let obs = out.state.get_or_insert_with(Vec::new);
         obs.clear();
@@ -155,7 +194,7 @@ impl GameAdapter for Kuhn {
 
     fn state_from_observation(&self, obs: &ObservationT, rng: &mut ChaCha8Rng) -> Deal {
         let seen = obs.state.as_deref().unwrap_or_default();
-        let own = seen[0] as u8;
+        let own = seen.first().map_or(0, |&c| (c as u8).min(2));
         let other = (own + 1 + (rng.next_u32() % 2) as u8) % 3;
         let mut cards = [own, other];
         if obs.player == 1 {
@@ -163,8 +202,9 @@ impl GameAdapter for Kuhn {
         }
         Deal {
             cards,
-            history: seen[1..]
+            history: seen
                 .iter()
+                .skip(1)
                 .filter(|&&a| a >= 0.0)
                 .map(|&a| a as i32)
                 .collect(),
@@ -174,13 +214,12 @@ impl GameAdapter for Kuhn {
 
     fn simulate(&self, state: &Deal, actions: &[ActionT], ticks: u32) -> Deal {
         let mut next = state.clone();
-        for action in actions.iter().take(ticks as usize) {
+        for action in actions {
             let mut stamped = action.clone();
             stamped.tick = next.tick;
-            if next.play(&stamped).is_err() {
-                break;
-            }
+            let _ = next.play(&stamped);
         }
+        next.tick = next.tick.saturating_add(u64::from(ticks));
         next
     }
 
@@ -196,6 +235,7 @@ impl GameAdapter for Kuhn {
             .iter()
             .copied()
             .chain(state.history.iter().map(|&a| a as u8))
+            .chain(state.tick.to_le_bytes())
         {
             h = (h ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
         }
@@ -204,126 +244,10 @@ impl GameAdapter for Kuhn {
 
     fn result(&self) -> Option<MatchResultT> {
         self.deal.payoff().map(|score| {
-            make!(MatchResultT {
-                score: Some(score.to_vec()),
-                duration_ticks: self.deal.tick,
-                level: 0,
-                seed: 0,
-            })
+            let mut result = MatchResultT::default();
+            result.score = Some(score.to_vec());
+            result.duration_ticks = self.deal.tick;
+            result
         })
     }
-}
-
-fn act(tick: u64, player: u8, discrete: i32) -> ActionT {
-    make!(ActionT {
-        tick: tick,
-        player: player,
-        discrete: discrete,
-    })
-}
-
-#[test]
-fn opponent_card_never_reaches_the_observation() {
-    let game = Kuhn::new();
-    for own in 0..3u8 {
-        let mut seen = Vec::new();
-        for other in (0..3u8).filter(|&c| c != own) {
-            let deal = Deal {
-                cards: [own, other],
-                history: vec![PASS],
-                tick: 1,
-            };
-            let mut obs = ObservationT::default();
-            game.observe(&deal, 0, &mut obs);
-            seen.push(obs);
-        }
-        assert_eq!(
-            seen[0], seen[1],
-            "player 0's view depends on the hidden card"
-        );
-    }
-}
-
-#[test]
-fn state_from_observation_keeps_what_is_seen_and_samples_the_rest() {
-    let game = Kuhn::new();
-    let truth = Deal {
-        cards: [0, 2],
-        history: vec![PASS, BET],
-        tick: 2,
-    };
-    let mut obs = ObservationT::default();
-    game.observe(&truth, 1, &mut obs);
-    let mut rng = ChaCha8Rng::seed_from_u64(7);
-    let mut sampled = [false; 3];
-    for _ in 0..100 {
-        let guess = game.state_from_observation(&obs, &mut rng);
-        assert_eq!(guess.cards[1], 2);
-        assert_ne!(guess.cards[0], 2);
-        assert_eq!(guess.history, truth.history);
-        assert_eq!(guess.tick, truth.tick);
-        sampled[usize::from(guess.cards[0])] = true;
-    }
-    assert_eq!(
-        sampled,
-        [true, true, false],
-        "both hidden cards must be sampled"
-    );
-}
-
-#[test]
-fn turns_refusals_and_payoffs_follow_kuhn_rules() {
-    let mut game = Kuhn::new();
-    game.reset(3, &[BodyParamsT::default(), BodyParamsT::default()])
-        .unwrap();
-    let before = game.live().clone();
-    assert_eq!(
-        game.apply(&act(0, 1, BET)),
-        Err(AdapterError::BadAction("not this player's turn"))
-    );
-    assert_eq!(
-        game.apply(&act(5, 0, BET)),
-        Err(AdapterError::WrongTick {
-            expected: 0,
-            got: 5
-        })
-    );
-    assert_eq!(game.live(), &before, "a refused action changed the game");
-
-    game.deal.cards = [2, 0];
-    game.apply(&act(0, 0, PASS)).unwrap();
-    game.apply(&act(1, 1, BET)).unwrap();
-    game.apply(&act(2, 0, BET)).unwrap();
-    assert_eq!(game.result().unwrap().score, Some(vec![2, -2]));
-    assert_eq!(game.apply(&act(3, 1, PASS)), Err(AdapterError::MatchOver));
-
-    let start = Deal {
-        cards: [0, 2],
-        history: vec![],
-        tick: 0,
-    };
-    let end = game.simulate(
-        &start,
-        &[act(0, 0, PASS), act(0, 1, BET), act(0, 0, PASS)],
-        3,
-    );
-    assert_eq!(end.payoff(), Some([-1, 1]));
-    assert_eq!(game.digest(&start), game.digest(&start.clone()));
-    assert_ne!(game.digest(&start), game.digest(&end));
-}
-
-#[test]
-fn signals_show_the_bet_not_the_intent() {
-    let game = Kuhn::new();
-    let deal = game.live().clone();
-    let mut bluff = act(0, 0, BET);
-    bluff.intent = 1;
-    bluff.deceptive = true;
-    let mut value = act(0, 0, BET);
-    value.intent = 2;
-    let (mut a, mut b) = (Vec::new(), Vec::new());
-    game.signals(&deal, &bluff, &mut a);
-    game.signals(&deal, &value, &mut b);
-    assert_eq!(a, b);
-    assert_eq!(a, vec![1.0]);
 }

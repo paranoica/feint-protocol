@@ -19,6 +19,20 @@ if [[ "$debug" != "$release" || "$debug" != "$wasm" ]]; then
   exit 1
 fi
 
+cargo build -q --locked --release -p cards-check --lib --target wasm32-unknown-unknown
+cards_debug="$(cargo run -q --locked -p cards-check)"
+cards_release="$(cargo run -q --locked --release -p cards-check)"
+cards_wasm="$(node crates/games/cards-check/check.mjs \
+  target/wasm32-unknown-unknown/release/cards_check.wasm)"
+
+echo "cards native debug:   $cards_debug"
+echo "cards native release: $cards_release"
+echo "cards wasm32:         $cards_wasm"
+if [[ "$cards_debug" != "$cards_release" || "$cards_debug" != "$cards_wasm" ]]; then
+  echo "a card game is not deterministic across builds" >&2
+  exit 1
+fi
+
 cargo build -q --locked --release -p feint-ml-check --lib --target wasm32-unknown-unknown
 ml_debug="$(cargo run -q --locked -p feint-ml-check)"
 ml_release="$(cargo run -q --locked --release -p feint-ml-check)"
