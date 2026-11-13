@@ -5,13 +5,13 @@ from torch import nn
 HIDDEN = 256
 
 
-def mlp(inputs: int, outputs: int) -> nn.Sequential:
+def mlp(inputs: int, outputs: int, hidden: int = HIDDEN) -> nn.Sequential:
     return nn.Sequential(
-        nn.Linear(inputs, HIDDEN),
+        nn.Linear(inputs, hidden),
         nn.ReLU(),
-        nn.Linear(HIDDEN, HIDDEN),
+        nn.Linear(hidden, hidden),
         nn.ReLU(),
-        nn.Linear(HIDDEN, outputs),
+        nn.Linear(hidden, outputs),
     )
 
 
@@ -71,12 +71,12 @@ class Agent(nn.Module):
 
 
 class DiscreteAgent(nn.Module):
-    def __init__(self, scales: np.ndarray, actions: int) -> None:
+    def __init__(self, scales: np.ndarray, actions: int, hidden: int = HIDDEN) -> None:
         super().__init__()
         features = len(scales)
         self.register_buffer("scales", torch.as_tensor(scales, dtype=torch.float32))
-        self.actor = mlp(features, actions)
-        self.critic = mlp(features, 1)
+        self.actor = mlp(features, actions, hidden)
+        self.critic = mlp(features, 1, hidden)
         nn.init.orthogonal_(self.actor[-1].weight, gain=0.01)
         nn.init.zeros_(self.actor[-1].bias)
         nn.init.orthogonal_(self.critic[-1].weight, gain=1.0)

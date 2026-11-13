@@ -57,7 +57,7 @@ def export_turn(agent: DiscreteAgent, path: Path, game: str) -> None:
         "game": game,
         "features": str(len(inverse)),
         "outputs": str(actions),
-        "hidden": f"{HIDDEN},{HIDDEN}",
+        "hidden": f"{actor[0].out_features},{actor[2].out_features}",
         "activation": "relu",
         "inv_scales": ",".join(np.format_float_positional(x, unique=True) for x in inverse),
     }

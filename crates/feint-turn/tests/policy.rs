@@ -246,14 +246,14 @@ fn a_policy_with_a_non_finite_weight_is_refused() {
 
 #[test]
 fn a_policy_exported_by_python_gives_the_logits_torch_gave() {
-    let hex: String = include_str!("fixtures/kuhn-seed5.safetensors.hex")
+    let hex: String = include_str!("fixtures/kuhn-seed3.safetensors.hex")
         .split_whitespace()
         .collect();
     let bytes: Vec<u8> = (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
         .collect();
-    let expected = include_str!("fixtures/kuhn-seed5.logits");
+    let expected = include_str!("fixtures/kuhn-seed3.logits");
     let mut policy = TurnPolicy::from_safetensors(&bytes, &turn_layout("kuhn", 4, 2)).unwrap();
     let mut rows = 0;
     for line in expected.lines() {
@@ -268,5 +268,5 @@ fn a_policy_exported_by_python_gives_the_logits_torch_gave() {
         }
         rows += 1;
     }
-    assert_eq!(rows, 12);
+    assert_eq!(rows, 32);
 }

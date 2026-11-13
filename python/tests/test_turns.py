@@ -320,3 +320,47 @@ def test_evaluation_takes_scripted_opponents_only() -> None:
     for opponent in ("learner", "frozen:0"):
         with pytest.raises(ValueError, match="scripted"):
             evaluate(agent, "kuhn", opponent, matches=4, seed=1)
+
+
+def test_training_refuses_an_unscripted_or_unknown_opponent_before_it_starts(
+    tmp_path: Path,
+) -> None:
+    from feint_train.turns import TurnConfig, train
+
+    for opponent in ("learner", "frozen:0", "nobody"):
+        logdir = tmp_path / opponent.replace(":", "-")
+        config = TurnConfig(
+            game="kuhn", logdir=logdir, envs=4, updates=2, eval_every=1, evaluate=(opponent,)
+        )
+        with pytest.raises(ValueError):
+            train(config)
+        assert not logdir.exists()
+
+
+def test_the_turn_fixture_reproduces_and_every_hidden_unit_fires(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file
+
+    from feint_train.export import forward, metadata
+    from feint_train.fixtures import inactive_units, turn_fixture
+
+    root = Path(__file__).resolve().parents[2] / "crates/feint-turn/tests/fixtures"
+    hex_text, logits_text, inputs, agent = turn_fixture("kuhn", seed=3, hidden=8, rows=32)
+    path, kept = tmp_path / "p.safetensors", tmp_path / "kept.safetensors"
+    path.write_bytes(bytes.fromhex("".join(hex_text.split())))
+    kept.write_bytes(
+        bytes.fromhex("".join((root / "kuhn-seed3.safetensors.hex").read_text().split()))
+    )
+    assert metadata(path) == metadata(kept)
+    assert metadata(kept)["hidden"] == "8,8"
+    made, stored = load_file(str(path)), load_file(str(kept))
+    assert made.keys() == stored.keys()
+    for key in made:
+        np.testing.assert_array_equal(made[key], stored[key], err_msg=key)
+    assert logits_text == (root / "kuhn-seed3.logits").read_text()
+    assert inactive_units(agent, inputs) == 0
+    _, _, inputs_5, agent_5 = turn_fixture("kuhn", seed=5, hidden=8, rows=32)
+    assert inactive_units(agent_5, inputs_5) > 0
+    numbers = np.array([line.split() for line in logits_text.splitlines()], dtype=np.float32)
+    assert numbers.shape == (32, 4 + 2)
+    np.testing.assert_array_equal(numbers[:, :4], inputs)
+    np.testing.assert_allclose(forward(path, inputs), numbers[:, 4:], rtol=0, atol=1e-6)

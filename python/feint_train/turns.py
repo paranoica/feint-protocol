@@ -124,11 +124,17 @@ def play(
     return total
 
 
+def check_opponents(game: str, opponents: tuple[str, ...]) -> None:
+    for opponent in opponents:
+        if opponent == "learner" or opponent.startswith("frozen:"):
+            raise ValueError(f"evaluation needs a scripted opponent, not {opponent!r}")
+        TurnBatch(game, [("learner", opponent)])
+
+
 def evaluate(
     agent: DiscreteAgent, game: str, opponent: str, matches: int, seed: int
 ) -> dict[str, float]:
-    if opponent == "learner" or opponent.startswith("frozen:"):
-        raise ValueError(f"evaluation needs a scripted opponent, not {opponent!r}")
+    check_opponents(game, (opponent,))
     seats = [("learner", opponent) if i % 2 == 0 else (opponent, "learner") for i in range(matches)]
     learner = np.arange(matches) % 2
     batch = TurnBatch(game, seats)
@@ -173,6 +179,7 @@ def save(
 
 
 def train(config: TurnConfig) -> DiscreteAgent:
+    check_opponents(config.game, config.evaluate)
     torch.manual_seed(config.seed)
     rng = np.random.default_rng(config.seed)
     probe = TurnBatch(config.game, [("learner", "learner")])
