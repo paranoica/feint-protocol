@@ -347,6 +347,7 @@ impl Table {
             let mut parts = line.split(' ');
             let key = hex_key(parts.next().unwrap_or_default()).ok_or(TableError::Key(number))?;
             let p: Vec<f64> = parts
+                .take(actions + 1)
                 .map(|v| v.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0))
                 .collect::<Option<_>>()
                 .filter(|p: &Vec<f64>| p.len() == actions)

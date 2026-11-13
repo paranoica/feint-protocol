@@ -299,7 +299,8 @@ fn the_table_reader_refuses_broken_files() {
     let good = table_text(&["00ff 0.25 0.75"]);
     let table = Table::read(&good, "matrix", 2).unwrap();
     assert_eq!(table.get(&[0x00, 0xff]), Some(&[0.25, 0.75][..]));
-    let cases: [(String, TableError); 12] = [
+    let cases: [(String, TableError); 13] = [
+        (table_text(&["00 0.5 0.5 0.25"]), TableError::Probability(2)),
         ("feint-table-v2 matrix 2\n".into(), TableError::Header),
         (good.replace("matrix", "other"), TableError::Game),
         (good.replace("matrix 2", "matrix 3"), TableError::Actions),

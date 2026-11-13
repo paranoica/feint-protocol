@@ -25,8 +25,8 @@ fn main() -> ExitCode {
         eprintln!("cannot read {path}: {error}");
         return ExitCode::from(2);
     }
-    let s = match strategy(&bytes) {
-        Ok(s) => s,
+    let (s, missing) = match strategy(&bytes) {
+        Ok(found) => found,
         Err(error) => {
             eprintln!("{path}: {error}");
             return ExitCode::from(2);
@@ -45,7 +45,8 @@ fn main() -> ExitCode {
     }
     let exploit = exploitability(&s);
     let check = family_check(&s);
-    let pass = exploit <= MAX_EXPLOITABILITY
+    let pass = missing == 0
+        && exploit <= MAX_EXPLOITABILITY
         && (check.jack_bluff - 1.0 / 3.0).abs() <= TOLERANCE
         && check.deviation <= TOLERANCE;
     println!("exploitability {exploit:.5} chips per hand (limit {MAX_EXPLOITABILITY})");
@@ -53,6 +54,9 @@ fn main() -> ExitCode {
         "alpha {:.4}; second player's jack bets after a pass {:.4} (1/3 within {TOLERANCE}); largest deviation from the family {:.4}",
         check.alpha, check.jack_bluff, check.deviation
     );
+    if missing > 0 {
+        println!("{missing} information sets missing: a gate needs the whole strategy");
+    }
     println!("criterion 2: {}", if pass { "PASS" } else { "FAIL" });
     if pass {
         ExitCode::SUCCESS
@@ -61,7 +65,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn strategy(bytes: &[u8]) -> Result<Strategy, String> {
+fn strategy(bytes: &[u8]) -> Result<(Strategy, usize), String> {
     if bytes.len() > MAX_TABLE_BYTES {
         return Err(format!("larger than {MAX_TABLE_BYTES} bytes"));
     }
@@ -69,12 +73,12 @@ fn strategy(bytes: &[u8]) -> Result<Strategy, String> {
         let text = std::str::from_utf8(bytes).map_err(|_| "a table is not UTF-8".to_string())?;
         let table = Table::read(text, "kuhn-poker", 2).map_err(|e| e.to_string())?;
         let (s, missing) = strategy_from_table(&table);
-        for set in missing {
+        for set in &missing {
             println!("missing from the table, read as uniform: {set:?}");
         }
-        return Ok(s);
+        return Ok((s, missing.len()));
     }
     let mut policy = TurnPolicy::from_safetensors(bytes, &turn_layout("kuhn", 4, 2))
         .map_err(|e| e.to_string())?;
-    Ok(strategy_from_policy(&mut policy))
+    Ok((strategy_from_policy(&mut policy), 0))
 }
