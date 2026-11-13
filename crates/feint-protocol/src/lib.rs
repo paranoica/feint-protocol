@@ -20,7 +20,7 @@ pub use adapter::{AdapterError, GameAdapter, PlayerId};
 pub use feint_generated::feint::protocol::*;
 pub use rand_chacha::ChaCha8Rng;
 
-pub const PROTOCOL_VERSION: &str = "0.1";
+pub const PROTOCOL_VERSION: &str = "1.0";
 
 pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
 

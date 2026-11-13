@@ -138,11 +138,11 @@ fn encoded_envelope_carries_protocol_version() {
     let bytes = encode(&all_messages()[0]);
     let envelope = root_as_envelope(&bytes).expect("a valid envelope");
     assert_eq!(envelope.protocol_version(), Some(PROTOCOL_VERSION));
-    assert_eq!(PROTOCOL_VERSION, "0.1");
+    assert_eq!(PROTOCOL_VERSION, "1.0");
 }
 
 #[test]
-fn kuhn_poker_fits_schema_v0_1() {
+fn kuhn_poker_fits_the_schema() {
     let seen_by = |player: u8, card: f32, score: Vec<i64>| {
         make!(ObservationT {
             tick: 2,
@@ -193,6 +193,13 @@ fn other_or_missing_protocol_version_is_rejected() {
     assert_eq!(decode(&bytes), Err(DecodeError::Version(String::new())));
     let bytes = raw_envelope(Some(PROTOCOL_VERSION), message.clone(), true);
     assert_eq!(decode(&bytes), Ok(message));
+}
+
+#[test]
+fn a_0_1_envelope_is_refused() {
+    let message = all_messages().remove(3);
+    let bytes = raw_envelope(Some("0.1"), message, true);
+    assert_eq!(decode(&bytes), Err(DecodeError::Version("0.1".into())));
 }
 
 #[test]
@@ -283,7 +290,7 @@ fn a_hand_made_header_keeps_the_bytes_it_had_before_the_trained_fields() {
         .collect();
     assert_eq!(
         hex,
-        "14000000464e543000000a001000080007000c000a00000000000005080000001c00000003000000302e3100\
+        "14000000464e543000000a001000080007000c000a00000000000005080000001c00000003000000312e3000\
          00000e00200008000c001400070010000e00000000000005540000000300000010000000efbeadde00000000\
          00000000020000002400000004000000eaffffff04000000020000009a99193ecdcccc3e0000060008000400\
          0600000004000000020000009a99193ecdcccc3e09000000616972686f636b6579000000"
