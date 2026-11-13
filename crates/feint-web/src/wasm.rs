@@ -414,3 +414,133 @@ impl WebMatch {
         format!("{:016x}", self.session.digest())
     }
 }
+
+#[must_use]
+#[wasm_bindgen]
+pub fn card_games() -> Vec<String> {
+    vec![crate::cards::CARD_GAME_ID.to_string()]
+}
+
+#[must_use]
+#[wasm_bindgen]
+pub fn card_checkpoints() -> Vec<String> {
+    believe::trained::CHECKPOINTS
+        .iter()
+        .map(|c| format!("{:016x}", c.id))
+        .collect()
+}
+
+#[wasm_bindgen]
+pub struct WebCards {
+    inner: crate::cards::CardMatch,
+}
+
+#[wasm_bindgen]
+impl WebCards {
+    #[wasm_bindgen(constructor)]
+    pub fn new(seed: u32, checkpoint: &str) -> Result<WebCards, JsValue> {
+        let checkpoint = parse_checkpoint(checkpoint)
+            .ok_or_else(|| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
+        let inner = crate::cards::CardMatch::new(u64::from(seed), checkpoint)
+            .map_err(|e| JsValue::from_str(&format!("no card bot: {e:?}")))?;
+        Ok(Self { inner })
+    }
+
+    pub fn ranks(&self) -> u8 {
+        self.inner.ranks()
+    }
+
+    pub fn hand(&self) -> Vec<u8> {
+        self.inner.view().hand
+    }
+
+    pub fn known(&self) -> Vec<u8> {
+        self.inner.view().known
+    }
+
+    pub fn mine_in_pile(&self) -> Vec<u8> {
+        self.inner.view().mine_in_pile
+    }
+
+    pub fn my_last(&self) -> Vec<u8> {
+        self.inner.view().my_last
+    }
+
+    pub fn claim(&self) -> Option<u8> {
+        self.inner.view().claim
+    }
+
+    pub fn pile(&self) -> u32 {
+        self.inner.view().pile
+    }
+
+    pub fn last_count(&self) -> u32 {
+        self.inner.view().last_count
+    }
+
+    pub fn their_cards(&self) -> u32 {
+        self.inner.view().their_cards
+    }
+
+    pub fn leader(&self) -> bool {
+        self.inner.view().leader
+    }
+
+    pub fn batches(&self) -> u32 {
+        self.inner.view().batches
+    }
+
+    pub fn actions_left(&self) -> u32 {
+        self.inner.view().actions_left
+    }
+
+    pub fn my_turn(&self) -> bool {
+        self.inner.view().my_turn
+    }
+
+    pub fn outcome(&self) -> Option<i8> {
+        self.inner.view().outcome
+    }
+
+    pub fn event_stride(&self) -> u32 {
+        crate::cards::event_stride(usize::from(self.inner.ranks())) as u32
+    }
+
+    pub fn events(&self) -> Vec<i32> {
+        let ranks = usize::from(self.inner.ranks());
+        self.inner
+            .view()
+            .events
+            .iter()
+            .flat_map(|e| e.flat(ranks))
+            .collect()
+    }
+
+    pub fn legal(&self) -> Vec<i32> {
+        self.inner.legal()
+    }
+
+    pub fn describe(&self, index: i32) -> Vec<i32> {
+        self.inner.describe(index)
+    }
+
+    pub fn play(&mut self, index: i32) -> bool {
+        self.inner.play(index)
+    }
+
+    pub fn advance(&mut self, ticks: u32) {
+        self.inner.advance(ticks);
+    }
+
+    pub fn finished(&self) -> bool {
+        self.inner.finished()
+    }
+
+    pub fn record(&self) -> Vec<u8> {
+        self.inner.record()
+    }
+
+    pub fn digest_hex(&self) -> String {
+        format!("{:016x}", self.inner.digest())
+    }
+}

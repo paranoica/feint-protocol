@@ -50,12 +50,14 @@ fi
 scripts/web-build.sh --wasm-only
 record="target/web-check.record"
 trained_record="target/web-check-trained.record"
+card_record="target/web-check-cards.record"
 {
   read -r browser rate
   read -r trained_browser
   read -r rerun_browser rerun_level rerun_seed rerun_seat
+  read -r card_browser
 } < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
-  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json)
+  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json "$card_record")
 native="$(cargo run -q --locked --release -p feint-web --bin replay -- "$record")"
 echo "browser record: $browser at $rate ticks/s"
 echo "native replay:  $native"
@@ -73,6 +75,14 @@ echo "browser trained record: $trained_browser"
 echo "arena verify (native):  $trained_native"
 if [[ "$trained_browser" != "$trained_native" ]]; then
   echo "a browser match against the trained bot does not verify natively" >&2
+  exit 1
+fi
+
+card_native="$(cargo run -q --locked --release -p feint-arena --bin verify-record -- "$card_record")"
+echo "browser card record:    $card_browser"
+echo "arena verify (native):  $card_native"
+if [[ -z "$card_browser" || "$card_browser" != "$card_native" ]]; then
+  echo "a browser card match does not verify natively" >&2
   exit 1
 fi
 

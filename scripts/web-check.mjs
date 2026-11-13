@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const [glue, wasm, out, trainedOut, fakesJson] = process.argv.slice(2);
-const { initSync, WebMatch, checkpoints } = await import(glue);
+const [glue, wasm, out, trainedOut, fakesJson, cardOut] = process.argv.slice(2);
+const { initSync, WebMatch, checkpoints, WebCards, card_games, card_checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
 const game = new WebMatch(5, 0x5eed);
@@ -69,4 +69,46 @@ if (fakesJson) {
     }
     process.stdout.write(`${rerun.digest_hex()} ${fakes.level} ${link.seed} ${link.seat}\n`);
   }
+}
+
+if (cardOut) {
+  if (card_games().join(",") !== "believe" || card_checkpoints().length !== 1) {
+    throw new Error(`card games or checkpoints are not listed: ${card_games()} ${card_checkpoints()}`);
+  }
+  function cardMatch(seed) {
+    const match = new WebCards(seed, card_checkpoints()[0]);
+    let ticks = 0;
+    let moves = 0;
+    while (!match.finished() && ticks < 36000) {
+      if (match.my_turn()) {
+        const legal = match.legal();
+        const pick = legal[(moves * 7 + seed) % legal.length];
+        const move = match.describe(pick);
+        if (move.length !== 1 && move.length !== 1 + match.ranks()) {
+          throw new Error(`move ${pick} describes as ${move}`);
+        }
+        if (!match.play(pick) || match.play(pick)) {
+          throw new Error("a legal move is queued once");
+        }
+        moves += 1;
+      }
+      match.advance(1);
+      ticks += 1;
+    }
+    if (!match.finished() || match.outcome() === undefined || match.my_turn() || match.legal().length !== 0) {
+      throw new Error("the card match did not end cleanly");
+    }
+    if (match.events().length % match.event_stride() !== 0 || match.events().length === 0) {
+      throw new Error("card events are not whole strides");
+    }
+    return match;
+  }
+  const first = cardMatch(0xca7d);
+  const again = cardMatch(0xca7d).record();
+  const record = first.record();
+  if (record.length !== again.length || !record.every((b, i) => b === again[i])) {
+    throw new Error("a card match plays differently with one seed");
+  }
+  writeFileSync(cardOut, record);
+  process.stdout.write(`${first.digest_hex()}\n`);
 }

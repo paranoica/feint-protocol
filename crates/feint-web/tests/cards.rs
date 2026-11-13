@@ -238,3 +238,77 @@ fn the_outcome_compares_seat_zeros_score_with_the_bots() {
         assert_eq!(CardView::from_observation(&obs, &params).outcome, None);
     }
 }
+
+#[test]
+fn each_legal_move_describes_a_call_or_a_lay_from_the_hand() {
+    let params = Params::default();
+    let ranks = usize::from(params.ranks);
+    let mut m = CardMatch::new(11, SHIPPED).unwrap();
+    assert_eq!(m.ranks(), params.ranks);
+    assert_eq!(m.describe(0), vec![-1]);
+    assert!(m.describe(-1).is_empty());
+    let total = i32::try_from(believe::Moves::new(&params).len()).unwrap();
+    assert!(m.describe(total).is_empty());
+    assert_eq!(m.describe(total - 1).len(), 1 + ranks);
+    let mut turns = 0;
+    while !m.finished() && turns < 6 {
+        if m.view().my_turn {
+            let view = m.view();
+            let mut seen = std::collections::BTreeSet::new();
+            for index in m.legal() {
+                let d = m.describe(index);
+                assert!(seen.insert(d.clone()), "two moves share {d:?}");
+                if d == [-1] {
+                    assert!(view.batches > 0, "a call needs a lay to call");
+                    continue;
+                }
+                assert_eq!(d.len(), 1 + ranks);
+                let claim = d[0];
+                assert!((0..i32::from(params.ranks)).contains(&claim));
+                if view.batches > 0 {
+                    assert_eq!(Some(claim), view.claim.map(i32::from), "the claim stands");
+                }
+                let laid: i32 = d[1..].iter().sum();
+                assert!((1..=i32::from(params.max_batch)).contains(&laid));
+                for (rank, &c) in d[1..].iter().enumerate() {
+                    assert!(
+                        c >= 0 && c <= i32::from(view.hand[rank]),
+                        "{d:?} {:?}",
+                        view.hand
+                    );
+                }
+            }
+            let pick = m.legal()[0];
+            assert!(m.play(pick));
+            turns += 1;
+        }
+        m.advance(1);
+    }
+    assert_eq!(turns, 6);
+}
+
+#[test]
+fn events_flatten_to_a_fixed_stride() {
+    let ranks = 5;
+    let lay = CardEvent::Lay {
+        seat: 1,
+        claim: 3,
+        count: 2,
+    };
+    assert_eq!(lay.flat(ranks), vec![0, 1, 3, 2, 0, 0, 0, 0, 0]);
+    let call = CardEvent::Call {
+        seat: 0,
+        honest: false,
+        taker: 1,
+        revealed: vec![0, 1, 0, 1, 0],
+    };
+    assert_eq!(call.flat(ranks), vec![1, 0, 0, 1, 0, 1, 0, 1, 0]);
+    let honest = CardEvent::Call {
+        seat: 1,
+        honest: true,
+        taker: 1,
+        revealed: vec![2],
+    };
+    assert_eq!(honest.flat(ranks), vec![1, 1, 1, 1, 2, 0, 0, 0, 0]);
+    assert_eq!(feint_web::cards::event_stride(ranks), 9);
+}

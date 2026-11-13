@@ -26,12 +26,44 @@ pub enum CardEvent {
     },
 }
 
+#[must_use]
+pub const fn event_stride(ranks: usize) -> usize {
+    4 + ranks
+}
+
 impl CardEvent {
     #[must_use]
     pub fn seat(&self) -> u8 {
         match self {
             Self::Lay { seat, .. } | Self::Call { seat, .. } => *seat,
         }
+    }
+
+    #[must_use]
+    pub fn flat(&self, ranks: usize) -> Vec<i32> {
+        let mut out = vec![0; event_stride(ranks)];
+        match self {
+            Self::Lay { seat, claim, count } => {
+                out[1] = i32::from(*seat);
+                out[2] = i32::from(*claim);
+                out[3] = i32::from(*count);
+            }
+            Self::Call {
+                seat,
+                honest,
+                taker,
+                revealed,
+            } => {
+                out[0] = 1;
+                out[1] = i32::from(*seat);
+                out[2] = i32::from(*honest);
+                out[3] = i32::from(*taker);
+                for (slot, &c) in out[4..].iter_mut().zip(revealed) {
+                    *slot = i32::from(c);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -202,6 +234,26 @@ impl CardMatch {
             .filter(|&(_, &l)| l == 1)
             .filter_map(|(i, _)| i32::try_from(i).ok())
             .collect()
+    }
+
+    #[must_use]
+    pub fn ranks(&self) -> u8 {
+        self.params.ranks
+    }
+
+    #[must_use]
+    pub fn describe(&self, index: i32) -> Vec<i32> {
+        match self.game.moves().decode(index) {
+            None => Vec::new(),
+            Some(Move::Call) => vec![-1],
+            Some(Move::Lay { claim, counts }) => std::iter::once(i32::from(claim))
+                .chain(
+                    counts[..usize::from(self.params.ranks)]
+                        .iter()
+                        .map(|&c| i32::from(c)),
+                )
+                .collect(),
+        }
     }
 
     pub fn play(&mut self, index: i32) -> bool {
