@@ -36,6 +36,17 @@ fn refusal(why: &'static str) -> AdapterError {
     }
 }
 
+impl Default for Believe {
+    fn default() -> Self {
+        let params = Params::default();
+        Self {
+            moves: Moves::new(&params),
+            table: Table::empty(&params),
+            params,
+        }
+    }
+}
+
 impl Believe {
     pub fn new(params: Params) -> Result<Self, &'static str> {
         let table = Table::empty(&params);

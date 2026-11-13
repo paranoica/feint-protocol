@@ -144,3 +144,37 @@ impl Controller<Believe> for Scripted {
         Some(action)
     }
 }
+
+impl Style {
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        let rate = |prefix: &str| {
+            name.strip_prefix(prefix)
+                .and_then(|n| n.parse::<u16>().ok())
+                .filter(|&n| n <= 1000)
+        };
+        match name {
+            "honest" => Some(Self::Honest),
+            "counter" => Some(Self::Counter),
+            _ => rate("liar:")
+                .map(Self::Liar)
+                .or_else(|| rate("caller:").map(Self::Caller)),
+        }
+    }
+}
+
+impl feint_turn::TurnGame for Believe {
+    fn fresh() -> Self {
+        Self::default()
+    }
+
+    fn reward(score: &[i64], me: usize) -> f32 {
+        let mine = score.get(me).copied().unwrap_or(0);
+        let theirs = score.get(1 - me.min(1)).copied().unwrap_or(0);
+        (mine - theirs).signum() as f32
+    }
+
+    fn scripted(name: &str) -> Option<Box<dyn Controller<Self>>> {
+        Style::named(name).map(|style| Box::new(Scripted::new(style)) as Box<dyn Controller<Self>>)
+    }
+}

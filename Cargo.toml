@@ -15,6 +15,7 @@ members = [
     "crates/feint-ffi",
     "crates/feint-compare",
     "crates/feint-ml",
+    "crates/feint-turn",
     "crates/feint-ml-check",
 ]
 exclude = ["crates/feint-gym"]
@@ -30,6 +31,7 @@ publish = false
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
 feint-ml = { path = "crates/feint-ml" }
+feint-turn = { path = "crates/feint-turn" }
 penalty = { path = "crates/games/penalty" }
 duel = { path = "crates/games/duel" }
 kuhn = { path = "crates/games/kuhn" }

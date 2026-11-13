@@ -315,6 +315,7 @@ version = "0.1.0"
 dependencies = [
  "feint-ai",
  "feint-protocol",
+ "feint-turn",
  "rand_chacha",
 ]
 
@@ -510,6 +511,15 @@ name = "feint-protocol"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
+ "rand_chacha",
+]
+
+[[package]]
+name = "feint-turn"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
  "rand_chacha",
 ]
 
@@ -752,6 +762,7 @@ version = "0.1.0"
 dependencies = [
  "feint-ai",
  "feint-protocol",
+ "feint-turn",
  "rand_chacha",
 ]
 
