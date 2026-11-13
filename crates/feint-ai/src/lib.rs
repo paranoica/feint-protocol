@@ -1,5 +1,6 @@
 pub mod anticipate;
 pub mod bot;
+pub mod cfr;
 pub mod difficulty;
 mod insight;
 pub mod long_game;
