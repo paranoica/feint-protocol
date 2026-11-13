@@ -1,4 +1,5 @@
 mod adapter;
+pub mod check;
 mod moves;
 mod rules;
 mod sample;
