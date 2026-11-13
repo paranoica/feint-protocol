@@ -8,6 +8,7 @@ members = [
     "crates/games/penalty",
     "crates/games/duel",
     "crates/games/kuhn",
+    "crates/games/believe",
     "crates/feint-web",
     "crates/feint-arena",
     "crates/feint-ffi",
@@ -31,6 +32,7 @@ feint-ml = { path = "crates/feint-ml" }
 penalty = { path = "crates/games/penalty" }
 duel = { path = "crates/games/duel" }
 kuhn = { path = "crates/games/kuhn" }
+believe = { path = "crates/games/believe" }
 flatbuffers = "=25.12.19"
 rand_chacha = "0.9"
 
