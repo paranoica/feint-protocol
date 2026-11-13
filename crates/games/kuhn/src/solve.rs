@@ -1,3 +1,4 @@
+use feint_ai::cfr::{Table, info_key};
 use feint_turn::TurnPolicy;
 
 use crate::{BET, PASS};
@@ -240,4 +241,22 @@ pub fn strategy_from_policy(policy: &mut TurnPolicy) -> Strategy {
         );
     }
     s
+}
+
+#[must_use]
+pub fn table_key(set: Infoset) -> Vec<u8> {
+    info_key(set.player(), &observation(set), &[1, 1])
+}
+
+#[must_use]
+pub fn strategy_from_table(table: &Table) -> (Strategy, Vec<Infoset>) {
+    let mut s = Strategy::constant(0.5);
+    let mut missing = Vec::new();
+    for set in Infoset::all() {
+        match table.get(&table_key(set)) {
+            Some(p) => s.set(set, p.get(BET as usize).copied().unwrap_or(0.0)),
+            None => missing.push(set),
+        }
+    }
+    (s, missing)
 }

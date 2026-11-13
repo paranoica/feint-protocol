@@ -1,7 +1,12 @@
+use std::io::Read;
 use std::process::ExitCode;
 
+use feint_ai::cfr::{MAX_TABLE_BYTES, Table};
 use feint_turn::{TurnPolicy, turn_layout};
-use kuhn::solve::{Infoset, exploitability, family_check, reach, strategy_from_policy};
+use kuhn::solve::{
+    Infoset, Strategy, exploitability, family_check, reach, strategy_from_policy,
+    strategy_from_table,
+};
 
 const MAX_EXPLOITABILITY: f64 = 0.01;
 const TOLERANCE: f64 = 0.03;
@@ -11,21 +16,22 @@ fn main() -> ExitCode {
         eprintln!("usage: kuhn-check <policy.safetensors>");
         return ExitCode::from(2);
     };
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            eprintln!("cannot read {path}: {error}");
-            return ExitCode::from(2);
-        }
-    };
-    let mut policy = match TurnPolicy::from_safetensors(&bytes, &turn_layout("kuhn", 4, 2)) {
-        Ok(policy) => policy,
+    let mut bytes = Vec::new();
+    let read = std::fs::File::open(&path).and_then(|file| {
+        file.take(MAX_TABLE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+    });
+    if let Err(error) = read {
+        eprintln!("cannot read {path}: {error}");
+        return ExitCode::from(2);
+    }
+    let s = match strategy(&bytes) {
+        Ok(s) => s,
         Err(error) => {
             eprintln!("{path}: {error}");
             return ExitCode::from(2);
         }
     };
-    let s = strategy_from_policy(&mut policy);
     println!("information set          bet     reach");
     for set in Infoset::all() {
         let card = ["J", "Q", "K"][usize::from(set.card())];
@@ -53,4 +59,22 @@ fn main() -> ExitCode {
     } else {
         ExitCode::from(1)
     }
+}
+
+fn strategy(bytes: &[u8]) -> Result<Strategy, String> {
+    if bytes.len() > MAX_TABLE_BYTES {
+        return Err(format!("larger than {MAX_TABLE_BYTES} bytes"));
+    }
+    if bytes.starts_with(b"feint-table-") {
+        let text = std::str::from_utf8(bytes).map_err(|_| "a table is not UTF-8".to_string())?;
+        let table = Table::read(text, "kuhn-poker", 2).map_err(|e| e.to_string())?;
+        let (s, missing) = strategy_from_table(&table);
+        for set in missing {
+            println!("missing from the table, read as uniform: {set:?}");
+        }
+        return Ok(s);
+    }
+    let mut policy = TurnPolicy::from_safetensors(bytes, &turn_layout("kuhn", 4, 2))
+        .map_err(|e| e.to_string())?;
+    Ok(strategy_from_policy(&mut policy))
 }
