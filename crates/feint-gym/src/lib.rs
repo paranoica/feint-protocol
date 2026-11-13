@@ -11,6 +11,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use std::sync::{Mutex, MutexGuard, TryLockError};
 
+mod turns;
+
 fn refused(error: BatchError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
@@ -290,6 +292,7 @@ fn pilot_match<'py>(
 #[pymodule]
 fn feint_gym(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyHockeyBatch>()?;
+    module.add_class::<turns::PyTurnBatch>()?;
     module.add_function(wrap_pyfunction!(imitation, module)?)?;
     module.add_function(wrap_pyfunction!(pilot_match, module)?)
 }

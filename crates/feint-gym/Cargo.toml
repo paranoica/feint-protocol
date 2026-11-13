@@ -14,6 +14,9 @@ name = "feint_gym"
 crate-type = ["cdylib"]
 
 [dependencies]
+believe = { path = "../games/believe" }
 feint-ml = { path = "../feint-ml" }
+feint-turn = { path = "../feint-turn" }
+kuhn = { path = "../games/kuhn" }
 numpy = "=0.30.0"
 pyo3 = "=0.30.1"
