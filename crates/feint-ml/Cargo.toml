@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+feint-safetensors.workspace = true
 airhockey = { path = "../games/airhockey" }
 feint-ai.workspace = true
 feint-protocol.workspace = true

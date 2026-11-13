@@ -294,3 +294,48 @@ fn a_stranger_or_the_end_of_time_never_panics() {
     assert_eq!(obs.to_act, -1);
     assert!(obs.state.unwrap_or_default().is_empty());
 }
+
+#[test]
+fn as_a_turn_game_kuhn_pays_chips_and_names_its_scripted_seats() {
+    use feint_turn::{TurnBatch, TurnGame};
+    assert_eq!(Kuhn::reward(&[2, -2], 0), 2.0);
+    assert_eq!(Kuhn::reward(&[2, -2], 1), -2.0);
+    assert_eq!(Kuhn::reward(&[-1, 1], 1), 1.0);
+    for name in ["pass", "bet", "random"] {
+        assert!(Kuhn::scripted(name).is_some(), "{name}");
+    }
+    assert!(Kuhn::scripted("liar:300").is_none());
+    let mut batch = TurnBatch::<Kuhn>::new(&[["learner", "bet"]; 64]).unwrap();
+    assert_eq!(batch.features(), 4);
+    assert_eq!(batch.actions(), 2);
+    let seeds: Vec<u64> = (0..64).collect();
+    let out = batch.reset(&seeds).unwrap();
+    assert!(out.ready.chunks(2).all(|r| r == [1, 0]));
+    let out = batch.step(&[PASS, -1].repeat(64)).unwrap();
+    assert!(
+        out.terminated.iter().all(|&t| t == 0),
+        "always-bet answered, player 0 decides again"
+    );
+    let out = batch.step(&[PASS, -1].repeat(64)).unwrap();
+    assert!(out.terminated.iter().all(|&t| t == 1));
+    assert!(
+        out.reward.chunks(2).all(|r| r == [-1.0, 1.0]),
+        "folding to a bet loses the ante"
+    );
+}
+
+#[test]
+fn the_random_seat_bets_about_half_the_time() {
+    use feint_turn::TurnBatch;
+    let mut batch = TurnBatch::<Kuhn>::new(&[["random", "learner"]; 400]).unwrap();
+    let seeds: Vec<u64> = (0..400).collect();
+    let out = batch.reset(&seeds).unwrap();
+    let bets = out
+        .obs
+        .chunks(4)
+        .skip(1)
+        .step_by(2)
+        .filter(|o| o[1] == BET as f32)
+        .count();
+    assert!((160..=240).contains(&bets), "{bets} bets of 400");
+}

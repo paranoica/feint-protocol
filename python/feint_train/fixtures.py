@@ -1,13 +1,14 @@
 import argparse
 import struct
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import torch
-from feint_gym import HockeyBatch
+from feint_gym import HockeyBatch, TurnBatch
 
-from feint_train.agent import Agent
-from feint_train.export import export
+from feint_train.agent import Agent, DiscreteAgent
+from feint_train.export import export, export_turn
 
 
 def write_matrix(path: Path, data: np.ndarray) -> None:
@@ -99,6 +100,36 @@ def record_features(agent: Agent, count: int, seed: int, threads: int) -> np.nda
     return np.ascontiguousarray(picked, dtype=np.float32)
 
 
+def inactive_units(agent: DiscreteAgent, inputs: np.ndarray) -> int:
+    with torch.no_grad():
+        first = agent.actor[:2](agent.normalise(torch.as_tensor(inputs)))
+        second = agent.actor[2:4](first)
+    return int((first.max(0).values <= 0).sum() + (second.max(0).values <= 0).sum())
+
+
+def turn_fixture(
+    game: str, seed: int, hidden: int, rows: int
+) -> tuple[str, str, np.ndarray, DiscreteAgent]:
+    probe = TurnBatch(game, [("learner", "learner")])
+    scales = np.array(probe.scales, dtype=np.float32)
+    torch.manual_seed(seed)
+    agent = DiscreteAgent(scales, probe.actions, hidden)
+    rng = np.random.default_rng(seed)
+    inputs = (rng.standard_normal((rows, len(scales))) * scales).astype(np.float32)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "policy.safetensors"
+        export_turn(agent, path, game)
+        raw = path.read_bytes().hex()
+    hex_text = "".join(raw[i : i + 96] + "\n" for i in range(0, len(raw), 96))
+    with torch.no_grad():
+        logits = agent.logits(torch.as_tensor(inputs)).numpy()
+    logits_text = "".join(
+        " ".join(repr(float(v)) for v in np.concatenate([x, y])) + "\n"
+        for x, y in zip(inputs, logits, strict=True)
+    )
+    return hex_text, logits_text, inputs, agent
+
+
 def make_fixtures(
     checkpoint: Path, out: Path, policy: Path, recorded: int, seed: int, threads: int
 ) -> None:
@@ -116,15 +147,34 @@ def make_fixtures(
     write_matrix(out / "outputs.bin", agent.act(inputs))
 
 
+def write_turn_fixture(folder: Path, game: str, seed: int, hidden: int, rows: int) -> None:
+    hex_text, logits_text, inputs, agent = turn_fixture(game, seed, hidden, rows)
+    if inactive_units(agent, inputs):
+        raise ValueError("some hidden unit never fires on these rows; pick another seed")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{game}-seed{seed}.safetensors.hex").write_text(hex_text)
+    (folder / f"{game}-seed{seed}.logits").write_text(logits_text)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--turn", nargs=4, metavar=("GAME", "SEED", "HIDDEN", "ROWS"))
+    parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--policy", type=Path, required=True)
+    parser.add_argument("--policy", type=Path)
     parser.add_argument("--recorded", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=4242)
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
+    if args.turn:
+        game, *numbers = args.turn
+        if not all(n.isascii() and n.isdecimal() for n in numbers):
+            parser.error("--turn takes GAME and three whole numbers")
+        seed, hidden, rows = map(int, numbers)
+        write_turn_fixture(args.out, game, seed, hidden, rows)
+        return
+    if args.checkpoint is None or args.policy is None:
+        parser.error("--checkpoint and --policy are required without --turn")
     make_fixtures(args.checkpoint, args.out, args.policy, args.recorded, args.seed, args.threads)
 
 

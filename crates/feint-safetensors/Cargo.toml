@@ -1,0 +1,11 @@
+[package]
+name = "feint-safetensors"
+description = "A bounded reader for safetensors files holding little-endian f32 tensors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

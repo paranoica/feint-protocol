@@ -315,6 +315,7 @@ version = "0.1.0"
 dependencies = [
  "feint-ai",
  "feint-protocol",
+ "feint-turn",
  "rand_chacha",
 ]
 
@@ -492,6 +493,7 @@ dependencies = [
  "airhockey",
  "feint-ai",
  "feint-protocol",
+ "feint-safetensors",
  "rand_chacha",
 ]
 
@@ -510,6 +512,20 @@ name = "feint-protocol"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
+ "rand_chacha",
+]
+
+[[package]]
+name = "feint-safetensors"
+version = "0.1.0"
+
+[[package]]
+name = "feint-turn"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "feint-safetensors",
  "rand_chacha",
 ]
 
@@ -752,6 +768,7 @@ version = "0.1.0"
 dependencies = [
  "feint-ai",
  "feint-protocol",
+ "feint-turn",
  "rand_chacha",
 ]
 

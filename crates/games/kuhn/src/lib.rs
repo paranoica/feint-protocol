@@ -1,7 +1,9 @@
+use feint_ai::Controller;
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
     GameSpecT, MatchResultT, ObservationT, PlayerId, TimeMode,
 };
+use feint_turn::TurnGame;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 pub const PASS: i32 = 0;
@@ -249,5 +251,72 @@ impl GameAdapter for Kuhn {
             result.duration_ticks = self.deal.tick;
             result
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Habit {
+    Pass,
+    Bet,
+    Random,
+}
+
+pub struct Habitual {
+    habit: Habit,
+    me: PlayerId,
+    rng: ChaCha8Rng,
+}
+
+impl Habitual {
+    #[must_use]
+    pub fn new(habit: Habit) -> Self {
+        Self {
+            habit,
+            me: 0,
+            rng: ChaCha8Rng::seed_from_u64(0),
+        }
+    }
+}
+
+impl Controller<Kuhn> for Habitual {
+    fn new_match(&mut self, _spec: &GameSpecT, me: PlayerId, seed: u64) {
+        self.me = me;
+        self.rng =
+            ChaCha8Rng::seed_from_u64(seed ^ 0x5bd1_e995_u64.wrapping_mul(u64::from(me) + 1));
+    }
+
+    fn on_tick(&mut self, _adapter: &Kuhn, obs: &ObservationT) -> Option<ActionT> {
+        if obs.to_act != self.me as i8 {
+            return None;
+        }
+        let mut action = ActionT::default();
+        action.tick = obs.tick;
+        action.player = self.me;
+        action.discrete = match self.habit {
+            Habit::Pass => PASS,
+            Habit::Bet => BET,
+            Habit::Random => (self.rng.next_u32() % 2) as i32,
+        };
+        Some(action)
+    }
+}
+
+impl TurnGame for Kuhn {
+    fn fresh() -> Self {
+        Self::new()
+    }
+
+    fn reward(score: &[i64], me: usize) -> f32 {
+        score.get(me).map_or(0.0, |&chips| chips as f32)
+    }
+
+    fn scripted(name: &str) -> Option<Box<dyn Controller<Self>>> {
+        let habit = match name {
+            "pass" => Habit::Pass,
+            "bet" => Habit::Bet,
+            "random" => Habit::Random,
+            _ => return None,
+        };
+        Some(Box::new(Habitual::new(habit)))
     }
 }

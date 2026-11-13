@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from feint_train.agent import Agent
+from feint_train.agent import Agent, DiscreteAgent
 
 
 @dataclass
@@ -30,7 +30,7 @@ def minibatches(order: np.ndarray, parts: int) -> list[np.ndarray]:
 
 
 def ppo_update(
-    agent: Agent,
+    agent: Agent | DiscreteAgent,
     optimizer: torch.optim.Optimizer,
     data: dict[str, np.ndarray],
     advantage: np.ndarray,
@@ -42,6 +42,8 @@ def ppo_update(
     obs = torch.as_tensor(data["obs"], device=device)
     action = torch.as_tensor(data["action"], device=device)
     old_logp = torch.as_tensor(data["logp"], device=device)
+    legal = data.get("legal")
+    masks = None if legal is None else torch.as_tensor(legal, device=device)
     adv = torch.as_tensor(advantage, dtype=torch.float32, device=device)
     ret = torch.as_tensor(returns, dtype=torch.float32, device=device)
     count = len(obs)
@@ -50,8 +52,8 @@ def ppo_update(
     for _ in range(config.epochs):
         for part in minibatches(generator.permutation(count), config.minibatches):
             index = torch.as_tensor(part, device=device)
-            dist = agent.distribution(obs[index])
-            logp = dist.log_prob(action[index]).sum(-1)
+            dist = agent.policy(obs[index], None if masks is None else masks[index])
+            logp = agent.log_prob(dist, action[index])
             ratio = (logp - old_logp[index]).exp()
             a = adv[index]
             a = (a - a.mean()) / (a.std(unbiased=False) + 1e-8)
@@ -59,7 +61,7 @@ def ppo_update(
                 -a * ratio, -a * ratio.clamp(1 - config.clip, 1 + config.clip)
             ).mean()
             value_loss = 0.5 * (agent.value(obs[index]) - ret[index]).pow(2).mean()
-            entropy = dist.entropy().sum(-1).mean()
+            entropy = agent.entropy(dist).mean()
             loss = policy_loss + config.value_coef * value_loss - config.entropy * entropy
             optimizer.zero_grad()
             loss.backward()

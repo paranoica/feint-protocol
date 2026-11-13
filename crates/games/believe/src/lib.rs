@@ -1,5 +1,7 @@
 mod adapter;
+mod moves;
 mod rules;
+mod sample;
 mod scripted;
 
 pub use adapter::{Believe, GAME_VERSION, observation_len};

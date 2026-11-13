@@ -19,6 +19,7 @@ class Transition:
     linked: bool = False
     next_value: float = 0.0
     closed: bool = False
+    legal: np.ndarray | None = None
 
 
 @dataclass
@@ -27,6 +28,7 @@ class Collector:
     gamma: float
     potential_scale: float
     shaping: float = 0.0
+    turns: bool = False
     transitions: list[Transition] = field(default_factory=list)
     open: dict[int, Transition] = field(default_factory=dict)
     order: dict[int, list[int]] = field(default_factory=dict)
@@ -41,14 +43,16 @@ class Collector:
         actions: np.ndarray,
         logps: np.ndarray,
         values: np.ndarray,
+        legal: np.ndarray | None = None,
     ) -> None:
         for slot in np.flatnonzero(ready):
             item = Transition(
                 slot=int(slot),
                 obs=obs[slot].copy(),
-                action=actions[slot].copy(),
+                action=np.array(actions[slot]).copy(),
                 logp=float(logps[slot]),
                 value=float(values[slot]),
+                legal=None if legal is None else legal[slot].copy(),
             )
             self.open[int(slot)] = item
             self.order.setdefault(int(slot), []).append(len(self.transitions))
@@ -81,6 +85,8 @@ class Collector:
                 item.reward += self.gamma * self.potential(obs[slot]) - self.potential(item.obs)
                 item.next_value = float(values[slot])
                 item.linked = True
+            elif self.turns:
+                continue
             else:
                 raise RuntimeError(f"slot {slot} decided and then neither decided nor ended")
             item.closed = True
@@ -106,12 +112,15 @@ class Collector:
         return advantage, advantage + values
 
     def arrays(self) -> dict[str, np.ndarray]:
-        return {
+        out = {
             "obs": np.stack([t.obs for t in self.transitions]).astype(np.float32),
             "action": np.stack([t.action for t in self.transitions]).astype(np.float32),
             "logp": np.array([t.logp for t in self.transitions], dtype=np.float32),
             "value": np.array([t.value for t in self.transitions], dtype=np.float32),
         }
+        if self.transitions and self.transitions[0].legal is not None:
+            out["legal"] = np.stack([t.legal for t in self.transitions]).astype(np.uint8)
+        return out
 
     def clear(self) -> None:
         if self.open:

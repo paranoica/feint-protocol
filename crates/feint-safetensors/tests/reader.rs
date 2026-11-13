@@ -1,6 +1,6 @@
-use feint_ml::safetensors::{MAX_HEADER, SafeTensors, SafeTensorsError};
+use feint_safetensors::{MAX_HEADER, SafeTensors, SafeTensorsError};
 
-const PYTHON_FILE: &[u8] = include_bytes!("../checkpoints/airhockey-g999.safetensors");
+const PYTHON_FILE: &[u8] = include_bytes!("../../feint-ml/checkpoints/airhockey-g999.safetensors");
 
 fn file(header: &str, data: &[u8]) -> Vec<u8> {
     let mut out = (header.len() as u64).to_le_bytes().to_vec();

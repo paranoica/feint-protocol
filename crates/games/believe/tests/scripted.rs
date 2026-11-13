@@ -250,3 +250,23 @@ fn every_scripted_pair_finishes_matches_both_ways() {
         }
     }
 }
+
+#[test]
+fn as_a_turn_game_believe_pays_the_match_and_names_its_seats() {
+    use feint_turn::{TurnBatch, TurnGame};
+    assert_eq!(Believe::reward(&[1, 0], 0), 1.0);
+    assert_eq!(Believe::reward(&[1, 0], 1), -1.0);
+    assert_eq!(Believe::reward(&[0, 0], 1), 0.0);
+    for name in ["honest", "liar:300", "caller:0", "caller:1000", "counter"] {
+        assert!(Believe::scripted(name).is_some(), "{name}");
+    }
+    for name in ["liar", "liar:1001", "caller:x", "bet"] {
+        assert!(Believe::scripted(name).is_none(), "{name}");
+    }
+    let mut batch =
+        TurnBatch::<Believe>::new(&[["learner", "honest"], ["counter", "learner"]]).unwrap();
+    assert_eq!(batch.features(), 31);
+    assert_eq!(batch.actions(), 276);
+    let out = batch.reset(&[3, 4]).unwrap();
+    assert_eq!(out.ready.iter().filter(|&&r| r == 1).count(), 2);
+}

@@ -18,6 +18,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "believe"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "feint-turn",
+ "rand_chacha",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -41,7 +51,10 @@ dependencies = [
 name = "feint-gym"
 version = "0.1.0"
 dependencies = [
+ "believe",
  "feint-ml",
+ "feint-turn",
+ "kuhn",
  "numpy",
  "pyo3",
 ]
@@ -53,6 +66,7 @@ dependencies = [
  "airhockey",
  "feint-ai",
  "feint-protocol",
+ "feint-safetensors",
  "rand_chacha",
 ]
 
@@ -61,6 +75,20 @@ name = "feint-protocol"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
+ "rand_chacha",
+]
+
+[[package]]
+name = "feint-safetensors"
+version = "0.1.0"
+
+[[package]]
+name = "feint-turn"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "feint-safetensors",
  "rand_chacha",
 ]
 
@@ -91,6 +119,16 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "kuhn"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "feint-turn",
+ "rand_chacha",
+]
 
 [[package]]
 name = "libc"

@@ -5,7 +5,7 @@ import numpy as np
 from safetensors import safe_open
 from safetensors.numpy import load_file, save_file
 
-from feint_train.agent import HIDDEN, Agent
+from feint_train.agent import HIDDEN, Agent, DiscreteAgent
 
 FORMAT = "feint-mlp-v1"
 LAYOUT = "airhockey-v3:anticipated-observation16+reaction_s+physique"
@@ -30,6 +30,35 @@ def export(agent: Agent, path: Path, level: str = "") -> None:
         "hidden": f"{HIDDEN},{HIDDEN}",
         "activation": "relu",
         "level": level,
+        "inv_scales": ",".join(np.format_float_positional(x, unique=True) for x in inverse),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    save_file({k: np.ascontiguousarray(v) for k, v in tensors.items()}, str(path), metadata)
+
+
+def turn_layout(game: str, features: int, actions: int) -> str:
+    return f"turn-v1:{game}:{features}:{actions}"
+
+
+def export_turn(agent: DiscreteAgent, path: Path, game: str) -> None:
+    actor = agent.actor
+    inverse = agent.inverse_scales().detach().cpu().numpy().astype(np.float32)
+    tensors = {
+        f"layer{i}.{part}": getattr(actor[2 * i], part).detach().cpu().numpy().astype(np.float32)
+        for i in range(3)
+        for part in ("weight", "bias")
+    }
+    if not all(np.isfinite(v).all() for v in tensors.values()):
+        raise ValueError("the policy has a weight that is not a finite number")
+    actions = len(tensors["layer2.bias"])
+    metadata = {
+        "format": FORMAT,
+        "layout": turn_layout(game, len(inverse), actions),
+        "game": game,
+        "features": str(len(inverse)),
+        "outputs": str(actions),
+        "hidden": f"{actor[0].out_features},{actor[2].out_features}",
+        "activation": "relu",
         "inv_scales": ",".join(np.format_float_positional(x, unique=True) for x in inverse),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
