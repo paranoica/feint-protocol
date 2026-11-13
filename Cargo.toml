@@ -14,6 +14,7 @@ members = [
     "crates/feint-arena",
     "crates/feint-ffi",
     "crates/feint-compare",
+    "crates/feint-safetensors",
     "crates/feint-ml",
     "crates/feint-turn",
     "crates/feint-ml-check",
@@ -31,6 +32,7 @@ publish = false
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
 feint-ml = { path = "crates/feint-ml" }
+feint-safetensors = { path = "crates/feint-safetensors" }
 feint-turn = { path = "crates/feint-turn" }
 penalty = { path = "crates/games/penalty" }
 duel = { path = "crates/games/duel" }
