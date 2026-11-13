@@ -19,6 +19,7 @@ struct Matrix {
     mode: TimeMode,
     stuck: bool,
     twice: bool,
+    mute: bool,
     moves: Moves,
 }
 
@@ -31,6 +32,7 @@ impl Matrix {
             mode: TimeMode::TurnBased,
             stuck: false,
             twice: false,
+            mute: false,
             moves: Moves {
                 made: vec![],
                 tick: 0,
@@ -111,7 +113,9 @@ impl GameAdapter for Matrix {
                 .map(|a| u8::from(mine && a < self.width(usize::from(player))))
                 .collect(),
         );
-        let score = if done {
+        let score = if done && self.mute {
+            vec![]
+        } else if done {
             let last = &state.made[n - 2..];
             let v = self.payoff[last[0] as usize][last[1] as usize];
             vec![v, -v]
@@ -340,4 +344,158 @@ fn the_table_reader_refuses_broken_files() {
         Table::read(&many, "matrix", 2).err(),
         Some(TableError::TooManyRows)
     );
+}
+
+#[derive(Clone)]
+struct Exit(Vec<i32>);
+
+impl GameAdapter for Exit {
+    type State = Vec<i32>;
+
+    fn spec(&self) -> GameSpecT {
+        let mut spec = GameSpecT::default();
+        spec.game_id = Some("exit".into());
+        spec.num_players = 2;
+        spec.time_mode = TimeMode::TurnBased;
+        let mut space = ActionSpaceT::default();
+        space.discrete = 2;
+        spec.action_space = Some(Box::new(space));
+        spec
+    }
+
+    fn reset(&mut self, _seed: u64, _bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
+        self.0.clear();
+        Ok(())
+    }
+
+    fn live(&self) -> &Vec<i32> {
+        &self.0
+    }
+
+    fn apply(&mut self, _action: &ActionT) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    fn advance(&mut self, _events: &mut Vec<EventT>) {}
+
+    fn observe(&self, state: &Vec<i32>, player: PlayerId, out: &mut ObservationT) {
+        let done = matches!(state.as_slice(), [0] | [1, _]);
+        out.to_act = if done { -1 } else { 0 };
+        out.state = Some(vec![f32::from(player), state.len() as f32]);
+        let mine = u8::from(!done && player == 0);
+        out.legal = Some(vec![mine, mine]);
+        let v = match state.as_slice() {
+            [0] => 1,
+            [1, 1] => -1,
+            _ => 0,
+        };
+        out.score = Some(vec![v, -v]);
+    }
+
+    fn state_from_observation(&self, _obs: &ObservationT, _rng: &mut ChaCha8Rng) -> Vec<i32> {
+        self.0.clone()
+    }
+
+    fn simulate(&self, state: &Vec<i32>, actions: &[ActionT], _ticks: u32) -> Vec<i32> {
+        let mut next = state.clone();
+        next.extend(actions.iter().map(|a| a.discrete));
+        next
+    }
+
+    fn signals(&self, _state: &Vec<i32>, _action: &ActionT, out: &mut Vec<f32>) {
+        out.clear();
+    }
+
+    fn digest(&self, _state: &Vec<i32>) -> u64 {
+        0
+    }
+
+    fn result(&self) -> Option<MatchResultT> {
+        None
+    }
+}
+
+#[test]
+fn a_set_the_player_stops_choosing_to_reach_keeps_no_average_weight() {
+    let mut solver = Solver::new(Exit(vec![]), 1).unwrap();
+    solver.run(10).unwrap();
+    let table = solver.table();
+    assert_eq!(
+        table.get(&info_key(0, &[0.0, 0.0], &[1, 1])),
+        Some(&[1.0, 0.0][..])
+    );
+    assert_eq!(
+        table.get(&info_key(0, &[0.0, 1.0], &[1, 1])),
+        Some(&[0.5, 0.5][..])
+    );
+}
+
+#[test]
+fn a_terminal_without_a_score_for_every_player_is_refused() {
+    let mut game = Matrix::new(vec![vec![1, -1], vec![-1, 1]]);
+    game.mute = true;
+    let mut solver = Solver::new(game, 1).unwrap();
+    assert!(matches!(solver.run(1), Err(CfrError::NoScore)));
+}
+
+#[test]
+fn negative_zero_and_zero_are_one_information_set() {
+    assert_eq!(
+        info_key(0, &[-0.0, 1.0], &[1]),
+        info_key(0, &[0.0, 1.0], &[1])
+    );
+}
+
+struct Named(Matrix, &'static str);
+
+impl GameAdapter for Named {
+    type State = Moves;
+    fn spec(&self) -> GameSpecT {
+        let mut spec = self.0.spec();
+        spec.game_id = Some(self.1.into());
+        spec
+    }
+    fn reset(&mut self, seed: u64, bodies: &[BodyParamsT]) -> Result<(), AdapterError> {
+        self.0.reset(seed, bodies)
+    }
+    fn live(&self) -> &Moves {
+        self.0.live()
+    }
+    fn apply(&mut self, action: &ActionT) -> Result<(), AdapterError> {
+        self.0.apply(action)
+    }
+    fn advance(&mut self, events: &mut Vec<EventT>) {
+        self.0.advance(events);
+    }
+    fn observe(&self, state: &Moves, player: PlayerId, out: &mut ObservationT) {
+        self.0.observe(state, player, out);
+    }
+    fn state_from_observation(&self, obs: &ObservationT, rng: &mut ChaCha8Rng) -> Moves {
+        self.0.state_from_observation(obs, rng)
+    }
+    fn simulate(&self, state: &Moves, actions: &[ActionT], ticks: u32) -> Moves {
+        self.0.simulate(state, actions, ticks)
+    }
+    fn signals(&self, state: &Moves, action: &ActionT, out: &mut Vec<f32>) {
+        self.0.signals(state, action, out);
+    }
+    fn digest(&self, state: &Moves) -> u64 {
+        self.0.digest(state)
+    }
+    fn result(&self) -> Option<MatchResultT> {
+        None
+    }
+}
+
+#[test]
+fn a_game_id_a_table_header_cannot_carry_is_refused() {
+    for id in ["two words", "tab\there", "line\nbreak", ""] {
+        let game = Named(Matrix::new(vec![vec![1, -1], vec![-1, 1]]), id);
+        assert!(
+            matches!(Solver::new(game, 1), Err(CfrError::GameId)),
+            "{id:?}"
+        );
+    }
+    let game = Named(Matrix::new(vec![vec![1, -1], vec![-1, 1]]), "plain-id");
+    assert!(Solver::new(game, 1).is_ok());
 }

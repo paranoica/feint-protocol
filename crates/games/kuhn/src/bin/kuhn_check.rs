@@ -13,7 +13,7 @@ const TOLERANCE: f64 = 0.03;
 
 fn main() -> ExitCode {
     let Some(path) = std::env::args().nth(1) else {
-        eprintln!("usage: kuhn-check <policy.safetensors>");
+        eprintln!("usage: kuhn-check <policy.safetensors | strategy table>");
         return ExitCode::from(2);
     };
     let mut bytes = Vec::new();
@@ -46,6 +46,7 @@ fn main() -> ExitCode {
     let exploit = exploitability(&s);
     let check = family_check(&s);
     let pass = missing == 0
+        && s.is_probability()
         && exploit <= MAX_EXPLOITABILITY
         && (check.jack_bluff - 1.0 / 3.0).abs() <= TOLERANCE
         && check.deviation <= TOLERANCE;

@@ -15,6 +15,8 @@ pub const MAX_KEY_BYTES: usize = 4096;
 pub enum CfrError {
     NotTurnBased,
     NoActions,
+    GameId,
+    NoScore,
     Adapter(AdapterError),
     NoLegalAction,
     LegalLength { got: usize, want: usize },
@@ -26,6 +28,8 @@ impl std::fmt::Display for CfrError {
         match self {
             Self::NotTurnBased => write!(f, "the game is not turn-based"),
             Self::NoActions => write!(f, "the game has no discrete actions"),
+            Self::GameId => write!(f, "the game id is empty or has whitespace"),
+            Self::NoScore => write!(f, "a finished match has no score for every player"),
             Self::Adapter(e) => write!(f, "{e}"),
             Self::NoLegalAction => write!(f, "a player is to act with no legal action"),
             Self::LegalLength { got, want } => {
@@ -47,7 +51,8 @@ pub fn info_key(player: PlayerId, state: &[f32], legal: &[u8]) -> Vec<u8> {
     key.push(player);
     key.extend_from_slice(&(state.len() as u32).to_le_bytes());
     for v in state {
-        key.extend_from_slice(&v.to_le_bytes());
+        let canonical = if v.is_nan() { f32::NAN } else { v + 0.0 };
+        key.extend_from_slice(&canonical.to_le_bytes());
     }
     key.extend_from_slice(&(legal.len() as u32).to_le_bytes());
     key.extend_from_slice(legal);
@@ -112,6 +117,10 @@ impl<A: GameAdapter> Solver<A> {
             .and_then(|s| usize::try_from(s.discrete).ok())
             .filter(|&n| n > 0)
             .ok_or(CfrError::NoActions)?;
+        let id = spec.game_id.as_deref().unwrap_or_default();
+        if id.is_empty() || id.contains(char::is_whitespace) {
+            return Err(CfrError::GameId);
+        }
         let players = usize::from(spec.num_players);
         Ok(Self {
             game,
@@ -175,7 +184,10 @@ impl<A: GameAdapter> Solver<A> {
             let me = PlayerId::try_from(traverser).unwrap_or(PlayerId::MAX);
             self.game.observe(state, me, &mut self.seen);
             let score = self.seen.score.as_deref().unwrap_or_default();
-            return Ok(score.get(traverser).copied().unwrap_or(0) as f64);
+            if score.len() < self.players {
+                return Err(CfrError::NoScore);
+            }
+            return Ok(score[traverser] as f64);
         };
         self.game.observe(state, player, &mut self.seen);
         let tick = self.seen.tick;

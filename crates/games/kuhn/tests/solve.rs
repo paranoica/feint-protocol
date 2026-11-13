@@ -182,3 +182,14 @@ fn the_policy_reader_maps_observations_to_information_sets() {
         }
     }
 }
+
+#[test]
+fn a_strategy_is_a_probability_only_when_every_value_is_in_zero_to_one() {
+    assert!(Strategy::constant(0.0).is_probability());
+    assert!(Strategy::constant(1.0).is_probability());
+    for bad in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+        let mut s = Strategy::constant(0.5);
+        s.set(Infoset::facing_after_pass(2), bad);
+        assert!(!s.is_probability(), "{bad}");
+    }
+}

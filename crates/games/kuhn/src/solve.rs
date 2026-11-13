@@ -115,6 +115,11 @@ impl Strategy {
     pub fn set(&mut self, set: Infoset, p: f64) {
         self.bet[set.index()] = p;
     }
+
+    #[must_use]
+    pub fn is_probability(&self) -> bool {
+        self.bet.iter().all(|p| (0.0..=1.0).contains(p))
+    }
 }
 
 fn showdown(c0: u8, c1: u8, stake: f64) -> f64 {
