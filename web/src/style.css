@@ -388,8 +388,13 @@ select {
   display: grid;
   gap: 4px;
 }
+#cards {
+  align-items: flex-start;
+  overflow-y: auto;
+}
 .cards-table {
   max-width: 720px;
+  margin: auto;
   gap: 16px;
 }
 .cards-head {
