@@ -131,6 +131,18 @@ def check_opponents(game: str, opponents: tuple[str, ...]) -> None:
         TurnBatch(game, [("learner", opponent)])
 
 
+def check_mix(game: str, mix: dict[str, float]) -> None:
+    for name in mix:
+        if name in ("learner", "frozen"):
+            continue
+        if name.startswith("frozen:"):
+            raise ValueError(f"the mix takes 'frozen', not {name!r}")
+        try:
+            TurnBatch(game, [("learner", name)])
+        except ValueError as error:
+            raise ValueError(f"the mix names an unknown seat {name!r}") from error
+
+
 def evaluate(
     agent: DiscreteAgent, game: str, opponent: str, matches: int, seed: int
 ) -> dict[str, float]:
@@ -180,6 +192,7 @@ def save(
 
 def train(config: TurnConfig) -> DiscreteAgent:
     check_opponents(config.game, config.evaluate)
+    check_mix(config.game, config.mix)
     torch.manual_seed(config.seed)
     rng = np.random.default_rng(config.seed)
     probe = TurnBatch(config.game, [("learner", "learner")])

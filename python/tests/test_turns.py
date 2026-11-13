@@ -364,3 +364,41 @@ def test_the_turn_fixture_reproduces_and_every_hidden_unit_fires(tmp_path: Path)
     assert numbers.shape == (32, 4 + 2)
     np.testing.assert_array_equal(numbers[:, :4], inputs)
     np.testing.assert_allclose(forward(path, inputs), numbers[:, 4:], rtol=0, atol=1e-6)
+
+
+def test_training_refuses_an_unknown_mix_seat_before_it_starts(tmp_path: Path) -> None:
+    from feint_train.turns import TurnConfig, train
+
+    for name in ("nobody", "frozen:3", "bett"):
+        logdir = tmp_path / name.replace(":", "-")
+        config = TurnConfig(
+            game="kuhn", logdir=logdir, envs=4, updates=2, mix={"learner": 1.0, name: 0.01}
+        )
+        with pytest.raises(ValueError, match="mix"):
+            train(config)
+        assert not logdir.exists()
+
+
+def test_the_hockey_fixture_command_still_requires_its_files(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "feint_train.fixtures", "--out", str(tmp_path / "x")],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    assert result.returncode == 2
+    assert "--checkpoint" in result.stderr
+    assert "Traceback" not in result.stderr
+    bad = subprocess.run(
+        [sys.executable, "-m", "feint_train.fixtures", "--turn", "kuhn", "x", "8", "32"]
+        + ["--out", str(tmp_path / "y")],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    assert bad.returncode == 2
+    assert "whole numbers" in bad.stderr
+    assert not (tmp_path / "y").exists()

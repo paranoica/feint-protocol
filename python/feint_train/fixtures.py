@@ -167,9 +167,14 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
     if args.turn:
-        game, seed, hidden, rows = args.turn
-        write_turn_fixture(args.out, game, int(seed), int(hidden), int(rows))
+        game, *numbers = args.turn
+        if not all(n.isdigit() for n in numbers):
+            parser.error("--turn takes GAME and three whole numbers")
+        seed, hidden, rows = map(int, numbers)
+        write_turn_fixture(args.out, game, seed, hidden, rows)
         return
+    if args.checkpoint is None or args.policy is None:
+        parser.error("--checkpoint and --policy are required without --turn")
     make_fixtures(args.checkpoint, args.out, args.policy, args.recorded, args.seed, args.threads)
 
 
