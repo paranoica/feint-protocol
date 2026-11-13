@@ -35,6 +35,8 @@ pub fn exp(x: f64) -> f64 {
     let k = k as i64;
     if k < -1022 {
         series * power_of_two(k + 600) * power_of_two(-600)
+    } else if k > 1023 {
+        series * power_of_two(k - 600) * power_of_two(600)
     } else {
         series * power_of_two(k)
     }
@@ -43,16 +45,16 @@ pub fn exp(x: f64) -> f64 {
 pub fn masked_softmax(logits: &[f32], legal: &[u8], out: &mut Vec<f32>) {
     out.clear();
     let allowed = |i: usize| legal.get(i) == Some(&1);
+    if !(0..logits.len()).any(allowed) {
+        out.resize(logits.len(), 0.0);
+        return;
+    }
     let top = logits
         .iter()
         .enumerate()
         .filter(|&(i, _)| allowed(i))
         .map(|(_, &v)| f64::from(v))
         .fold(f64::NEG_INFINITY, f64::max);
-    if top == f64::NEG_INFINITY {
-        out.resize(logits.len(), 0.0);
-        return;
-    }
     let weights: Vec<f64> = logits
         .iter()
         .enumerate()
@@ -65,7 +67,12 @@ pub fn masked_softmax(logits: &[f32], legal: &[u8], out: &mut Vec<f32>) {
         })
         .collect();
     let total: f64 = weights.iter().sum();
-    out.extend(weights.iter().map(|w| (w / total) as f32));
+    if top.is_finite() && total.is_finite() && total > 0.0 {
+        out.extend(weights.iter().map(|w| (w / total) as f32));
+        return;
+    }
+    let count = (0..logits.len()).filter(|&i| allowed(i)).count() as f32;
+    out.extend((0..logits.len()).map(|i| if allowed(i) { 1.0 / count } else { 0.0 }));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,10 +155,14 @@ fn layer(st: &SafeTensors<'_>, i: usize) -> Result<Dense, PolicyError> {
             "a layer is not rows x columns with a bias per row",
         ));
     }
+    let (weight, bias) = (weight.values(), bias.values());
+    if weight.iter().chain(&bias).any(|v| !v.is_finite()) {
+        return Err(PolicyError::Shape("a weight is not a finite number"));
+    }
     Ok(Dense {
         inputs: shape[1],
-        weight: weight.values(),
-        bias: bias.values(),
+        weight,
+        bias,
     })
 }
 

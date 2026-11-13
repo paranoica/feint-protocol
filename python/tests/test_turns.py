@@ -197,3 +197,116 @@ def test_seat_plan_alternates_the_learner_and_follows_the_mix() -> None:
     assert {int(o.split(":")[1]) for o in frozen} <= {0, 1, 2, 3}
     seats, _ = seat_plan(10, {"learner": 0.5, "frozen": 0.5}, 0, rng)
     assert all(not s.startswith("frozen") for pair in seats for s in pair)
+
+
+def test_play_records_only_learner_moves_and_ends_every_match() -> None:
+    from feint_train.agent import DiscreteAgent
+    from feint_train.turns import play, slot_masks
+
+    torch.manual_seed(1)
+    probe = TurnBatch("kuhn", [("learner", "learner")])
+    agent = DiscreteAgent(np.array(probe.scales, dtype=np.float32), probe.actions)
+    frozen = DiscreteAgent(np.array(probe.scales, dtype=np.float32), probe.actions)
+    seats = [("learner", "learner"), ("frozen:0", "learner"), ("learner", "random")] * 40
+    learner = np.array([0, 1, 0] * 40)
+    masks = slot_masks(seats, learner)
+    collector = Collector(slots=2 * len(seats), gamma=1.0, potential_scale=1.0, turns=True)
+    total = play(
+        agent,
+        TurnBatch("kuhn", seats),
+        list(range(len(seats))),
+        masks,
+        {"frozen:0": frozen},
+        collector,
+    )
+    assert not collector.open
+    slots = {t.slot for t in collector.transitions}
+    frozen_slots = set(np.flatnonzero(masks["frozen:0"]).tolist())
+    scripted_slots = {2 * env + 1 for env in range(2, len(seats), 3)}
+    assert slots.isdisjoint(frozen_slots | scripted_slots)
+    assert slots == set(np.flatnonzero(masks["learner"]).tolist())
+    assert all(t.closed for t in collector.transitions)
+    pairs = total.reshape(-1, 2)
+    assert np.all(pairs.sum(axis=1) == 0), "Kuhn is zero-sum"
+    assert np.all(np.abs(pairs) >= 1)
+
+
+class EndsAtReset:
+    def __len__(self) -> int:
+        return 1
+
+    def reset(self, seeds: list[int]) -> dict:
+        return {
+            "obs": np.zeros((1, 2, 4), dtype=np.float32),
+            "legal": np.zeros((1, 2, 2), dtype=np.uint8),
+            "ready": np.zeros((1, 2), dtype=np.uint8),
+            "reward": np.array([[1.0, -1.0]], dtype=np.float32),
+            "terminated": np.array([1], dtype=np.uint8),
+            "score": np.array([[1, -1]]),
+        }
+
+    def step(self, actions: np.ndarray) -> dict:
+        raise AssertionError("a finished match was stepped")
+
+
+def test_a_match_that_ends_at_reset_is_not_waited_for() -> None:
+    from feint_train.agent import DiscreteAgent
+    from feint_train.turns import play
+
+    agent = DiscreteAgent(np.ones(4, dtype=np.float32), 2)
+    masks = {"learner": np.array([True, False])}
+    total = play(agent, EndsAtReset(), [0], masks, {}, None)
+    np.testing.assert_array_equal(total, [1.0, -1.0])
+
+
+def test_a_time_budget_still_saves_the_last_policy(tmp_path: Path) -> None:
+    from feint_train.turns import TurnConfig, train
+
+    config = TurnConfig(
+        game="kuhn", logdir=tmp_path, envs=16, updates=50, hours=1e-7, eval_every=25, seed=2
+    )
+    train(config)
+    saved = torch.load(tmp_path / "checkpoint.pt", weights_only=True)
+    assert saved["update"] >= 1
+    assert (tmp_path / f"policy-{saved['update']:05d}.safetensors").exists()
+
+
+def test_a_resumed_run_ends_where_an_unbroken_run_ends(tmp_path: Path) -> None:
+    from safetensors.numpy import load_file
+
+    from feint_train.turns import TurnConfig, train
+
+    def config(logdir: Path, updates: int, resume: bool) -> TurnConfig:
+        return TurnConfig(
+            game="kuhn",
+            logdir=logdir,
+            envs=32,
+            updates=updates,
+            eval_every=2,
+            eval_matches=50,
+            evaluate=("random",),
+            mix={"learner": 0.5, "frozen": 0.5},
+            snapshot_every=1,
+            seed=4,
+            resume=resume,
+        )
+
+    train(config(tmp_path / "whole", 4, False))
+    train(config(tmp_path / "split", 2, False))
+    train(config(tmp_path / "split", 4, True))
+    whole = load_file(str(tmp_path / "whole" / "policy-00004.safetensors"))
+    split = load_file(str(tmp_path / "split" / "policy-00004.safetensors"))
+    for key, value in whole.items():
+        np.testing.assert_array_equal(value, split[key], err_msg=key)
+
+
+def test_a_policy_with_non_finite_weights_is_not_exported(tmp_path: Path) -> None:
+    from feint_train.agent import DiscreteAgent
+    from feint_train.export import export_turn
+
+    agent = DiscreteAgent(np.ones(4, dtype=np.float32), 2)
+    with torch.no_grad():
+        agent.actor[4].bias[0] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        export_turn(agent, tmp_path / "p.safetensors", "kuhn")
+    assert not (tmp_path / "p.safetensors").exists()

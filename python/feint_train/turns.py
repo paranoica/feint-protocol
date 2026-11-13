@@ -83,8 +83,8 @@ def play(
     envs = len(batch)
     slots = 2 * envs
     out = batch.reset(seeds)
-    ended = np.zeros(envs, dtype=bool)
-    total = np.zeros(slots, dtype=np.float64)
+    ended = out["terminated"].astype(bool)
+    total = out["reward"].reshape(-1).astype(np.float64)
     zeros = np.zeros(slots, dtype=np.float32)
     while not ended.all():
         obs = out["obs"].reshape(slots, -1)
@@ -142,6 +142,34 @@ def evaluate(
     }
 
 
+def save(
+    config: TurnConfig,
+    agent: DiscreteAgent,
+    optimizer: torch.optim.Optimizer,
+    archive: list[dict[str, torch.Tensor]],
+    update: int,
+    rng: np.random.Generator,
+    stats: dict[str, float],
+) -> None:
+    export_turn(agent, config.logdir / f"policy-{update:05d}.safetensors", config.game)
+    with (config.logdir / "evals.jsonl").open("a") as log:
+        for opponent in config.evaluate:
+            result = evaluate(agent, config.game, opponent, config.eval_matches, update)
+            log.write(json.dumps({"update": update, "opponent": opponent, **result}) + "\n")
+        log.write(json.dumps({"update": update, "stats": stats}) + "\n")
+    torch.save(
+        {
+            "agent": agent.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "archive": archive,
+            "update": update,
+            "rng": rng.bit_generator.state,
+            "torch_rng": torch.get_rng_state(),
+        },
+        config.logdir / "checkpoint.pt",
+    )
+
+
 def train(config: TurnConfig) -> DiscreteAgent:
     torch.manual_seed(config.seed)
     rng = np.random.default_rng(config.seed)
@@ -152,17 +180,19 @@ def train(config: TurnConfig) -> DiscreteAgent:
     update = 0
     checkpoint = config.logdir / "checkpoint.pt"
     if config.resume and checkpoint.exists():
-        state = torch.load(checkpoint, weights_only=False)
+        state = torch.load(checkpoint, weights_only=True)
         agent.load_state_dict(state["agent"])
         optimizer.load_state_dict(state["optimizer"])
         archive = state["archive"]
         update = state["update"]
-        rng = state["rng"]
+        rng.bit_generator.state = state["rng"]
+        torch.set_rng_state(state["torch_rng"])
     config.logdir.mkdir(parents=True, exist_ok=True)
     settings = UpdateConfig(
         epochs=config.epochs, minibatches=config.minibatches, entropy=config.entropy
     )
     started = time.monotonic()
+    saved = update
     while update < config.updates:
         if config.hours and time.monotonic() - started > config.hours * 3600:
             break
@@ -186,22 +216,10 @@ def train(config: TurnConfig) -> DiscreteAgent:
             archive.append(copy.deepcopy(agent.state_dict()))
             archive = archive[-config.archive :]
         if update % config.eval_every == 0 or update == config.updates:
-            export_turn(agent, config.logdir / f"policy-{update:05d}.safetensors", config.game)
-            with (config.logdir / "evals.jsonl").open("a") as log:
-                for opponent in config.evaluate:
-                    result = evaluate(agent, config.game, opponent, config.eval_matches, update)
-                    log.write(json.dumps({"update": update, "opponent": opponent, **result}) + "\n")
-                log.write(json.dumps({"update": update, "stats": vars(stats)}) + "\n")
-            torch.save(
-                {
-                    "agent": agent.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "archive": archive,
-                    "update": update,
-                    "rng": rng,
-                },
-                checkpoint,
-            )
+            save(config, agent, optimizer, archive, update, rng, vars(stats))
+            saved = update
+    if update > saved:
+        save(config, agent, optimizer, archive, update, rng, {})
     return agent
 
 

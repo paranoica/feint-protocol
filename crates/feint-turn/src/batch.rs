@@ -30,6 +30,10 @@ pub enum TurnError {
         env: usize,
         slot: usize,
     },
+    Missing {
+        env: usize,
+        slot: usize,
+    },
     Game(AdapterError),
 }
 
@@ -45,6 +49,9 @@ impl std::fmt::Display for TurnError {
             }
             Self::Stalled { env, slot } => {
                 write!(f, "scripted seat {slot} of env {env} did not move")
+            }
+            Self::Missing { env, slot } => {
+                write!(f, "env {env} slot {slot} is to act and got no action")
             }
             Self::Game(error) => write!(f, "{error}"),
         }
@@ -227,8 +234,11 @@ impl<A: TurnGame> TurnBatch<A> {
                 continue;
             };
             let action = actions[2 * index + slot];
-            if action < 0 || !matches!(env.seats[slot], Seat::Python) {
+            if !matches!(env.seats[slot], Seat::Python) {
                 continue;
+            }
+            if action < 0 {
+                return Err(TurnError::Missing { env: index, slot });
             }
             env.game
                 .observe(env.game.live(), slot as PlayerId, &mut self.seen);

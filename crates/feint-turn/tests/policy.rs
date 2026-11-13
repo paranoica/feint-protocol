@@ -29,6 +29,9 @@ fn exp_from_arithmetic_matches_reference_values() {
     assert_eq!(exp(-800.0), 0.0);
     assert_eq!(exp(f64::NEG_INFINITY), 0.0);
     assert_eq!(exp(800.0), f64::INFINITY);
+    let near_top = exp(709.5);
+    assert!(near_top.is_finite(), "exp(709.5) = {near_top}");
+    assert!(((near_top - exp(354.75) * exp(354.75)) / near_top).abs() < 1e-14);
     assert!(exp(f64::NAN).is_nan());
 }
 
@@ -187,4 +190,77 @@ fn turn_policy_refuses_a_wrong_layout_or_shape() {
         TurnPolicy::from_safetensors(&wrong_scales, &layout).err(),
         Some(PolicyError::Scales)
     );
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn exp_from_arithmetic_matches_std_on_the_softmax_range() {
+    for i in 0..=80_000 {
+        let x = -80.0 + f64::from(i) * 0.001;
+        let (got, want) = (exp(x), x.exp());
+        assert!(
+            ((got - want) / want).abs() < 1e-14,
+            "exp({x}) = {got}, std {want}"
+        );
+    }
+}
+
+#[test]
+fn non_finite_logits_fall_back_to_uniform_over_legal_actions() {
+    let mut out = Vec::new();
+    masked_softmax(&[f32::NAN, 0.0, 1.0], &[1, 1, 0], &mut out);
+    assert_eq!(out, vec![0.5, 0.5, 0.0]);
+    masked_softmax(&[f32::INFINITY, f32::INFINITY, 0.0], &[1, 1, 1], &mut out);
+    assert_eq!(out, vec![1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+    masked_softmax(&[f32::NEG_INFINITY, f32::NEG_INFINITY], &[1, 1], &mut out);
+    assert_eq!(out, vec![0.5, 0.5]);
+}
+
+#[test]
+fn a_policy_with_a_non_finite_weight_is_refused() {
+    let layout = turn_layout("toy", 2, 3);
+    let file = safetensors(
+        &[
+            ("layer0.weight", vec![2, 2], vec![1.0, 0.0, 0.0, 1.0]),
+            ("layer0.bias", vec![2], vec![0.0, 0.0]),
+            ("layer1.weight", vec![2, 2], vec![1.0, 0.0, 0.0, 1.0]),
+            ("layer1.bias", vec![2], vec![0.0, 0.0]),
+            ("layer2.weight", vec![3, 2], vec![1.0; 6]),
+            ("layer2.bias", vec![3], vec![0.0, f32::NAN, 0.0]),
+        ],
+        &[
+            ("format", "feint-mlp-v1".into()),
+            ("layout", layout.clone()),
+            ("features", "2".into()),
+            ("outputs", "3".into()),
+            ("hidden", "2,2".into()),
+            ("activation", "relu".into()),
+            ("inv_scales", "1,1".into()),
+        ],
+    );
+    assert_eq!(
+        TurnPolicy::from_safetensors(&file, &layout).err(),
+        Some(PolicyError::Shape("a weight is not a finite number"))
+    );
+}
+
+#[test]
+fn a_policy_exported_by_python_gives_the_logits_torch_gave() {
+    let bytes = include_bytes!("fixtures/kuhn-seed5.safetensors");
+    let expected = include_str!("fixtures/kuhn-seed5.logits");
+    let mut policy = TurnPolicy::from_safetensors(bytes, &turn_layout("kuhn", 4, 2)).unwrap();
+    let mut rows = 0;
+    for line in expected.lines() {
+        let numbers: Vec<f32> = line
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let (obs, want) = numbers.split_at(4);
+        let got = policy.logits(obs);
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() < 1e-4, "{obs:?}: {got:?} vs {want:?}");
+        }
+        rows += 1;
+    }
+    assert_eq!(rows, 12);
 }

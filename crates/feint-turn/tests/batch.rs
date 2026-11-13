@@ -270,8 +270,14 @@ fn an_illegal_python_action_is_refused_before_anything_moves() {
             action: 2
         })
     );
-    let after = batch.step(&[-1, -1, -1, -1]).unwrap();
-    assert_eq!(after.obs, before.obs, "the refused step moved a game");
+    let mut fresh =
+        TurnBatch::<Pick>::new(&[["learner", "learner"], ["learner", "learner"]]).unwrap();
+    assert_eq!(fresh.reset(&[0, 0]).unwrap(), before);
+    assert_eq!(
+        batch.step(&[0, -1, 1, -1]).unwrap(),
+        fresh.step(&[0, -1, 1, -1]).unwrap(),
+        "the refused step moved a game"
+    );
     assert_eq!(
         batch.step(&[0]),
         Err(TurnError::Actions {
@@ -290,9 +296,18 @@ fn an_illegal_python_action_is_refused_before_anything_moves() {
 
 #[test]
 fn a_ready_python_slot_must_act() {
-    let mut batch = TurnBatch::<Pick>::new(&[["learner", "learner"]]).unwrap();
-    batch.reset(&[0]).unwrap();
-    let out = batch.step(&[-1, -1]).unwrap();
-    assert_eq!(out.ready, vec![1, 0], "skipping keeps the slot ready");
-    assert_eq!(out.obs[0], 0.0);
+    let mut batch =
+        TurnBatch::<Pick>::new(&[["learner", "learner"], ["learner", "learner"]]).unwrap();
+    let before = batch.reset(&[0, 1]).unwrap();
+    assert_eq!(
+        batch.step(&[0, -1, -1, -1]),
+        Err(TurnError::Missing { env: 1, slot: 1 })
+    );
+    assert_eq!(
+        batch.step(&[-1, -1, -1, 0]),
+        Err(TurnError::Missing { env: 0, slot: 0 })
+    );
+    let after = batch.step(&[0, -1, -1, 0]).unwrap();
+    assert_ne!(after.obs, before.obs);
+    assert_eq!(after.ready, vec![0, 1, 1, 0]);
 }

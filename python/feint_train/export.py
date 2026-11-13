@@ -48,6 +48,8 @@ def export_turn(agent: DiscreteAgent, path: Path, game: str) -> None:
         for i in range(3)
         for part in ("weight", "bias")
     }
+    if not all(np.isfinite(v).all() for v in tensors.values()):
+        raise ValueError("the policy has a weight that is not a finite number")
     actions = len(tensors["layer2.bias"])
     metadata = {
         "format": FORMAT,
