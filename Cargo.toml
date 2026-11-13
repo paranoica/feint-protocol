@@ -9,6 +9,7 @@ members = [
     "crates/games/duel",
     "crates/games/kuhn",
     "crates/games/believe",
+    "crates/games/cards-check",
     "crates/feint-web",
     "crates/feint-arena",
     "crates/feint-ffi",

@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-const GAME_WORDS: [&str; 8] = [
-    "hockey", "puck", "mallet", "rink", "poker", "kuhn", "chess", "tennis",
+const GAME_WORDS: [&str; 10] = [
+    "hockey", "puck", "mallet", "rink", "poker", "kuhn", "chess", "tennis", "believe", "deck",
 ];
 
 fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
