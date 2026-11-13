@@ -243,14 +243,38 @@ fn a_table_with_impossible_cards_is_refused() {
     aside.aside |= a;
     let mut stray = good.clone();
     stray.last = 1 << 19;
-    let mut player = good;
+    let mut player = good.clone();
     player.to_act = 2;
+    let mut claim = good.clone();
+    claim.claim = Some(5);
+    let mut winner = good.clone();
+    winner.outcome = Some(believe::Outcome::Winner(2));
+    let mut known = good.clone();
+    known.known[0][3] = 1;
+    let mut left_on_table = good.clone();
+    left_on_table.hands[0] &= !(1 << 0);
+    left_on_table.laid[0] = 1 << 0;
+    let mut no_claim = left_on_table.clone();
+    no_claim.batches = 1;
+    no_claim.last = 1 << 0;
+    let mut no_last = no_claim.clone();
+    no_last.claim = Some(0);
+    no_last.last = 0;
+    let mut past_cap = good.clone();
+    past_cap.actions = u32::MAX;
     for (name, bad) in [
         ("outside", outside),
         ("shared", shared),
         ("aside", aside),
         ("stray", stray),
         ("player", player),
+        ("claim", claim),
+        ("winner", winner),
+        ("known above what the opponent holds", known),
+        ("cards left on the table", left_on_table),
+        ("a round without a claim", no_claim),
+        ("a round without a last batch", no_last),
+        ("past the cap", past_cap),
     ] {
         assert!(Believe::from_table(params.clone(), bad).is_err(), "{name}");
     }
@@ -517,4 +541,33 @@ fn a_hostile_observation_samples_without_panicking() {
         let _ = game.state_from_observation(&obs, &mut rng);
         let _ = bot.on_tick(&game, &obs);
     }
+}
+
+#[test]
+fn a_stranger_or_the_end_of_time_never_panics() {
+    let params = Params::default();
+    let mut t = table(
+        &params,
+        cards(&params, &[(0, 2)]),
+        cards(&params, &[(2, 2)]),
+    );
+    t.tick = u64::MAX;
+    let mut game = game_with(t.clone());
+    let mut events = Vec::new();
+    game.advance(&mut events);
+    assert_eq!(game.live().tick, u64::MAX);
+    let mut obs = ObservationT::default();
+    game.observe(game.live(), 2, &mut obs);
+    assert_eq!(obs.to_act, -1);
+    assert!(obs.state.unwrap_or_default().is_empty());
+    let mut stranger = ActionT::default();
+    stranger.player = 2;
+    stranger.discrete = 1;
+    let mut odd = t.clone();
+    odd.to_act = 2;
+    assert_eq!(game.simulate(&odd, &[stranger], 0), odd);
+    assert_eq!(
+        t.clone().play(&params, 2, &lay(0, &[(0, 1)])),
+        Err("no such player")
+    );
 }

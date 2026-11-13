@@ -152,13 +152,22 @@ impl GameAdapter for Kuhn {
     }
 
     fn advance(&mut self, _events: &mut Vec<EventT>) {
-        self.deal.tick += 1;
+        self.deal.tick = self.deal.tick.saturating_add(1);
     }
 
     fn observe(&self, state: &Deal, player: PlayerId, out: &mut ObservationT) {
-        let me = usize::from(player);
         out.tick = state.tick;
         out.player = player;
+        if player > 1 {
+            out.to_act = -1;
+            for list in [&mut out.state, &mut out.opponent_signals] {
+                list.get_or_insert_with(Vec::new).clear();
+            }
+            out.legal.get_or_insert_with(Vec::new).clear();
+            out.score.get_or_insert_with(Vec::new).clear();
+            return;
+        }
+        let me = usize::from(player);
         out.to_act = state.to_act().map_or(-1, |p| p as i8);
         let obs = out.state.get_or_insert_with(Vec::new);
         obs.clear();

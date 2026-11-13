@@ -278,3 +278,19 @@ fn a_hostile_observation_samples_a_real_card() {
         assert_ne!(guess.cards[0], guess.cards[1]);
     }
 }
+
+#[test]
+fn a_stranger_or_the_end_of_time_never_panics() {
+    let mut game = Kuhn::from_deal(Deal {
+        cards: [0, 1],
+        history: vec![],
+        tick: u64::MAX,
+    });
+    let mut events = Vec::new();
+    game.advance(&mut events);
+    assert_eq!(game.live().tick, u64::MAX);
+    let mut obs = ObservationT::default();
+    game.observe(game.live(), 2, &mut obs);
+    assert_eq!(obs.to_act, -1);
+    assert!(obs.state.unwrap_or_default().is_empty());
+}

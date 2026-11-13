@@ -199,16 +199,25 @@ impl GameAdapter for Believe {
     }
 
     fn advance(&mut self, _events: &mut Vec<EventT>) {
-        self.table.tick += 1;
+        self.table.tick = self.table.tick.saturating_add(1);
     }
 
     fn observe(&self, state: &Table, player: PlayerId, out: &mut ObservationT) {
         let p = &self.params;
         let ranks = usize::from(p.ranks);
-        let me = usize::from(player);
-        let other = 1 - me;
         out.tick = state.tick;
         out.player = player;
+        if player > 1 {
+            out.to_act = -1;
+            for list in [&mut out.state, &mut out.opponent_signals] {
+                list.get_or_insert_with(Vec::new).clear();
+            }
+            out.legal.get_or_insert_with(Vec::new).clear();
+            out.score.get_or_insert_with(Vec::new).clear();
+            return;
+        }
+        let me = usize::from(player);
+        let other = 1 - me;
         out.to_act = if state.outcome.is_some() {
             -1
         } else {

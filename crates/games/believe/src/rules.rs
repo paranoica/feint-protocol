@@ -281,14 +281,27 @@ impl Table {
         if self.last & !self.laid[usize::from(self.last_by)] != 0 {
             return Err("the last batch is not in its layer's pile");
         }
+        let laid = self.laid[0] | self.laid[1];
+        if (self.batches > 0) != (laid != 0) {
+            return Err("cards on the table exactly while a round runs");
+        }
+        if self.batches > 0 && (self.claim.is_none() || self.last == 0) {
+            return Err("a running round needs a claim and a last batch");
+        }
+        if self.actions > params.cap_actions {
+            return Err("past the cap");
+        }
         if self.claim.is_some_and(|c| c >= params.ranks)
             || matches!(self.outcome, Some(Outcome::Winner(w)) if w > 1)
         {
             return Err("no such rank or winner");
         }
-        let limit = params.copies;
-        if self.known.iter().flatten().any(|&c| c > limit) {
-            return Err("more known cards than copies");
+        for viewer in 0..2 {
+            let theirs = 1 - viewer;
+            let held = by_rank(params, self.hands[theirs] | self.laid[theirs]);
+            if self.known[viewer].iter().zip(held).any(|(&k, h)| k > h) {
+                return Err("more known cards than the opponent holds");
+            }
         }
         Ok(())
     }
@@ -317,6 +330,9 @@ impl Table {
     fn check(&self, params: &Params, player: u8, m: &Move) -> Result<Option<u64>, &'static str> {
         if self.outcome.is_some() {
             return Err("the match is over");
+        }
+        if player > 1 {
+            return Err("no such player");
         }
         if player != self.to_act {
             return Err("not this player's turn");
@@ -369,7 +385,7 @@ impl Table {
             }
             _ => self.resolve(params, player),
         }
-        self.actions += 1;
+        self.actions = self.actions.saturating_add(1);
         if self.outcome.is_none() && self.actions >= params.cap_actions {
             let held = [self.hands[0].count_ones(), self.hands[1].count_ones()];
             self.outcome = Some(match held[0].cmp(&held[1]) {
