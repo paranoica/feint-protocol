@@ -251,7 +251,7 @@ impl GameAdapter for Believe {
         let scalar = |i: usize| seen.get(4 * ranks + i).copied().unwrap_or(0.0);
         let me = usize::from(obs.player.min(1));
         let other = 1 - me;
-        let mut free = (1u64 << p.deck()) - 1;
+        let mut free = p.deck_mask();
         let mut table = Table::empty(p);
         table.hands[me] = self.take_counts(&mut free, field(0));
         let known = self.take_counts(&mut free, field(1));
@@ -264,7 +264,7 @@ impl GameAdapter for Believe {
         table.batches = scalar(4) as u16;
         table.actions = p.cap_actions.saturating_sub(scalar(5) as u32);
         let their_laid = pile.saturating_sub(table.laid[me].count_ones());
-        let possession = their_hand + their_laid;
+        let possession = their_hand.saturating_add(their_laid);
         let mut theirs = known
             | Self::take_random(
                 &mut free,

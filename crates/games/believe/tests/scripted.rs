@@ -61,7 +61,7 @@ fn after_a_lay(
     let mut t = Table::empty(params);
     t.hands = [a, b];
     t.seen = [a, b];
-    t.aside = ((1u64 << params.deck()) - 1) & !(a | b);
+    t.aside = params.deck_mask() & !(a | b);
     t.to_act = 1;
     let mut counts = [0u8; 8];
     for &(rank, n) in laid {
@@ -136,7 +136,7 @@ fn the_counter_counts_its_own_cards_in_the_pile() {
     let mut t = Table::empty(&params);
     t.hands = [a, b];
     t.seen = [a, b];
-    t.aside = ((1u64 << params.deck()) - 1) & !(a | b);
+    t.aside = params.deck_mask() & !(a | b);
     let mut one_nine = [0u8; 8];
     one_nine[0] = 1;
     let mut two_jacks = [0u8; 8];

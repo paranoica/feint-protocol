@@ -352,3 +352,23 @@ fn params_refuse_impossible_decks() {
         assert!(params.validate().is_err(), "{params:?} accepted");
     }
 }
+
+#[test]
+fn the_deck_mask_covers_every_card_and_no_more() {
+    assert_eq!(p().deck_mask(), (1 << 20) - 1);
+    let full = Params {
+        ranks: 8,
+        copies: 8,
+        ..p()
+    };
+    assert_eq!(full.deck_mask(), u64::MAX);
+    let small = Params {
+        ranks: 2,
+        copies: 1,
+        hand: 1,
+        max_batch: 1,
+        ..p()
+    };
+    assert_eq!(small.validate(), Ok(()));
+    assert_eq!(small.deck_mask(), 0b11);
+}

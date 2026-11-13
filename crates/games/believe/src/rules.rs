@@ -58,6 +58,11 @@ impl Params {
     }
 
     #[must_use]
+    pub fn deck_mask(&self) -> u64 {
+        u64::MAX >> (MAX_CARDS - self.deck().clamp(1, MAX_CARDS))
+    }
+
+    #[must_use]
     pub fn rank_of(&self, id: u32) -> usize {
         (id / u32::from(self.copies)) as usize
     }

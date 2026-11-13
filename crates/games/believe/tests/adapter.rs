@@ -39,7 +39,7 @@ fn table(params: &Params, first: u64, second: u64) -> Table {
     let mut t = Table::empty(params);
     t.hands = [first, second];
     t.seen = [first, second];
-    t.aside = ((1u64 << params.deck()) - 1) & !(first | second);
+    t.aside = params.deck_mask() & !(first | second);
     t
 }
 
@@ -331,4 +331,39 @@ fn idle_steps_replay_to_the_same_digest() {
         replay_record(&mut again, &report.record()),
         Ok(report.digest)
     );
+}
+
+#[test]
+fn a_full_64_card_deck_deals_observes_and_samples() {
+    let params = Params {
+        ranks: 8,
+        copies: 8,
+        hand: 20,
+        ..Params::default()
+    };
+    let mut game = Believe::new(params.clone()).unwrap();
+    game.reset(3, &bodies()).unwrap();
+    assert_eq!(game.live().aside.count_ones(), 24);
+    let obs = view(&game, 0);
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
+    let guess = game.state_from_observation(&obs, &mut rng);
+    let mut again = ObservationT::default();
+    game.observe(&guess, 0, &mut again);
+    assert_eq!(again, obs);
+}
+
+#[test]
+fn a_hostile_observation_samples_without_panicking() {
+    let game = Believe::new(Params::default()).unwrap();
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
+    for fill in [f32::NAN, -1.0, 1e30, f32::INFINITY, 4.0e9] {
+        let mut obs = ObservationT::default();
+        obs.player = 7;
+        obs.to_act = 5;
+        obs.state = Some(vec![fill; 26]);
+        obs.score = Some(vec![3, 4, 5]);
+        let _ = game.state_from_observation(&obs, &mut rng);
+        obs.state = Some(vec![fill; 3]);
+        let _ = game.state_from_observation(&obs, &mut rng);
+    }
 }
