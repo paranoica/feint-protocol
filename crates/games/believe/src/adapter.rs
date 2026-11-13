@@ -4,7 +4,7 @@ use feint_protocol::{
 };
 use rand_chacha::rand_core::RngCore;
 
-use crate::rules::{Move, Moves, Outcome, Params, Table, by_rank};
+use crate::rules::{MAX_CARDS, Move, Moves, Outcome, Params, Table, by_rank};
 
 pub const GAME_VERSION: u32 = 1;
 
@@ -16,7 +16,7 @@ pub struct Believe {
 
 #[must_use]
 pub fn observation_len(params: &Params) -> usize {
-    4 * usize::from(params.ranks) + 6
+    5 * usize::from(params.ranks) + 6
 }
 
 fn dim(name: &str, min: f32, max: f32, unit: &str) -> DimT {
@@ -44,6 +44,7 @@ impl Believe {
 
     pub fn from_table(params: Params, table: Table) -> Result<Self, &'static str> {
         params.validate()?;
+        table.validate(&params)?;
         Ok(Self {
             moves: Moves::new(&params),
             params,
@@ -139,6 +140,7 @@ impl GameAdapter for Believe {
             ("known", "cards"),
             ("laid", "cards"),
             ("claim", "flag"),
+            ("mine_last", "cards"),
         ] {
             for rank in 0..p.ranks {
                 let max = if unit == "flag" { 1.0 } else { copies };
@@ -215,12 +217,18 @@ impl GameAdapter for Believe {
         let obs = out.state.get_or_insert_with(Vec::new);
         obs.clear();
         let hand = by_rank(p, state.hands[me]);
-        let known = state.known(p, player);
+        let known = state.known[me];
+        let mine_last = if state.batches > 0 && usize::from(state.last_by) == me {
+            by_rank(p, state.last)
+        } else {
+            [0; crate::rules::MAX_RANKS]
+        };
         let laid = by_rank(p, state.laid[me]);
         obs.extend(hand[..ranks].iter().map(|&c| f32::from(c)));
         obs.extend(known[..ranks].iter().map(|&c| f32::from(c)));
         obs.extend(laid[..ranks].iter().map(|&c| f32::from(c)));
         obs.extend((0..ranks).map(|r| f32::from(u8::from(state.claim == Some(r as u8)))));
+        obs.extend(mine_last[..ranks].iter().map(|&c| f32::from(c)));
         obs.push((state.laid[0] | state.laid[1]).count_ones() as f32);
         obs.push(state.last.count_ones() as f32);
         obs.push(state.hands[other].count_ones() as f32);
@@ -248,20 +256,24 @@ impl GameAdapter for Believe {
         let ranks = usize::from(p.ranks);
         let seen = obs.state.as_deref().unwrap_or_default();
         let field = |group: usize| seen.get(group * ranks..(group + 1) * ranks).unwrap_or(&[]);
-        let scalar = |i: usize| seen.get(4 * ranks + i).copied().unwrap_or(0.0);
+        let scalar = |i: usize| seen.get(5 * ranks + i).copied().unwrap_or(0.0);
         let me = usize::from(obs.player.min(1));
         let other = 1 - me;
+        let me8 = me as u8;
         let mut free = p.deck_mask();
         let mut table = Table::empty(p);
         table.hands[me] = self.take_counts(&mut free, field(0));
         let known = self.take_counts(&mut free, field(1));
         table.laid[me] = self.take_counts(&mut free, field(2));
         table.claim = field(3).iter().position(|&f| f > 0.5).map(|r| r as u8);
+        for (rank, &n) in field(1).iter().enumerate() {
+            table.known[me][rank] = (n as u8).min(p.copies);
+        }
         let pile = scalar(0) as u32;
         let last_count = scalar(1) as u32;
         let their_hand = scalar(2) as u32;
         let leads = scalar(3) > 0.5;
-        table.batches = scalar(4) as u16;
+        table.batches = (scalar(4) as u16).min(MAX_CARDS as u16);
         table.actions = p.cap_actions.saturating_sub(scalar(5) as u32);
         let their_laid = pile.saturating_sub(table.laid[me].count_ones());
         let possession = their_hand.saturating_add(their_laid);
@@ -274,27 +286,26 @@ impl GameAdapter for Believe {
         table.laid[other] = Self::take_random(&mut theirs, their_laid, rng);
         table.hands[other] = theirs;
         table.aside = free;
+        let leader = if leads { me8 } else { 1 - me8 };
+        let follower_to_act = table.batches % 2 == 1;
         table.to_act = match obs.to_act {
             0 => 0,
             1 => 1,
-            _ => me as u8,
+            _ if follower_to_act => 1 - leader,
+            _ => leader,
         };
-        let me8 = me as u8;
-        let leader = if leads { me8 } else { 1 - me8 };
         if table.batches > 0 {
-            table.last_by = if table.batches % 2 == 1 {
-                leader
-            } else {
-                1 - leader
-            };
+            table.last_by = if follower_to_act { leader } else { 1 - leader };
             let mut from = table.laid[usize::from(table.last_by)];
-            table.last = Self::take_random(&mut from, last_count, rng);
+            table.last = if table.last_by == me8 {
+                self.take_counts(&mut from, field(4))
+            } else {
+                Self::take_random(&mut from, last_count, rng)
+            };
         }
         if table.batches > 0 && table.hands[usize::from(table.last_by)] == 0 {
             table.out = Some(table.last_by);
         }
-        table.seen[me] = table.hands[me] | table.laid[me] | known;
-        table.seen[other] = table.hands[other] | table.laid[other];
         let score = obs.score.as_deref().unwrap_or_default();
         if obs.to_act < 0 {
             table.outcome = Some(match score {
@@ -311,13 +322,11 @@ impl GameAdapter for Believe {
         let mut next = state.clone();
         for action in actions {
             let Some(m) = self.moves.decode(action.discrete) else {
-                break;
+                continue;
             };
-            if next.play(&self.params, action.player, &m).is_err() {
-                break;
-            }
+            let _ = next.play(&self.params, action.player, &m);
         }
-        next.tick += u64::from(ticks);
+        next.tick = next.tick.saturating_add(u64::from(ticks));
         next
     }
 
@@ -345,8 +354,8 @@ impl GameAdapter for Believe {
             state.laid[0],
             state.laid[1],
             state.aside,
-            state.seen[0],
-            state.seen[1],
+            u64::from_le_bytes(state.known[0]),
+            u64::from_le_bytes(state.known[1]),
             state.last,
             u64::from(state.last_by),
             state.claim.map_or(u64::MAX, u64::from),

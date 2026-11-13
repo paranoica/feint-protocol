@@ -60,7 +60,6 @@ fn after_a_lay(
     let b = cards(params, a, theirs);
     let mut t = Table::empty(params);
     t.hands = [a, b];
-    t.seen = [a, b];
     t.aside = params.deck_mask() & !(a | b);
     t.to_act = 1;
     let mut counts = [0u8; 8];
@@ -135,7 +134,6 @@ fn the_counter_counts_its_own_cards_in_the_pile() {
     let b = cards(&params, a, &[(2, 2), (3, 2)]);
     let mut t = Table::empty(&params);
     t.hands = [a, b];
-    t.seen = [a, b];
     t.aside = params.deck_mask() & !(a | b);
     let mut one_nine = [0u8; 8];
     one_nine[0] = 1;
@@ -207,7 +205,6 @@ fn the_leader_claims_the_rank_it_holds_most() {
     let b = cards(&params, a, &[(0, 2)]);
     let mut t = Table::empty(&params);
     t.hands = [a, b];
-    t.seen = [a, b];
     let game = Believe::from_table(params, t).unwrap();
     for style in styles() {
         assert_eq!(
@@ -222,18 +219,34 @@ fn the_leader_claims_the_rank_it_holds_most() {
 }
 
 #[test]
-fn every_scripted_pair_finishes_matches() {
+fn every_scripted_pair_finishes_matches_both_ways() {
     let params = Params::default();
     for first in styles() {
         for second in styles() {
-            for seed in 0..25 {
+            let (mut wins, mut capped) = ([0u32; 2], 0u32);
+            for seed in 0..200 {
                 let mut game = Believe::new(params.clone()).unwrap();
                 let mut a = Scripted::new(first);
                 let mut b = Scripted::new(second);
                 let report = run_match(&mut game, [&mut a, &mut b], header(seed), 10_000).unwrap();
                 assert!(report.finished, "{first:?} vs {second:?} seed {seed}");
-                assert!(report.actions.len() <= 300);
+                match report.score.as_slice() {
+                    [1, 0] => wins[0] += 1,
+                    [0, 1] => wins[1] += 1,
+                    _ => {}
+                }
+                if report.actions.len() as u32 >= params.cap_actions {
+                    capped += 1;
+                }
             }
+            assert!(
+                wins[0] > 0 && wins[1] > 0,
+                "{first:?} vs {second:?}: one side never wins {wins:?}"
+            );
+            assert!(
+                capped < 100,
+                "{first:?} vs {second:?}: {capped} of 200 hit the cap"
+            );
         }
     }
 }

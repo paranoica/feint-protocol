@@ -3,6 +3,7 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 pub const MAX_RANKS: usize = 8;
 pub const MAX_CARDS: u32 = 64;
+pub const MAX_MOVES: u64 = 4096;
 
 pub type Counts = [u8; MAX_RANKS];
 
@@ -43,6 +44,9 @@ impl Params {
         if self.max_batch == 0 || self.max_batch > self.copies {
             return Err("a batch holds 1 card up to the copies of a rank");
         }
+        if self.move_count() > MAX_MOVES {
+            return Err("too many distinct batches for the action space");
+        }
         if self.cap_actions < 2 {
             return Err("the cap must allow a lay and an answer");
         }
@@ -55,6 +59,18 @@ impl Params {
     #[must_use]
     pub fn deck(&self) -> u32 {
         u32::from(self.ranks) * u32::from(self.copies)
+    }
+
+    #[must_use]
+    pub fn move_count(&self) -> u64 {
+        let ranks = u64::from(self.ranks);
+        let mut sets = 0u64;
+        let mut choose = 1u64;
+        for size in 1..=u64::from(self.max_batch) {
+            choose = choose * (ranks + size - 1) / size;
+            sets += choose;
+        }
+        1 + ranks * sets
     }
 
     #[must_use]
@@ -181,7 +197,7 @@ pub struct Table {
     pub hands: [u64; 2],
     pub laid: [u64; 2],
     pub aside: u64,
-    pub seen: [u64; 2],
+    pub known: [Counts; 2],
     pub last: u64,
     pub last_by: u8,
     pub claim: Option<u8>,
@@ -200,7 +216,7 @@ impl Table {
             hands: [0; 2],
             laid: [0; 2],
             aside: 0,
-            seen: [0; 2],
+            known: [[0; MAX_RANKS]; 2],
             last: 0,
             last_by: 0,
             claim: None,
@@ -227,7 +243,6 @@ impl Table {
         let mut table = Self::empty(params);
         table.hands = [mask(&ids[..hand]), mask(&ids[hand..2 * hand])];
         table.aside = mask(&ids[2 * hand..]);
-        table.seen = table.hands;
         table.to_act = (rng.next_u32() % 2) as u8;
         table
     }
@@ -241,10 +256,41 @@ impl Table {
         }
     }
 
-    #[must_use]
-    pub fn known(&self, params: &Params, viewer: u8) -> Counts {
-        let v = usize::from(viewer);
-        by_rank(params, self.seen[v] & !self.hands[v] & !self.laid[v])
+    pub fn validate(&self, params: &Params) -> Result<(), &'static str> {
+        let deck = params.deck_mask();
+        let sets = [
+            self.hands[0],
+            self.hands[1],
+            self.laid[0],
+            self.laid[1],
+            self.aside,
+        ];
+        let mut all = 0u64;
+        for set in sets {
+            if set & !deck != 0 {
+                return Err("a card outside the deck");
+            }
+            if set & all != 0 {
+                return Err("a card in two places");
+            }
+            all |= set;
+        }
+        if self.to_act > 1 || self.last_by > 1 || self.out.is_some_and(|p| p > 1) {
+            return Err("no such player");
+        }
+        if self.last & !self.laid[usize::from(self.last_by)] != 0 {
+            return Err("the last batch is not in its layer's pile");
+        }
+        if self.claim.is_some_and(|c| c >= params.ranks)
+            || matches!(self.outcome, Some(Outcome::Winner(w)) if w > 1)
+        {
+            return Err("no such rank or winner");
+        }
+        let limit = params.copies;
+        if self.known.iter().flatten().any(|&c| c > limit) {
+            return Err("more known cards than copies");
+        }
+        Ok(())
     }
 
     fn take(params: &Params, hand: u64, counts: &Counts) -> Option<u64> {
@@ -315,7 +361,7 @@ impl Table {
                 self.last = mask;
                 self.last_by = player;
                 self.claim = Some(*claim);
-                self.batches += 1;
+                self.batches = self.batches.saturating_add(1);
                 if self.hands[me] == 0 {
                     self.out = Some(player);
                 }
@@ -342,8 +388,6 @@ impl Table {
             .iter()
             .enumerate()
             .all(|(rank, &c)| c == 0 || rank == claim);
-        self.seen[0] |= self.last;
-        self.seen[1] |= self.last;
         let layer = self.last_by;
         if honest && self.out == Some(layer) {
             self.outcome = Some(Outcome::Winner(layer));
@@ -354,10 +398,23 @@ impl Table {
         } else {
             (layer, doubter)
         };
+        let pile_by = [by_rank(params, self.laid[0]), by_rank(params, self.laid[1])];
+        for viewer in 0..2u8 {
+            let v = usize::from(viewer);
+            let theirs = 1 - v;
+            for (rank, known) in self.known[v].iter_mut().enumerate() {
+                *known = if taker == viewer {
+                    known.saturating_sub(pile_by[theirs][rank])
+                } else if layer == viewer {
+                    *known + pile_by[v][rank]
+                } else {
+                    (*known).max(counts[rank]) + pile_by[v][rank]
+                };
+            }
+        }
         let pile = self.laid[0] | self.laid[1];
         let t = usize::from(taker);
         self.hands[t] |= pile;
-        self.seen[t] |= pile;
         self.laid = [0, 0];
         self.last = 0;
         self.claim = None;

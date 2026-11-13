@@ -32,7 +32,7 @@ struct View<'a> {
 impl<'a> View<'a> {
     fn read(state: &'a [f32], ranks: usize) -> Option<Self> {
         let group = |g: usize| state.get(g * ranks..(g + 1) * ranks);
-        let scalar = |i: usize| state.get(4 * ranks + i).copied();
+        let scalar = |i: usize| state.get(5 * ranks + i).copied();
         Some(Self {
             hand: group(0)?,
             laid: group(2)?,
@@ -106,7 +106,7 @@ impl Scripted {
                 }
             }
             Style::Counter => {
-                let accounted = held + view.laid[claim] as u8;
+                let accounted = held.saturating_add(view.laid[claim] as u8);
                 if view.last_batch > copies.saturating_sub(accounted) {
                     Some(Move::Call)
                 } else {

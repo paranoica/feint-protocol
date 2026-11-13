@@ -39,7 +39,6 @@ fn table(params: &Params, first: u64, second: u64, to_act: u8) -> Table {
     assert_eq!(first & second, 0, "the hands share a card");
     let mut t = Table::empty(params);
     t.hands = [first, second];
-    t.seen = [first, second];
     t.to_act = to_act;
     t
 }
@@ -63,6 +62,14 @@ fn the_action_table_has_276_entries_and_round_trips() {
         assert!(claim < 5);
         assert!(counts[5..].iter().all(|&c| c == 0));
     }
+    assert_eq!(moves.decode(1), Some(lay(0, &[(0, 1)])));
+    assert_eq!(moves.decode(5), Some(lay(0, &[(4, 1)])));
+    assert_eq!(moves.decode(6), Some(lay(0, &[(0, 2)])));
+    assert_eq!(moves.decode(7), Some(lay(0, &[(0, 1), (1, 1)])));
+    assert_eq!(moves.decode(21), Some(lay(0, &[(0, 3)])));
+    assert_eq!(moves.decode(55), Some(lay(0, &[(4, 3)])));
+    assert_eq!(moves.decode(56), Some(lay(1, &[(0, 1)])));
+    assert_eq!(moves.decode(275), Some(lay(4, &[(4, 3)])));
     assert_eq!(moves.decode(moves.len() as i32), None);
     assert_eq!(moves.decode(-1), None);
     assert_eq!(moves.index(&lay(5, &[(0, 1)])), None);
@@ -282,24 +289,64 @@ fn known_cards_follow_a_pile_the_opponent_took() {
     let mut t = table(&params, a, b, 0);
     t.play(&params, 0, &lay(0, &[(0, 2)])).unwrap();
     t.play(&params, 1, &lay(0, &[(3, 1)])).unwrap();
-    assert_eq!(t.known(&params, 0), [0; 8], "nothing seen of player 1 yet");
+    assert_eq!(t.known[0], [0; 8], "nothing seen of player 1 yet");
     t.play(&params, 0, &Move::Call).unwrap();
-    assert_eq!(t.known(&params, 0), counts(&[(0, 2), (3, 1)]));
+    assert_eq!(t.known[0], counts(&[(0, 2), (3, 1)]));
     assert_eq!(
-        t.known(&params, 1),
-        [0; 8],
+        t.known[1], [0; 8],
         "player 0 holds nothing player 1 has seen"
     );
     assert_eq!(t.to_act, 0);
     t.play(&params, 0, &lay(1, &[(1, 1)])).unwrap();
     t.play(&params, 1, &lay(1, &[(0, 1)])).unwrap();
     assert_eq!(
-        t.known(&params, 0),
+        t.known[0],
         counts(&[(0, 2), (3, 1)]),
         "a known card laid face down is still in player 1's possession"
     );
     t.play(&params, 0, &Move::Call).unwrap();
-    assert_eq!(t.known(&params, 0), counts(&[(0, 2), (1, 1), (3, 1)]));
+    assert_eq!(t.known[0], counts(&[(0, 2), (1, 1), (3, 1)]));
+}
+
+#[test]
+fn taking_a_pile_with_known_cards_lowers_what_is_known() {
+    let params = p();
+    let a = cards(&params, &[(1, 2)]);
+    let b = cards(&params, &[(0, 2), (2, 1)]);
+    let mut t = table(&params, a, b, 1);
+    t.known = [counts(&[(0, 2)]), [0; 8]];
+    t.play(&params, 1, &lay(0, &[(0, 2)])).unwrap();
+    assert_eq!(
+        t.known[0],
+        counts(&[(0, 2)]),
+        "laid face down, still theirs"
+    );
+    t.play(&params, 0, &Move::Call).unwrap();
+    assert_eq!(
+        t.known[0], [0; 8],
+        "player 0 now holds the two nines it knew of"
+    );
+    assert_eq!(
+        t.known[1],
+        counts(&[(0, 2)]),
+        "player 1 saw its nines go to player 0"
+    );
+}
+
+#[test]
+fn a_turned_card_counts_once_with_what_was_known() {
+    let params = p();
+    let a = cards(&params, &[(1, 2)]);
+    let b = cards(&params, &[(0, 2), (2, 1)]);
+    let mut t = table(&params, a, b, 1);
+    t.known = [counts(&[(0, 1)]), [0; 8]];
+    t.play(&params, 1, &lay(1, &[(0, 1)])).unwrap();
+    t.play(&params, 0, &Move::Call).unwrap();
+    assert_eq!(
+        t.known[0],
+        counts(&[(0, 1)]),
+        "the turned nine may be the nine player 0 already knew of"
+    );
 }
 
 #[test]
@@ -314,7 +361,7 @@ fn the_seed_decides_who_leads_first() {
         assert_eq!(t.aside.count_ones(), 4);
         assert_eq!(t.hands[0] & t.hands[1], 0);
         assert_eq!((t.hands[0] | t.hands[1]) & t.aside, 0);
-        assert_eq!(t.seen, t.hands);
+        assert_eq!(t.known, [[0; 8]; 2]);
         assert_eq!(t, Table::deal(&params, seed));
     }
     assert!(leaders[0] > 0 && leaders[1] > 0, "{leaders:?}");
@@ -371,4 +418,25 @@ fn the_deck_mask_covers_every_card_and_no_more() {
     };
     assert_eq!(small.validate(), Ok(()));
     assert_eq!(small.deck_mask(), 0b11);
+}
+
+#[test]
+fn params_refuse_an_action_space_past_the_cap() {
+    let wide = Params {
+        ranks: 8,
+        copies: 8,
+        hand: 20,
+        max_batch: 4,
+        ..p()
+    };
+    assert_eq!(wide.move_count(), 1 + 8 * (8 + 36 + 120 + 330));
+    assert_eq!(wide.validate(), Ok(()));
+    assert_eq!(Moves::new(&wide).len() as u64, wide.move_count());
+    let wider = Params {
+        max_batch: 5,
+        ..wide
+    };
+    assert_eq!(wider.move_count(), 1 + 8 * (8 + 36 + 120 + 330 + 792));
+    assert!(wider.validate().is_err());
+    assert_eq!(p().move_count(), 276);
 }
