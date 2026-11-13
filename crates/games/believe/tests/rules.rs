@@ -36,6 +36,7 @@ fn lay(claim: u8, pairs: &[(u8, u8)]) -> Move {
 }
 
 fn table(params: &Params, first: u64, second: u64, to_act: u8) -> Table {
+    assert_eq!(first & second, 0, "the hands share a card");
     let mut t = Table::empty(params);
     t.hands = [first, second];
     t.seen = [first, second];
