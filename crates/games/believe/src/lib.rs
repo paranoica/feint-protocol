@@ -4,6 +4,7 @@ mod moves;
 mod rules;
 mod sample;
 mod scripted;
+pub mod trained;
 
 pub use adapter::{Believe, GAME_VERSION, observation_len};
 pub use rules::{
