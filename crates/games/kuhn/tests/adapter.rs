@@ -244,3 +244,37 @@ fn idle_steps_replay_to_the_same_digest() {
         Ok(report.digest)
     );
 }
+
+#[test]
+fn simulate_skips_an_action_out_of_turn() {
+    let game = Kuhn::new();
+    let start = Deal {
+        cards: [0, 2],
+        history: vec![PASS],
+        tick: 3,
+    };
+    let next = game.simulate(&start, &[act(0, 0, BET), act(0, 1, BET)], 1);
+    assert_eq!(next.history, vec![PASS, BET]);
+    assert_eq!(next.tick, 4);
+    let mut late = start.clone();
+    late.tick = u64::MAX;
+    assert_eq!(game.simulate(&late, &[], 2).tick, u64::MAX);
+}
+
+#[test]
+fn a_hostile_observation_samples_a_real_card() {
+    let game = Kuhn::new();
+    let mut rng = ChaCha8Rng::seed_from_u64(3);
+    for card in [f32::INFINITY, 255.0, 1e9, -4.0, f32::NAN] {
+        let mut obs = ObservationT::default();
+        obs.player = 1;
+        obs.state = Some(vec![card, 7.0, 1e9, -1.0]);
+        let guess = game.state_from_observation(&obs, &mut rng);
+        assert!(
+            guess.cards.iter().all(|&c| c < 3),
+            "{card}: {:?}",
+            guess.cards
+        );
+        assert_ne!(guess.cards[0], guess.cards[1]);
+    }
+}

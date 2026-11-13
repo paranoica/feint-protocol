@@ -185,7 +185,7 @@ impl GameAdapter for Kuhn {
 
     fn state_from_observation(&self, obs: &ObservationT, rng: &mut ChaCha8Rng) -> Deal {
         let seen = obs.state.as_deref().unwrap_or_default();
-        let own = seen.first().map_or(0, |&c| c as u8);
+        let own = seen.first().map_or(0, |&c| (c as u8).min(2));
         let other = (own + 1 + (rng.next_u32() % 2) as u8) % 3;
         let mut cards = [own, other];
         if obs.player == 1 {
@@ -208,11 +208,9 @@ impl GameAdapter for Kuhn {
         for action in actions {
             let mut stamped = action.clone();
             stamped.tick = next.tick;
-            if next.play(&stamped).is_err() {
-                break;
-            }
+            let _ = next.play(&stamped);
         }
-        next.tick += u64::from(ticks);
+        next.tick = next.tick.saturating_add(u64::from(ticks));
         next
     }
 
