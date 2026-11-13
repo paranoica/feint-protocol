@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -379,26 +381,44 @@ def test_training_refuses_an_unknown_mix_seat_before_it_starts(tmp_path: Path) -
         assert not logdir.exists()
 
 
-def test_the_hockey_fixture_command_still_requires_its_files(tmp_path: Path) -> None:
-    import subprocess
-    import sys
-
-    result = subprocess.run(
-        [sys.executable, "-m", "feint_train.fixtures", "--out", str(tmp_path / "x")],
+def fixture_command(*args: str) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run(
+        [sys.executable, "-m", "feint_train.fixtures", *args],
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],
     )
+
+
+def test_the_hockey_fixture_command_still_requires_its_files(tmp_path: Path) -> None:
+    result = fixture_command("--out", str(tmp_path / "x"))
     assert result.returncode == 2
     assert "--checkpoint" in result.stderr
     assert "Traceback" not in result.stderr
-    bad = subprocess.run(
-        [sys.executable, "-m", "feint_train.fixtures", "--turn", "kuhn", "x", "8", "32"]
-        + ["--out", str(tmp_path / "y")],
-        capture_output=True,
-        text=True,
-        cwd=Path(__file__).resolve().parents[1],
-    )
-    assert bad.returncode == 2
-    assert "whole numbers" in bad.stderr
+    for number in ("x", "\u00b2"):
+        bad = fixture_command("--turn", "kuhn", number, "8", "32", "--out", str(tmp_path / "y"))
+        assert bad.returncode == 2
+        assert "whole numbers" in bad.stderr
+        assert "Traceback" not in bad.stderr
     assert not (tmp_path / "y").exists()
+
+
+def test_the_mix_check_names_an_unknown_game_and_refuses_shares_that_cannot_be_drawn(
+    tmp_path: Path,
+) -> None:
+    from feint_train.turns import TurnConfig, check_mix, train
+
+    with pytest.raises(ValueError, match="unknown game"):
+        check_mix("nope", {"learner": 1.0})
+    for mix in (
+        {"learner": 0.0, "bet": 0.0},
+        {"learner": float("inf")},
+        {"learner": float("nan"), "bet": 1.0},
+        {"learner": 1.0, "bet": -0.5},
+    ):
+        logdir = tmp_path / str(len(list(tmp_path.iterdir())))
+        with pytest.raises(ValueError, match="share"):
+            train(TurnConfig(game="kuhn", logdir=logdir, envs=4, updates=1, mix=mix))
+        assert not logdir.exists()
+    check_mix("kuhn", {"frozen": 1.0})
+    check_mix("kuhn", {"learner": 0.0, "bet": 1.0})

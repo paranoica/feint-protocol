@@ -168,7 +168,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.turn:
         game, *numbers = args.turn
-        if not all(n.isdigit() for n in numbers):
+        if not all(n.isascii() and n.isdecimal() for n in numbers):
             parser.error("--turn takes GAME and three whole numbers")
         seed, hidden, rows = map(int, numbers)
         write_turn_fixture(args.out, game, seed, hidden, rows)
