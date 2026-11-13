@@ -310,3 +310,13 @@ def test_a_policy_with_non_finite_weights_is_not_exported(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="finite"):
         export_turn(agent, tmp_path / "p.safetensors", "kuhn")
     assert not (tmp_path / "p.safetensors").exists()
+
+
+def test_evaluation_takes_scripted_opponents_only() -> None:
+    from feint_train.agent import DiscreteAgent
+    from feint_train.turns import evaluate
+
+    agent = DiscreteAgent(np.ones(4, dtype=np.float32), 2)
+    for opponent in ("learner", "frozen:0"):
+        with pytest.raises(ValueError, match="scripted"):
+            evaluate(agent, "kuhn", opponent, matches=4, seed=1)

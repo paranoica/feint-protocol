@@ -127,6 +127,8 @@ def play(
 def evaluate(
     agent: DiscreteAgent, game: str, opponent: str, matches: int, seed: int
 ) -> dict[str, float]:
+    if opponent == "learner" or opponent.startswith("frozen:"):
+        raise ValueError(f"evaluation needs a scripted opponent, not {opponent!r}")
     seats = [("learner", opponent) if i % 2 == 0 else (opponent, "learner") for i in range(matches)]
     learner = np.arange(matches) % 2
     batch = TurnBatch(game, seats)
