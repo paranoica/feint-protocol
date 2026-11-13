@@ -164,10 +164,20 @@ fn the_ledger_agrees_with_the_rules_over_random_matches() {
                 let facts = ledger.record(p, &m);
                 let held = [table.hands[0].count_ones(), table.hands[1].count_ones()];
                 assert_eq!(ledger.cards(), held, "hand {hand} seed {seed}");
-                let out = table.outcome.and_then(|o| match o {
-                    Outcome::Winner(w) if held[usize::from(w)] == 0 => Some(w),
-                    _ => None,
-                });
+                let out = match &m {
+                    Move::Lay { .. } => before.out.filter(|&o| o != p),
+                    Move::Call => {
+                        let claim = before.claim.map_or(0, usize::from);
+                        let honest = by_rank(&params, before.last)
+                            .iter()
+                            .enumerate()
+                            .all(|(r, &c)| c == 0 || r == claim);
+                        before.out.filter(|&o| honest && o == before.last_by)
+                    }
+                };
+                if let Some(w) = out {
+                    assert_eq!(table.outcome, Some(Outcome::Winner(w)));
+                }
                 assert_eq!(
                     facts.last().and_then(|f| match f {
                         Fact::Out { seat } => Some(*seat),

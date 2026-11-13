@@ -69,6 +69,11 @@ export function verdict(outcome: number | undefined): string | null {
   return outcome > 0 ? "Вы выиграли" : outcome < 0 ? "Бот выиграл" : "Ничья";
 }
 
+export function ending(outcome: number | undefined): { title: string; upload: boolean } {
+  const title = verdict(outcome);
+  return title === null ? { title: "Время вышло — партия не закончена", upload: false } : { title, upload: true };
+}
+
 export function pick(picked: number[], hand: number[], rank: number): number[] {
   const total = picked.reduce((a, b) => a + b, 0);
   if (rank >= hand.length || total >= MAX_BATCH || picked[rank] >= hand[rank]) {

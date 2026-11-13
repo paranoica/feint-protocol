@@ -9,6 +9,7 @@ import {
   moveFor,
   parseEvents,
   pick,
+  ending,
   verdict,
   type CardEvent,
 } from "../src/games/believe.ts";
@@ -70,6 +71,13 @@ test("the verdict names a draw as a draw", () => {
   assert.equal(verdict(0), "Ничья");
   assert.equal(verdict(-1), "Бот выиграл");
   assert.equal(verdict(undefined), null);
+});
+
+test("a match cut by the tick cap is not a result and is not uploaded", () => {
+  assert.deepEqual(ending(undefined), { title: "Время вышло — партия не закончена", upload: false });
+  assert.deepEqual(ending(0), { title: "Ничья", upload: true });
+  assert.deepEqual(ending(1), { title: "Вы выиграли", upload: true });
+  assert.deepEqual(ending(-1), { title: "Бот выиграл", upload: true });
 });
 
 test("picking adds one card of a rank within the hand and the batch", () => {

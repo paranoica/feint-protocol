@@ -20,7 +20,7 @@ import {
 } from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
-import { CARD_TICK_MS, CardBoard, HOW_TO_PLAY, verdict } from "./games/believe.ts";
+import { CARD_TICK_MS, CardBoard, ending, HOW_TO_PLAY } from "./games/believe.ts";
 import { fakeLinks, parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
@@ -60,6 +60,7 @@ let skipTo = 0;
 let table: WebCards | null = null;
 let board: CardBoard | null = null;
 let cardTimer: ReturnType<typeof setInterval> | null = null;
+let cardMatch = 0;
 
 function readNick(): string {
   try {
@@ -281,22 +282,26 @@ async function upload(record: Uint8Array) {
   }
 }
 
-async function uploadCards(record: Uint8Array, ticket: Ticket | null, nick: string) {
-  const saved = $("cards-saved");
+async function uploadCards(record: Uint8Array, ticket: Ticket | null, nick: string, id: number) {
+  const status = (text: string) => {
+    if (id === cardMatch) {
+      $("cards-saved").textContent = text;
+    }
+  };
   if (ticket === null) {
-    saved.textContent = "Не сохранено: арена недоступна";
+    status("Не сохранено: арена недоступна");
     return;
   }
-  saved.textContent = "Сохраняю…";
+  status("Сохраняю…");
   try {
     const response = await fetch(uploadPath(nick, ticket.ticket, null), {
       method: "POST",
       headers: { "content-type": "application/octet-stream", "x-feint": "1" },
       body: new Uint8Array(record),
     });
-    saved.textContent = response.status === 201 ? "Сохранено в арене" : `Не сохранено: ${response.status}`;
+    status(response.status === 201 ? "Сохранено в арене" : `Не сохранено: ${response.status}`);
   } catch {
-    saved.textContent = "Не сохранено: арена недоступна";
+    status("Не сохранено: арена недоступна");
   }
 }
 
@@ -310,7 +315,7 @@ function stopCards() {
   board = null;
 }
 
-function cardTick(ticket: Ticket | null, nick: string) {
+function cardTick(ticket: Ticket | null, nick: string, id: number) {
   if (!table || !board) {
     return;
   }
@@ -325,9 +330,14 @@ function cardTick(ticket: Ticket | null, nick: string) {
   }
   board.render(true);
   lastRecord = table.record();
-  $("cards-verdict").textContent = verdict(table.outcome()) ?? "";
+  const end = ending(table.outcome());
+  $("cards-verdict").textContent = end.title;
   $("cards-end").hidden = false;
-  saves.track(uploadCards(lastRecord, ticket, nick));
+  if (end.upload) {
+    saves.track(uploadCards(lastRecord, ticket, nick, id));
+  } else {
+    $("cards-saved").textContent = "Не сохранено: партия не закончена";
+  }
 }
 
 async function beginCards() {
@@ -358,7 +368,8 @@ async function beginCards() {
   show(next);
   board.render(true);
   const nick = next.nick;
-  cardTimer = setInterval(() => cardTick(ticket, nick), CARD_TICK_MS);
+  const id = ++cardMatch;
+  cardTimer = setInterval(() => cardTick(ticket, nick, id), CARD_TICK_MS);
 }
 
 async function begin(view: GameView, level: number, bot: BotKind) {
