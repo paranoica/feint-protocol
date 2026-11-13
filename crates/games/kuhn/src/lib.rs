@@ -1,3 +1,5 @@
+pub mod solve;
+
 use feint_ai::Controller;
 use feint_protocol::{
     ActionSpaceT, ActionT, AdapterError, BodyParamsT, ChaCha8Rng, DimT, EventT, GameAdapter,
