@@ -2,9 +2,9 @@ use feint_safetensors::{SafeTensors, SafeTensorsError};
 
 pub const FORMAT: &str = "feint-mlp-v1";
 
-const LN2_HI: f64 = 6.931_471_803_691_238_164_90e-1;
-const LN2_LO: f64 = 1.908_214_929_270_587_700_02e-10;
-const INV_LN2: f64 = 1.442_695_040_888_963_387_00;
+const LN2_HI: f64 = f64::from_bits(0x3fe6_2e42_fee0_0000);
+const LN2_LO: f64 = f64::from_bits(0x3dea_39ef_3579_3c76);
+const INV_LN2: f64 = f64::from_bits(0x3ff7_1547_652b_82fe);
 
 #[must_use]
 pub fn turn_layout(game: &str, features: usize, actions: usize) -> String {
