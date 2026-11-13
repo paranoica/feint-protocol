@@ -11,9 +11,9 @@ pub struct Checkpoint {
 }
 
 pub const CHECKPOINTS: &[Checkpoint] = &[Checkpoint {
-    name: "believe-smoke-00146",
-    id: 0xc78b_bff6_678f_5a22,
-    bytes: include_bytes!(concat!(env!("OUT_DIR"), "/believe-smoke-00146.safetensors")),
+    name: "believe-2-02475",
+    id: 0x53c5_104d_2354_9530,
+    bytes: include_bytes!(concat!(env!("OUT_DIR"), "/believe-2-02475.safetensors")),
 }];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -8,7 +8,7 @@ fn fnv(bytes: &[u8]) -> u64 {
     })
 }
 
-const SHIPPED: [u64; 1] = [0xc78b_bff6_678f_5a22];
+const SHIPPED: [u64; 1] = [0x53c5_104d_2354_9530];
 
 #[test]
 fn each_checkpoint_id_is_the_hash_of_its_bytes() {
