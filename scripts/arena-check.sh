@@ -34,4 +34,9 @@ if [[ "$parquet" -ne 3 ]]; then
   echo "expected 3 Parquet files, found $parquet" >&2
   exit 1
 fi
-echo "arena-check: 3 matches verified and stored (one against the trained bot), profile chain 1 -> 2, unknown checkpoint refused, front served"
+cards="$(find "$data/matches/believe" -name '*.rec' | wc -l)"
+if [[ "$cards" -ne 1 ]]; then
+  echo "expected 1 card record, found $cards" >&2
+  exit 1
+fi
+echo "arena-check: 4 matches verified and stored (one against the trained bot, one card match without Parquet), profile chain 1 -> 2, unknown checkpoint refused, front served"
