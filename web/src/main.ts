@@ -61,6 +61,7 @@ let table: WebCards | null = null;
 let board: CardBoard | null = null;
 let cardTimer: ReturnType<typeof setInterval> | null = null;
 let cardMatch = 0;
+let canvasMatch = 0;
 
 function readNick(): string {
   try {
@@ -263,22 +264,27 @@ async function fetchProfile(nick: string, game: string): Promise<{ version: numb
 }
 
 async function upload(record: Uint8Array) {
-  const saved = $("saved");
+  const id = canvasMatch;
+  const status = (text: string) => {
+    if (id === canvasMatch) {
+      $("saved").textContent = text;
+    }
+  };
   const { ticket, profile } = playing;
   if (ticket === null || screen.name !== "result") {
-    saved.textContent = "not saved: no arena";
+    status("not saved: no arena");
     return;
   }
-  saved.textContent = "saving…";
+  status("saving…");
   try {
     const response = await fetch(uploadPath(screen.nick, ticket.ticket, profile), {
       method: "POST",
       headers: { "content-type": "application/octet-stream", "x-feint": "1" },
       body: new Uint8Array(record),
     });
-    saved.textContent = response.status === 201 ? "saved" : `not saved: ${response.status}`;
+    status(response.status === 201 ? "saved" : `not saved: ${response.status}`);
   } catch {
-    saved.textContent = "not saved: arena unreachable";
+    status("not saved: arena unreachable");
   }
 }
 
@@ -419,6 +425,7 @@ async function begin(view: GameView, level: number, bot: BotKind) {
 }
 
 function enter(view: GameView, match: WebMatch, next: Screen) {
+  canvasMatch += 1;
   current = view;
   skipTo = 0;
   inputTick = -Infinity;
