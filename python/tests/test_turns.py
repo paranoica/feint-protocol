@@ -415,6 +415,7 @@ def test_the_mix_check_names_an_unknown_game_and_refuses_shares_that_cannot_be_d
         {"learner": float("inf")},
         {"learner": float("nan"), "bet": 1.0},
         {"learner": 1.0, "bet": -0.5},
+        {"learner": 1e308, "frozen": 1e308},
     ):
         logdir = tmp_path / str(len(list(tmp_path.iterdir())))
         with pytest.raises(ValueError, match="share"):

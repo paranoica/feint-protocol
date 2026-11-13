@@ -135,7 +135,8 @@ def check_opponents(game: str, opponents: tuple[str, ...]) -> None:
 def check_mix(game: str, mix: dict[str, float]) -> None:
     TurnBatch(game, [("learner", "learner")])
     shares = list(mix.values())
-    if not all(math.isfinite(v) and v >= 0 for v in shares) or sum(shares) <= 0:
+    total = sum(shares)
+    if not all(math.isfinite(v) and v >= 0 for v in shares) or not 0 < total < math.inf:
         raise ValueError(
             f"each share of the mix must be finite and not negative, some above 0: {mix}"
         )
