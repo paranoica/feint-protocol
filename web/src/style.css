@@ -372,3 +372,145 @@ select {
     padding: 0 12px;
   }
 }
+.cards-rules {
+  width: 100%;
+  text-align: left;
+  color: var(--muted);
+  font-size: 14px;
+}
+.cards-rules summary {
+  cursor: pointer;
+  color: var(--ink);
+}
+.cards-rules ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+.cards-table {
+  max-width: 720px;
+  gap: 16px;
+}
+.cards-head {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.cards-head h2 {
+  font-size: 28px;
+}
+.cards-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+.cards-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.cards-status span {
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cards-turn {
+  margin: 0;
+  min-height: 1.4em;
+  font-weight: 700;
+}
+.cards-hand {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.cards-rank {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 4px;
+}
+.cards-rank b {
+  font-size: 26px;
+}
+.cards-rank span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.cards-rank i {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--you);
+}
+.cards-rank:disabled,
+.cards-actions button:disabled,
+.cards-claim button:disabled {
+  cursor: not-allowed;
+}
+.cards-claim,
+.cards-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+.cards-claim:empty {
+  display: none;
+}
+.cards-claim span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.cards-claim button,
+.cards-actions button {
+  padding: 8px 14px;
+}
+.cards-claim button[aria-pressed="true"] {
+  border-color: var(--you);
+}
+.cards-call {
+  border-color: var(--bot);
+}
+.cards-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  font-size: 14px;
+}
+.cards-log li {
+  padding: 6px 10px;
+  border-left: 3px solid var(--edge);
+}
+.cards-log li.you {
+  border-left-color: var(--you);
+}
+.cards-log li.bot {
+  border-left-color: var(--bot);
+}
+.cards-log li.call {
+  font-weight: 700;
+}
+.cards-end[hidden] {
+  display: none;
+}
+@media (max-width: 520px) {
+  .cards-hand {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

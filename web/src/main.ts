@@ -1,11 +1,13 @@
-import init, { checkpoints, games, WebMatch } from "./wasm/feint_web.js";
+import init, { card_checkpoints, card_games, checkpoints, games, WebCards, WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
 import { localSeed, profilePath, profileVersion, Saves, seedRequest, ticketFrom, uploadPath, type Ticket } from "./api.ts";
 import {
   again,
+  cards,
   finish,
+  leaveCards,
   first,
   parseReplay,
   replay,
@@ -18,6 +20,7 @@ import {
 } from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
+import { CARD_TICK_MS, CardBoard, HOW_TO_PLAY, verdict } from "./games/believe.ts";
 import { fakeLinks, parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
@@ -54,6 +57,9 @@ const SAVE_WAIT_MS = 10_000;
 let watching: Pair | null = null;
 let watchSpeed = 1;
 let skipTo = 0;
+let table: WebCards | null = null;
+let board: CardBoard | null = null;
+let cardTimer: ReturnType<typeof setInterval> | null = null;
 
 function readNick(): string {
   try {
@@ -76,7 +82,7 @@ function show(next: Screen) {
   debugBox.classList.toggle("right", watching !== null);
   debugLeft.hidden = !showDebug || watching === null;
   debugBox.hidden = !showDebug;
-  for (const name of ["level", "game", "result"]) {
+  for (const name of ["level", "game", "result", "cards"]) {
     $(name).hidden = screen.name !== name;
   }
   if (screen.name === "level") {
@@ -275,6 +281,86 @@ async function upload(record: Uint8Array) {
   }
 }
 
+async function uploadCards(record: Uint8Array, ticket: Ticket | null, nick: string) {
+  const saved = $("cards-saved");
+  if (ticket === null) {
+    saved.textContent = "Не сохранено: арена недоступна";
+    return;
+  }
+  saved.textContent = "Сохраняю…";
+  try {
+    const response = await fetch(uploadPath(nick, ticket.ticket, null), {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-feint": "1" },
+      body: new Uint8Array(record),
+    });
+    saved.textContent = response.status === 201 ? "Сохранено в арене" : `Не сохранено: ${response.status}`;
+  } catch {
+    saved.textContent = "Не сохранено: арена недоступна";
+  }
+}
+
+function stopCards() {
+  if (cardTimer !== null) {
+    clearInterval(cardTimer);
+    cardTimer = null;
+  }
+  table?.free();
+  table = null;
+  board = null;
+}
+
+function cardTick(ticket: Ticket | null, nick: string) {
+  if (!table || !board) {
+    return;
+  }
+  table.advance(1);
+  board.render();
+  if (!table.finished()) {
+    return;
+  }
+  if (cardTimer !== null) {
+    clearInterval(cardTimer);
+    cardTimer = null;
+  }
+  board.render(true);
+  lastRecord = table.record();
+  $("cards-verdict").textContent = verdict(table.outcome()) ?? "";
+  $("cards-end").hidden = false;
+  saves.track(uploadCards(lastRecord, ticket, nick));
+}
+
+async function beginCards() {
+  const next = cards(screen, $<HTMLInputElement>("nick").value);
+  const checkpoint = Array.from(card_checkpoints())[0];
+  if (next.name !== "cards" || starting || checkpoint === undefined) {
+    return;
+  }
+  starting = true;
+  let ticket: Ticket | null = null;
+  try {
+    saveNick(next.nick);
+    await saves.settled(SAVE_WAIT_MS);
+    ticket = await fetchTicket();
+    stopCards();
+    table = new WebCards(ticket?.seed ?? localSeed(Math.random), checkpoint);
+  } catch {
+    stopCards();
+    return;
+  } finally {
+    starting = false;
+  }
+  board = new CardBoard($("cards-board"), table);
+  $("cards-who").textContent = next.nick;
+  $("cards-end").hidden = true;
+  $("cards-saved").textContent = "";
+  $("cards-verdict").textContent = "";
+  show(next);
+  board.render(true);
+  const nick = next.nick;
+  cardTimer = setInterval(() => cardTick(ticket, nick), CARD_TICK_MS);
+}
+
 async function begin(view: GameView, level: number, bot: BotKind) {
   const nick = $<HTMLInputElement>("nick").value;
   const next = start(screen, view.id, level, nick, bot);
@@ -464,6 +550,38 @@ function buildHub() {
     card.append(title, pitch, kinds, levels, watchRow);
     holder.append(card);
   }
+  buildCardsCard(holder);
+}
+
+function buildCardsCard(holder: HTMLElement) {
+  if (!Array.from(card_games()).includes("believe") || card_checkpoints().length === 0) {
+    return;
+  }
+  const card = document.createElement("article");
+  card.className = "card game-card";
+  const title = document.createElement("h2");
+  title.textContent = "Верю — не верю";
+  const pitch = document.createElement("p");
+  pitch.className = "tagline";
+  pitch.textContent = "Карточный блеф против обученного бота: кладите карты рубашкой вверх и врите убедительно.";
+  const rules = document.createElement("details");
+  rules.className = "cards-rules";
+  const summary = document.createElement("summary");
+  summary.textContent = "Как играть";
+  const list = document.createElement("ol");
+  for (const line of HOW_TO_PLAY) {
+    const item = document.createElement("li");
+    item.textContent = line;
+    list.append(item);
+  }
+  rules.append(summary, list);
+  const play = document.createElement("button");
+  play.className = "primary";
+  play.dataset.cards = "believe";
+  play.textContent = "Играть";
+  play.addEventListener("click", () => void beginCards());
+  card.append(title, pitch, rules, play);
+  holder.append(card);
 }
 
 function main() {
@@ -519,6 +637,10 @@ async function boot() {
   await init();
   buildHub();
   $("again").addEventListener("click", () => show(again(screen)));
+  $("cards-leave").addEventListener("click", () => {
+    stopCards();
+    show(leaveCards(screen));
+  });
   Object.assign(window, {
     feintRecord: () => lastRecord,
     feintPositions: () => game?.view() ?? null,
