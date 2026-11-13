@@ -47,6 +47,7 @@ def seat_plan(
         weights["learner"] = weights.get("learner", 0.0) + mix["frozen"]
     names = list(weights)
     p = np.array([weights[n] for n in names], dtype=np.float64)
+    p = p / p.max()
     picks = rng.choice(len(names), size=envs, p=p / p.sum())
     learner = np.arange(envs) % 2
     seats = []

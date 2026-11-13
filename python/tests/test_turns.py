@@ -423,3 +423,14 @@ def test_the_mix_check_names_an_unknown_game_and_refuses_shares_that_cannot_be_d
         assert not logdir.exists()
     check_mix("kuhn", {"frozen": 1.0})
     check_mix("kuhn", {"learner": 0.0, "bet": 1.0})
+
+
+def test_the_seat_plan_draws_from_shares_near_the_largest_float() -> None:
+    from feint_train.turns import check_mix, seat_plan
+
+    half = 8.988465674311579e307
+    mix = {"frozen": half, "bet": half, "random": 9e291}
+    check_mix("kuhn", mix)
+    seats, learner = seat_plan(64, mix, 0, np.random.default_rng(3))
+    others = {pair[1 - side] for pair, side in zip(seats, learner, strict=True)}
+    assert others == {"learner", "bet"}
