@@ -36,7 +36,7 @@ pub fn kuhn_digest() -> u64 {
             action.tick = game.live().tick;
             action.player = obs.to_act as u8;
             action.discrete = (state % 2) as i32;
-            if state % 3 == 0 {
+            if state.is_multiple_of(3) {
                 game.advance(&mut events);
                 continue;
             }
