@@ -193,3 +193,21 @@ fn a_strategy_is_a_probability_only_when_every_value_is_in_zero_to_one() {
         assert!(!s.is_probability(), "{bad}");
     }
 }
+
+#[test]
+fn criterion_2_passes_the_family_and_fails_what_is_off_or_not_a_probability() {
+    use kuhn::solve::criterion_2;
+    assert!(criterion_2(&family(1.0 / 6.0)).pass);
+    assert!(criterion_2(&family(0.0)).pass);
+    assert!(!criterion_2(&Strategy::constant(0.5)).pass);
+    let mut bluff = family(1.0 / 6.0);
+    bluff.set(Infoset::after_pass(0), 1.0 / 3.0 + 0.05);
+    assert!(!criterion_2(&bluff).pass);
+    for bad in [f64::NAN, 1.5] {
+        for set in Infoset::all() {
+            let mut s = family(1.0 / 6.0);
+            s.set(set, bad);
+            assert!(!criterion_2(&s).pass, "{set:?} = {bad}");
+        }
+    }
+}

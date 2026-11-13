@@ -4,12 +4,9 @@ use std::process::ExitCode;
 use feint_ai::cfr::{MAX_TABLE_BYTES, Table};
 use feint_turn::{TurnPolicy, turn_layout};
 use kuhn::solve::{
-    Infoset, Strategy, exploitability, family_check, reach, strategy_from_policy,
-    strategy_from_table,
+    Criterion, Infoset, MAX_EXPLOITABILITY, Strategy, TOLERANCE, criterion_2, reach,
+    strategy_from_policy, strategy_from_table,
 };
-
-const MAX_EXPLOITABILITY: f64 = 0.01;
-const TOLERANCE: f64 = 0.03;
 
 fn main() -> ExitCode {
     let Some(path) = std::env::args().nth(1) else {
@@ -43,13 +40,12 @@ fn main() -> ExitCode {
             reach(&s, set)
         );
     }
-    let exploit = exploitability(&s);
-    let check = family_check(&s);
-    let pass = missing == 0
-        && s.is_probability()
-        && exploit <= MAX_EXPLOITABILITY
-        && (check.jack_bluff - 1.0 / 3.0).abs() <= TOLERANCE
-        && check.deviation <= TOLERANCE;
+    let Criterion {
+        exploitability: exploit,
+        check,
+        pass,
+    } = criterion_2(&s);
+    let pass = missing == 0 && pass;
     println!("exploitability {exploit:.5} chips per hand (limit {MAX_EXPLOITABILITY})");
     println!(
         "alpha {:.4}; second player's jack bets after a pass {:.4} (1/3 within {TOLERANCE}); largest deviation from the family {:.4}",

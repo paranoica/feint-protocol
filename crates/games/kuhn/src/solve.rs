@@ -226,6 +226,31 @@ pub fn family_check(s: &Strategy) -> FamilyCheck {
     }
 }
 
+pub const MAX_EXPLOITABILITY: f64 = 0.01;
+pub const TOLERANCE: f64 = 0.03;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Criterion {
+    pub exploitability: f64,
+    pub check: FamilyCheck,
+    pub pass: bool,
+}
+
+#[must_use]
+pub fn criterion_2(s: &Strategy) -> Criterion {
+    let exploitability = exploitability(s);
+    let check = family_check(s);
+    let pass = s.is_probability()
+        && exploitability <= MAX_EXPLOITABILITY
+        && (check.jack_bluff - 1.0 / 3.0).abs() <= TOLERANCE
+        && check.deviation <= TOLERANCE;
+    Criterion {
+        exploitability,
+        check,
+        pass,
+    }
+}
+
 #[must_use]
 pub fn observation(set: Infoset) -> [f32; 4] {
     let mut obs = [f32::from(set.card), -1.0, -1.0, -1.0];

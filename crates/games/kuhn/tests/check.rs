@@ -16,7 +16,7 @@ fn table(alpha: f64, skip: Option<Infoset>) -> String {
 
 fn check(name: &str, text: &str) -> (i32, String) {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
-    let path = dir.join(name);
+    let path = dir.join(format!("{}-{name}", std::process::id()));
     std::fs::write(&path, text).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_kuhn_check"))
         .arg(&path)
