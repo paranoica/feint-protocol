@@ -281,7 +281,11 @@ pub fn before_the_lay(
         pre.claim = None;
         pre.last = 0;
     } else {
-        pre.last = take_random(t.laid[me], 1, rng);
+        pre.last = if pre.batches == 1 {
+            t.laid[me]
+        } else {
+            take_random(t.laid[me], 1, rng)
+        };
         pre.last_by = me as u8;
     }
     pre
@@ -346,7 +350,8 @@ pub fn choose<M: Model<Cards> + LayModel>(
         me,
         budget,
     };
-    let pool = worlds(game, obs, model, rng, POOL);
+    let size = POOL.max(usize::try_from(budget.iterations / 4).unwrap_or(POOL));
+    let pool = worlds(game, obs, model, rng, size);
     let mut sample = |r: &mut ChaCha8Rng| draw(&pool, r);
     decide(&mut setup, &mut sample, rng)
 }

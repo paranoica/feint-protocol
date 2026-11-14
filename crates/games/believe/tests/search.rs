@@ -468,10 +468,46 @@ fn the_table_before_the_opponents_lay_is_rebuilt_from_the_view() {
                 assert_eq!(pre.claim, t.claim);
                 assert_eq!(pre.last_by, 0);
                 assert_eq!(pre.last & !pre.laid[0], 0);
-                assert_eq!(pre.last.count_ones(), 1);
+                if pre.batches == 1 {
+                    assert_eq!(pre.last, pre.laid[0], "the bot's only batch is all it laid");
+                } else {
+                    assert_eq!(pre.last.count_ones(), 1);
+                }
             }
             checked += 1;
         }
     }
     assert!(checked >= 100, "{checked}");
+}
+
+#[test]
+fn after_the_bots_first_batch_the_table_before_the_lay_shows_that_whole_batch() {
+    use believe::search::before_the_lay;
+    let game = Cards::default();
+    let params = game.params();
+    let ids = |list: &[u32]| list.iter().fold(0u64, |m, &i| m | (1 << i));
+    let mut t = Table::empty(params);
+    t.hands[0] = ids(&[0, 1, 4, 5, 8]);
+    t.laid[0] = ids(&[12, 13, 14]);
+    t.hands[1] = ids(&[2, 6, 9, 10, 16]);
+    t.laid[1] = ids(&[17]);
+    t.last = t.laid[1];
+    t.last_by = 1;
+    t.claim = Some(3);
+    t.batches = 2;
+    t.to_act = 0;
+    t.aside = params.deck_mask() & !(t.hands[0] | t.hands[1] | t.laid[0] | t.laid[1]);
+    assert!(t.validate(params).is_ok());
+    let pre = before_the_lay(
+        &t,
+        0,
+        t.hands[1] | t.laid[1],
+        0,
+        &mut ChaCha8Rng::seed_from_u64(1),
+    );
+    assert_eq!(pre.batches, 1);
+    assert_eq!(pre.last, t.laid[0]);
+    assert_eq!(pre.last_by, 0);
+    assert_eq!(pre.claim, Some(3));
+    assert!(pre.validate(params).is_ok());
 }
