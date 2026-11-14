@@ -27,19 +27,24 @@ if [[ "$exported" != "feint_godot_init" ]]; then
   echo "the extension exports more than its entry point: $exported" >&2
   exit 1
 fi
-if ! timeout 120 godot --headless -e --path "$project" --quit-after 300 > /dev/null 2>&1; then
+if ! editor="$(timeout 120 godot --headless -e --path "$project" --quit-after 300 2>&1)"; then
   echo "the Godot project does not import" >&2
   exit 1
 fi
 code=0
-out="$(timeout 120 godot --headless --rendering-driver dummy --audio-driver Dummy --path "$project" -- --check 2>&1)" || code=$?
+out="$(timeout 60 godot --headless --rendering-driver dummy --audio-driver Dummy --path "$project" -- --check 2>&1)" || code=$?
 line="$(sed -n 's/^FEINT //p' <<< "$out" | tail -1)"
 native="$(cargo run -q --locked --release -p feint-ffi --bin native)"
 echo "Godot:  $line"
 echo "native: $native"
-if grep -qi "leaked" <<< "$out"; then
-  echo "the Godot run leaked objects" >&2
-  echo "$out" | grep -i leaked >&2
+if grep -qi "leaked" <<< "$editor$out"; then
+  echo "Godot leaked objects" >&2
+  grep -i leaked <<< "$editor$out" >&2
+  exit 1
+fi
+if grep -q "SCRIPT ERROR" <<< "$out"; then
+  echo "the check script failed" >&2
+  grep -A3 "SCRIPT ERROR" <<< "$out" >&2
   exit 1
 fi
 if [[ "$code" != 0 || -z "$line" || "$line" != "$native" ]]; then

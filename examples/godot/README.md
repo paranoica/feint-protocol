@@ -27,6 +27,6 @@ godot -e --path examples/godot  # open the project in the editor
 
 ## Notes
 
-- `godot --import` on this project crashes on exit in Godot 4.7.2 once the class is registered (the editor itself opens and closes cleanly), so `godot-check` imports by starting the editor headless for a few frames instead.
+- `godot --import` on this project can crash on exit in Godot 4.7.2 once the class is registered (seen on a first import) (the editor itself opens and closes cleanly), so `godot-check` imports by starting the editor headless for a few frames instead.
 - Instances are built with `classdb_construct_object3`: the older `classdb_construct_object2` left every `FeintMatch` with one reference too many, so none was ever freed (the editor creates one of each class, which also made it crash on closing). `godot-check` fails if Godot reports a leaked object.
 - `extension/gdextension_interface.h` was produced by `godot --headless --dump-gdextension-interface` from Godot 4.7.2 and is Godot's file under the MIT licence (`extension/GODOT-LICENSE.txt`).
