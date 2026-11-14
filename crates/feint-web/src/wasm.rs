@@ -1,4 +1,5 @@
 use airhockey::AirHockey;
+use boxing::Boxing;
 use duel::QuickDraw;
 use feint_ai::{InsightView, Profile, decode_profile, encode_profile};
 use feint_protocol::EventKind;
@@ -134,6 +135,9 @@ fn start(
         <PingPong as HubGame>::ID => Ok(Box::new(
             Play::<PingPong>::with_profile(level, seed, profile).map_err(refused)?,
         )),
+        <Boxing as HubGame>::ID => Ok(Box::new(
+            Play::<Boxing>::with_profile(level, seed, profile).map_err(refused)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -161,6 +165,9 @@ fn start_trained(
         <PingPong as HubGame>::ID => Ok(Box::new(
             Play::<PingPong>::trained(level, seed, checkpoint).map_err(refused)?,
         )),
+        <Boxing as HubGame>::ID => Ok(Box::new(
+            Play::<Boxing>::trained(level, seed, checkpoint).map_err(refused)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -180,6 +187,9 @@ fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>,
         <PingPong as HubGame>::ID => Ok(Box::new(
             Play::<PingPong>::spectate(left, right, seed).map_err(unknown)?,
         )),
+        <Boxing as HubGame>::ID => Ok(Box::new(
+            Play::<Boxing>::spectate(left, right, seed).map_err(unknown)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -192,6 +202,7 @@ pub fn games() -> Vec<String> {
         <Penalty as HubGame>::ID.to_string(),
         <QuickDraw as HubGame>::ID.to_string(),
         <PingPong as HubGame>::ID.to_string(),
+        <Boxing as HubGame>::ID.to_string(),
     ]
 }
 

@@ -17,6 +17,7 @@ feint-web = { path = "../feint-web" }
 penalty.workspace = true
 duel.workspace = true
 pingpong.workspace = true
+boxing.workspace = true
 believe.workspace = true
 feint-turn.workspace = true
 arrow = { version = "60", default-features = false }

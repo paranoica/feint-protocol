@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { games, initSync, WebMatch } from "../src/wasm/feint_web.js";
 import { readPaddles, shotValues } from "../src/games/pingpong.ts";
+import { attackFromKey, boxingValues, guardFromKey, readFighters } from "../src/games/boxing.ts";
 
 initSync({ module: readFileSync(new URL("../src/wasm/feint_web_bg.wasm", import.meta.url)) });
 
@@ -101,7 +102,7 @@ test("two bots play for a watcher and each shows its own mind", () => {
 });
 
 test("the hub builds a game by id and keeps the hockey entry points", () => {
-  assert.deepEqual(Array.from(games()), ["airhockey", "penalty", "duel", "pingpong"]);
+  assert.deepEqual(Array.from(games()), ["airhockey", "penalty", "duel", "pingpong", "boxing"]);
   const game = WebMatch.create("airhockey", 2, 5);
   assert.equal(game.game_id(), "airhockey");
   assert.equal(game.arena(), true);
@@ -175,7 +176,7 @@ test("a duel runs in wasm with a held draw and a pushed sidestep", () => {
 });
 
 test("every hub game starts a level 5 match from that game's own profile", () => {
-  for (const id of ["penalty", "duel", "pingpong"]) {
+  for (const id of ["penalty", "duel", "pingpong", "boxing"]) {
     const first = WebMatch.create(id, 5, 1);
     for (let i = 0; i < 240 * 900 && !first.finished(); i += 16) {
       first.advance(16);
@@ -211,3 +212,48 @@ test("a table tennis match runs in wasm, the paddle follows the input and points
   assert.ok(a + b >= 11, `${a}:${b}`);
   game.free();
 });
+
+test("boxing keys map to attacks and guards, and the values match the action space", () => {
+  assert.deepEqual(attackFromKey("j"), [1, 1]);
+  assert.deepEqual(attackFromKey("N"), [1, -1]);
+  assert.deepEqual(attackFromKey("k"), [2, 1]);
+  assert.deepEqual(attackFromKey("m"), [2, -1]);
+  for (const reserved of ["d", "D", "f", "F", "x"]) {
+    assert.equal(attackFromKey(reserved), null, `${reserved} belongs to the hub`);
+    assert.equal(guardFromKey(reserved, 1), 1);
+  }
+  assert.equal(guardFromKey("s", 1), -1);
+  assert.equal(guardFromKey("ArrowUp", -1), 1);
+  assert.equal(guardFromKey("x", -1), -1);
+  assert.deepEqual(boxingValues(-0.5, 1, null, false), [-0.5, 1, 0, 0, 0]);
+  assert.deepEqual(boxingValues(-0.5, -1, [2, 1], false), [-0.5, -1, 2, 1, 0]);
+  assert.deepEqual(boxingValues(-0.5, 1, null, true), [-0.5, 1, 0, 0, 1]);
+});
+
+test("a boxing match runs in wasm: the fighter walks to the input and a jab lands on the open height", () => {
+  const game = WebMatch.create("boxing", 1, 7);
+  assert.equal(game.game_id(), "boxing");
+  assert.equal(game.arena(), true);
+  assert.equal(game.layout().length, 5);
+  game.set_input(new Float32Array(boxingValues(0.05, 1, null, false)));
+  game.advance(240);
+  const v = Array.from(game.view());
+  assert.equal(v.length, 16);
+  const [mine, theirs] = readFighters(v);
+  assert.ok(Math.abs(mine.x - 0.05) < 0.01, `${mine.x}`);
+  assert.ok(theirs.x - mine.x < 0.8);
+  const open = theirs.guard > 0 ? -1 : 1;
+  game.push_input(new Float32Array(boxingValues(0.05, 1, [1, open], false)));
+  game.advance(4);
+  const [winding] = readFighters(Array.from(game.view()));
+  assert.equal(winding.stage, 1, "the jab winds up");
+  assert.equal(winding.height, open);
+  game.advance(240);
+  assert.equal(Array.from(game.score())[0], 1, "the jab to the open height scores");
+  for (let i = 0; i < 240 * 1800 && !game.finished(); i += 64) {
+    game.advance(64);
+  }
+  assert.ok(game.finished());
+  game.free();
+});
+

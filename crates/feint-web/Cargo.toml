@@ -15,6 +15,7 @@ airhockey = { path = "../games/airhockey" }
 penalty.workspace = true
 duel.workspace = true
 pingpong.workspace = true
+boxing.workspace = true
 feint-ai.workspace = true
 feint-ml = { path = "../feint-ml" }
 feint-protocol.workspace = true

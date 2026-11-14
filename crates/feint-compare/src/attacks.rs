@@ -375,6 +375,43 @@ pub fn attacks(id: &str, matches: u64) -> Study {
                 );
             }
         }
+        "boxing" => {
+            for seed in 0..matches {
+                let seat = (seed % 2) as u8;
+                let game = boxing::Boxing::new(boxing::Params::default(), 5);
+                let spec = game.spec();
+                let bot = Bot::new(
+                    five,
+                    boxing::BoxingPlaybook::new(boxing::Params::default()),
+                    &spec,
+                )
+                .unwrap_or_else(|e| panic!("{e:?}"));
+                let reader = boxing::BoxingPlaybook::new(boxing::Params::default());
+                let mut human = boxing::human::Human::new();
+                let hb = boxing::human::human_body(&game);
+                let h = header(
+                    "boxing",
+                    boxing::GAME_VERSION,
+                    seed,
+                    five.body(&spec),
+                    hb,
+                    seat,
+                );
+                study(
+                    game,
+                    bot,
+                    &reader,
+                    &mut human,
+                    Setup {
+                        header: h,
+                        seat,
+                        cap: 240 * 1800,
+                        score_of: |s: &boxing::Bout| s.score.map(i64::from),
+                    },
+                    &mut s,
+                );
+            }
+        }
         _ => panic!("unknown game {id}"),
     }
     s.finish()

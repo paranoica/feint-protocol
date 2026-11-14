@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const [glue, wasm, out, trainedOut, fakesJson, cardOut, penaltyOut, pingpongOut] = process.argv.slice(2);
+const [glue, wasm, out, trainedOut, fakesJson, cardOut, penaltyOut, pingpongOut, boxingOut] = process.argv.slice(2);
 const { initSync, WebMatch, checkpoints, WebCards, card_games, card_checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
@@ -155,3 +155,29 @@ if (pingpongOut) {
   writeFileSync(pingpongOut, rally.record());
   process.stdout.write(`${rally.digest_hex()}\n`);
 }
+
+if (boxingOut) {
+  const bout = WebMatch.create("boxing", 4, 0xb0c5);
+  let throws = 0;
+  while (!bout.finished() && bout.tick() < 240 * 1800) {
+    const v = bout.view();
+    const theirX = v[9];
+    const guard = v[14] > 0 ? 1 : -1;
+    const target = theirX - 0.75;
+    bout.set_input(new Float32Array([target, guard, 0, 0, 0]));
+    if (v[0] === 0 && v[3] === 0 && Math.abs(theirX - v[2]) < 0.8 && bout.tick() % 96 === 0) {
+      const feint = throws % 3 === 2;
+      bout.push_input(new Float32Array([target, guard, feint ? 2 : 1, throws % 2 === 0 ? 1 : -1, 0]));
+      throws += 1;
+    } else if (v[3] === 1 && v[4] === 2 && v[6] < 0.5) {
+      bout.push_input(new Float32Array([target, guard, 0, 0, 1]));
+    }
+    bout.advance(4);
+  }
+  if (!bout.finished()) {
+    throw new Error("the boxing match did not finish");
+  }
+  writeFileSync(boxingOut, bout.record());
+  process.stdout.write(`${bout.digest_hex()}\n`);
+}
+

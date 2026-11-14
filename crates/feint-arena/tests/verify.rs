@@ -470,3 +470,41 @@ fn table_tennis_records_verify_with_their_own_columns() {
     });
     assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
 }
+
+#[test]
+fn boxing_records_verify_with_their_own_columns() {
+    use feint_web::Play;
+    let mut s = Play::<boxing::Boxing>::new(3, 5).unwrap();
+    let mut round = 0u32;
+    while !s.finished() && s.tick() < 240 * 1800 {
+        s.set_input(&[0.0, 1.0, 0.0, 0.0, 0.0]);
+        if s.tick().is_multiple_of(120) {
+            let height = if round.is_multiple_of(2) { 1.0 } else { -1.0 };
+            s.push_input(&[0.0, 1.0, 1.0, height, 0.0]);
+            round += 1;
+        }
+        s.advance(4);
+    }
+    assert!(s.finished());
+    let bytes = s.record();
+    let v = verify(&bytes, None).unwrap();
+    assert_eq!((v.game, v.columns), ("boxing", boxing::Boxing::COLUMNS));
+    assert!(v.finished);
+    assert_eq!(v.digest, s.digest());
+    assert_eq!(v.frames.len() as u64, v.record.ticks);
+    let last = &v.frames.last().unwrap().values;
+    let at = |name: &str| {
+        last[boxing::Boxing::COLUMNS
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap()]
+        .unwrap()
+    };
+    assert_eq!([at("score0"), at("score1")], s.score().map(f64::from));
+    assert!(at("score0") + at("score1") > 0.0);
+    let edited = forge(&bytes, |r| {
+        let i = r.actions.iter().position(|a| a.player == 0).unwrap();
+        r.actions[i].values = Some(vec![2.0, -1.0, 2.0, -1.0, 0.0]);
+    });
+    assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
+}

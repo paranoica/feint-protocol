@@ -637,3 +637,116 @@ impl HubGame for pingpong::PingPong {
         v
     }
 }
+
+impl HubGame for boxing::Boxing {
+    type Book = boxing::BoxingPlaybook;
+    type Human = Pad;
+    const ID: &'static str = "boxing";
+    const VERSION: u32 = boxing::GAME_VERSION;
+    const ARENA: bool = true;
+    const COLUMNS: &'static [Column] = &[
+        kept("phase"),
+        kept("phase_left"),
+        kept("x0"),
+        kept("stage0"),
+        kept("kind0"),
+        kept("height0"),
+        kept("left0"),
+        kept("guard0"),
+        kept("switching0"),
+        kept("x1"),
+        kept("stage1"),
+        kept("kind1"),
+        kept("height1"),
+        kept("left1"),
+        kept("guard1"),
+        kept("switching1"),
+        kept("score0"),
+        kept("score1"),
+    ];
+
+    fn build(level: u8) -> Self {
+        boxing::Boxing::new(boxing::Params::default(), level)
+    }
+
+    fn book() -> Self::Book {
+        boxing::BoxingPlaybook::new(boxing::Params::default())
+    }
+
+    fn human_body() -> BodyParamsT {
+        let p = boxing::Params::default();
+        body([p.max_speed, p.max_hand])
+    }
+
+    fn score(&self) -> [u32; 2] {
+        self.live().score
+    }
+
+    fn tick(&self) -> u64 {
+        self.live().tick
+    }
+
+    fn tick_hz(&self) -> u32 {
+        self.live().params.tick_hz
+    }
+
+    fn pause(&self) -> f32 {
+        let s = self.live();
+        let left = if s.phase == boxing::Phase::Break {
+            s.phase_left
+        } else {
+            0
+        };
+        (f64::from(left) / f64::from(s.params.tick_hz)) as f32
+    }
+
+    fn view(&self) -> Vec<f32> {
+        let s = self.live();
+        let hz = f64::from(s.params.tick_hz);
+        let mut v = vec![s.phase.code(), f64::from(s.phase_left) / hz];
+        for f in &s.fighters {
+            let [stage, kind, height, left, _] = f.stage.code();
+            v.extend([
+                f.x,
+                stage,
+                kind,
+                height,
+                left / hz,
+                f.guard.code(),
+                f64::from(u8::from(f.covering().is_some())),
+            ]);
+        }
+        v.into_iter().map(|x| x as f32).collect()
+    }
+
+    fn layout(&self) -> Vec<f32> {
+        let p = &self.live().params;
+        [p.ring, p.start_gap, p.min_gap, p.jab_reach, p.hook_reach]
+            .map(|v| v as f32)
+            .to_vec()
+    }
+
+    fn class_point(book: &Self::Book, _attacker: u8, class: u8) -> [f32; 2] {
+        let [x, y] = book.class_point(class);
+        [x as f32, y as f32]
+    }
+
+    fn frame(&self) -> Vec<Option<f64>> {
+        let s = self.live();
+        let mut v = vec![Some(s.phase.code()), Some(f64::from(s.phase_left))];
+        for f in &s.fighters {
+            let [stage, kind, height, left, _] = f.stage.code();
+            v.extend([
+                Some(f.x),
+                Some(stage),
+                Some(kind),
+                Some(height),
+                Some(left),
+                Some(f.guard.code()),
+                Some(f64::from(f.switching)),
+            ]);
+        }
+        v.extend([Some(f64::from(s.score[0])), Some(f64::from(s.score[1]))]);
+        v
+    }
+}

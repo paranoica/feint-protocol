@@ -8,7 +8,7 @@ use std::fmt::Write;
 
 use feint_ai::{Difficulty, LongGame, Standing};
 
-pub const GAMES: [&str; 4] = ["airhockey", "penalty", "duel", "pingpong"];
+pub const GAMES: [&str; 5] = ["airhockey", "penalty", "duel", "pingpong", "boxing"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GameReport {
@@ -40,6 +40,7 @@ fn run(id: &str, d: Difficulty, matches: u64) -> Standing {
         "penalty" => penalty::human::against_human(d, matches),
         "duel" => duel::human::against_human(d, matches),
         "pingpong" => pingpong::human::against_human(d, matches),
+        "boxing" => boxing::human::against_human(d, matches),
         _ => panic!("unknown game {id}"),
     }
 }
