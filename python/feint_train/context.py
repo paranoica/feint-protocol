@@ -243,3 +243,25 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     train(parse())
+
+
+def fixture(folder: Path) -> str:
+    torch.manual_seed(7)
+    model = ContextModel(width=16, layers=2, heads=2).eval()
+    with torch.no_grad():
+        for p in model.parameters():
+            p.add_(torch.randn_like(p) * 0.3)
+    export_context(model, folder / "tiny.safetensors")
+    g = torch.Generator().manual_seed(11)
+    lines = []
+    for n in [0, 1, 4, 9]:
+        seq = torch.rand(1, KICKS, FEATURES, generator=g)
+        seq[:, n:] = 0.0
+        with torch.no_grad():
+            out = model(seq)[0, n]
+        lines.append(f"case {n}")
+        lines.extend("token " + " ".join(f"{v:.9g}" for v in row) for row in seq[0, :n].tolist())
+        lines.append("outputs " + " ".join(f"{float(v):.9g}" for v in out))
+    text = "\n".join(lines) + "\n"
+    (folder / "tiny.txt").write_text(text)
+    return text

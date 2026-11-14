@@ -77,3 +77,19 @@ def test_export_round_trips(tmp_path: Path) -> None:
     x = tokens(seed=3)
     with torch.no_grad():
         assert torch.equal(model(x), back(x))
+
+
+def test_the_rust_fixture_is_what_this_model_computes(tmp_path: Path) -> None:
+    from feint_train.context import fixture
+
+    fresh = fixture(tmp_path)
+    repo = Path(__file__).resolve().parents[2] / "crates/feint-context/tests/fixtures"
+    assert (repo / "tiny.txt").read_text() == fresh
+    from safetensors import safe_open
+
+    def content(path: Path) -> tuple[dict[str, str], dict[str, list]]:
+        with safe_open(str(path), framework="numpy") as f:
+            names = f.keys()
+            return f.metadata(), {k: f.get_tensor(k).tolist() for k in names}
+
+    assert content(repo / "tiny.safetensors") == content(tmp_path / "tiny.safetensors")
