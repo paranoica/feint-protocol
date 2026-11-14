@@ -462,6 +462,7 @@ dependencies = [
  "flatbuffers",
  "parquet",
  "penalty",
+ "pingpong",
  "rand_chacha",
  "rusqlite",
  "tokio",
@@ -477,6 +478,7 @@ dependencies = [
  "feint-ml",
  "feint-protocol",
  "penalty",
+ "pingpong",
 ]
 
 [[package]]
@@ -553,6 +555,7 @@ dependencies = [
  "feint-protocol",
  "feint-turn",
  "penalty",
+ "pingpong",
  "wasm-bindgen",
 ]
 
@@ -990,6 +993,15 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "pingpong"
+version = "0.1.0"
+dependencies = [
+ "feint-ai",
+ "feint-protocol",
+ "rand_chacha",
+]
 
 [[package]]
 name = "pkg-config"

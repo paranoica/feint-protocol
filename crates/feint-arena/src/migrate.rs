@@ -16,6 +16,7 @@ use feint_web::cards::CARD_GAME_ID;
 use feint_web::{Column, HubGame};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use penalty::Penalty;
+use pingpong::PingPong;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
 use crate::parquet_out;
@@ -257,6 +258,7 @@ fn replay_hand_made(record: &Record) -> Option<Replay> {
         AirHockey::ID if version == AirHockey::VERSION => trajectory::<AirHockey>(record),
         Penalty::ID if version == Penalty::VERSION => trajectory::<Penalty>(record),
         QuickDraw::ID if version == QuickDraw::VERSION => trajectory::<QuickDraw>(record),
+        PingPong::ID if version == PingPong::VERSION => trajectory::<PingPong>(record),
         _ => None,
     }
 }
@@ -267,6 +269,7 @@ fn older_game_version(record: &Record) -> bool {
         AirHockey::ID => version < AirHockey::VERSION,
         Penalty::ID => version < Penalty::VERSION,
         QuickDraw::ID => version < QuickDraw::VERSION,
+        PingPong::ID => version < PingPong::VERSION,
         CARD_GAME_ID => version < believe::GAME_VERSION,
         _ => false,
     }

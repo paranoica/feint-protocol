@@ -527,3 +527,113 @@ impl HubGame for duel::QuickDraw {
         v
     }
 }
+
+impl HubGame for pingpong::PingPong {
+    type Book = pingpong::PingPongPlaybook;
+    type Human = Pad;
+    const ID: &'static str = "pingpong";
+    const VERSION: u32 = pingpong::GAME_VERSION;
+    const ARENA: bool = true;
+    const COLUMNS: &'static [Column] = &[
+        kept("phase"),
+        kept("t"),
+        kept("ball_x"),
+        kept("ball_y"),
+        kept("ball_z"),
+        kept("x0"),
+        kept("y0"),
+        kept("facing0"),
+        kept("x1"),
+        kept("y1"),
+        kept("facing1"),
+        optional("hitter"),
+        kept("bounces"),
+        kept("score0"),
+        kept("score1"),
+    ];
+
+    fn build(level: u8) -> Self {
+        pingpong::PingPong::new(pingpong::Params::default(), level)
+    }
+
+    fn book() -> Self::Book {
+        pingpong::PingPongPlaybook::new(pingpong::Params::default())
+    }
+
+    fn human_body() -> BodyParamsT {
+        let p = pingpong::Params::default();
+        body([p.max_speed, p.max_accel])
+    }
+
+    fn score(&self) -> [u32; 2] {
+        self.live().score
+    }
+
+    fn tick(&self) -> u64 {
+        self.live().tick
+    }
+
+    fn tick_hz(&self) -> u32 {
+        self.live().params.tick_hz
+    }
+
+    fn pause(&self) -> f32 {
+        let s = self.live();
+        let left = match s.phase {
+            pingpong::Phase::Settle => s.params.settle_ticks.saturating_sub(s.t),
+            _ => 0,
+        };
+        (f64::from(left) / f64::from(s.params.tick_hz)) as f32
+    }
+
+    fn view(&self) -> Vec<f32> {
+        let s = self.live();
+        let hz = f64::from(s.params.tick_hz);
+        let mut v = vec![s.phase.code(), f64::from(s.t) / hz];
+        v.extend(s.ball.pos);
+        for p in &s.paddles {
+            v.extend([p.pos[0], p.pos[1], p.facing]);
+        }
+        v.extend([
+            s.hitter.map_or(-1.0, f64::from),
+            f64::from(s.bounces),
+            f64::from(s.server),
+        ]);
+        v.into_iter().map(|x| x as f32).collect()
+    }
+
+    fn layout(&self) -> Vec<f32> {
+        let p = &self.live().params;
+        [
+            p.half_length,
+            p.half_width,
+            p.net_height,
+            p.reach,
+            p.back_room,
+            p.side_room,
+        ]
+        .map(|v| v as f32)
+        .to_vec()
+    }
+
+    fn class_point(book: &Self::Book, _attacker: u8, class: u8) -> [f32; 2] {
+        let [x, y] = book.class_point(class);
+        [x as f32, y as f32]
+    }
+
+    fn frame(&self) -> Vec<Option<f64>> {
+        let s = self.live();
+        let mut v = vec![Some(s.phase.code()), Some(f64::from(s.t))];
+        v.extend(s.ball.pos.map(Some));
+        for p in &s.paddles {
+            v.extend([Some(p.pos[0]), Some(p.pos[1]), Some(p.facing)]);
+        }
+        v.extend([
+            s.hitter.map(f64::from),
+            Some(f64::from(s.bounces)),
+            Some(f64::from(s.score[0])),
+            Some(f64::from(s.score[1])),
+        ]);
+        v
+    }
+}
