@@ -66,15 +66,17 @@ record="target/web-check.record"
 trained_record="target/web-check-trained.record"
 card_record="target/web-check-cards.record"
 penalty_record="target/web-check-penalty.record"
+pingpong_record="target/web-check-pingpong.record"
 {
   read -r browser rate
   read -r trained_browser
   read -r rerun_browser rerun_level rerun_seed rerun_seat
   read -r card_browser
   read -r penalty_browser
+  read -r pingpong_browser
 } < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
   web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json "$card_record" \
-  "$penalty_record")
+  "$penalty_record" "$pingpong_record")
 native="$(cargo run -q --locked --release -p feint-web --bin replay -- "$record")"
 echo "browser record: $browser at $rate ticks/s"
 echo "native replay:  $native"
@@ -108,6 +110,14 @@ echo "browser level-4 shootout (context advisor): $penalty_browser"
 echo "arena verify (native):                      $penalty_native"
 if [[ -z "$penalty_browser" || "$penalty_browser" != "$penalty_native" ]]; then
   echo "a browser shootout with the context advisor does not verify natively" >&2
+  exit 1
+fi
+
+pingpong_native="$(cargo run -q --locked --release -p feint-arena --bin verify-record -- "$pingpong_record")"
+echo "browser table tennis:   $pingpong_browser"
+echo "arena verify (native):  $pingpong_native"
+if [[ -z "$pingpong_browser" || "$pingpong_browser" != "$pingpong_native" ]]; then
+  echo "a browser table tennis match does not verify natively" >&2
   exit 1
 fi
 

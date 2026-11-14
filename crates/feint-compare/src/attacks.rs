@@ -338,6 +338,43 @@ pub fn attacks(id: &str, matches: u64) -> Study {
                 );
             }
         }
+        "pingpong" => {
+            for seed in 0..matches {
+                let seat = (seed % 2) as u8;
+                let game = pingpong::PingPong::new(pingpong::Params::default(), 5);
+                let spec = game.spec();
+                let bot = Bot::new(
+                    five,
+                    pingpong::PingPongPlaybook::new(pingpong::Params::default()),
+                    &spec,
+                )
+                .unwrap_or_else(|e| panic!("{e:?}"));
+                let reader = pingpong::PingPongPlaybook::new(pingpong::Params::default());
+                let mut human = pingpong::human::Human::new();
+                let hb = pingpong::human::human_body(&game);
+                let h = header(
+                    "pingpong",
+                    pingpong::GAME_VERSION,
+                    seed,
+                    five.body(&spec),
+                    hb,
+                    seat,
+                );
+                study(
+                    game,
+                    bot,
+                    &reader,
+                    &mut human,
+                    Setup {
+                        header: h,
+                        seat,
+                        cap: 240 * 1800,
+                        score_of: |s: &pingpong::Table| s.score.map(i64::from),
+                    },
+                    &mut s,
+                );
+            }
+        }
         _ => panic!("unknown game {id}"),
     }
     s.finish()

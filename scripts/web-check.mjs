@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const [glue, wasm, out, trainedOut, fakesJson, cardOut, penaltyOut] = process.argv.slice(2);
+const [glue, wasm, out, trainedOut, fakesJson, cardOut, penaltyOut, pingpongOut] = process.argv.slice(2);
 const { initSync, WebMatch, checkpoints, WebCards, card_games, card_checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
@@ -134,4 +134,24 @@ if (penaltyOut) {
   }
   writeFileSync(penaltyOut, shootout.record());
   process.stdout.write(`${shootout.digest_hex()}\n`);
+}
+
+if (pingpongOut) {
+  const rally = WebMatch.create("pingpong", 3, 0x7ab1);
+  let side = 0;
+  while (!rally.finished() && rally.tick() < 240 * 1800) {
+    const v = rally.view();
+    const hitter = v[11];
+    if (hitter === 0) {
+      side = (side + 1) % 3;
+    }
+    const y = [-0.5, 0, 0.5][side];
+    rally.set_input(new Float32Array([v[2] < 0 ? v[2] : -1.9, v[3], 1, 1.0, y, 0.6, y === 0 ? 0 : Math.sign(y) * 0.8]));
+    rally.advance(4);
+  }
+  if (!rally.finished()) {
+    throw new Error("the table tennis match did not finish");
+  }
+  writeFileSync(pingpongOut, rally.record());
+  process.stdout.write(`${rally.digest_hex()}\n`);
 }

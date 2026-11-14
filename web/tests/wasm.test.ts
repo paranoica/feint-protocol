@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { games, initSync, WebMatch } from "../src/wasm/feint_web.js";
+import { readPaddles, shotValues } from "../src/games/pingpong.ts";
 
 initSync({ module: readFileSync(new URL("../src/wasm/feint_web_bg.wasm", import.meta.url)) });
 
@@ -100,7 +101,7 @@ test("two bots play for a watcher and each shows its own mind", () => {
 });
 
 test("the hub builds a game by id and keeps the hockey entry points", () => {
-  assert.deepEqual(Array.from(games()), ["airhockey", "penalty", "duel"]);
+  assert.deepEqual(Array.from(games()), ["airhockey", "penalty", "duel", "pingpong"]);
   const game = WebMatch.create("airhockey", 2, 5);
   assert.equal(game.game_id(), "airhockey");
   assert.equal(game.arena(), true);
@@ -174,7 +175,7 @@ test("a duel runs in wasm with a held draw and a pushed sidestep", () => {
 });
 
 test("every hub game starts a level 5 match from that game's own profile", () => {
-  for (const id of ["penalty", "duel"]) {
+  for (const id of ["penalty", "duel", "pingpong"]) {
     const first = WebMatch.create(id, 5, 1);
     for (let i = 0; i < 240 * 900 && !first.finished(); i += 16) {
       first.advance(16);
@@ -188,4 +189,25 @@ test("every hub game starts a level 5 match from that game's own profile", () =>
     first.free();
     assert.throws(() => WebMatch.create_with_profile(id, 3, 2, profile), `${id}: level 3 takes no profile`);
   }
+});
+
+test("a table tennis match runs in wasm, the paddle follows the input and points are scored", () => {
+  const game = WebMatch.create("pingpong", 3, 7);
+  assert.equal(game.game_id(), "pingpong");
+  assert.equal(game.arena(), true);
+  assert.equal(game.layout().length, 6);
+  const target: [number, number] = [-1.9, 0.3];
+  game.set_input(new Float32Array(shotValues(target, 2, false, false)));
+  game.advance(480);
+  const v = Array.from(game.view());
+  assert.equal(v.length, 14);
+  const [mine] = readPaddles(v);
+  assert.ok(Math.abs(mine.x - target[0]) < 0.05 && Math.abs(mine.y - target[1]) < 0.05, `${mine.x},${mine.y}`);
+  for (let i = 0; i < 240 * 1800 && !game.finished(); i += 64) {
+    game.advance(64);
+  }
+  assert.ok(game.finished());
+  const [a, b] = Array.from(game.score());
+  assert.ok(a + b >= 11, `${a}:${b}`);
+  game.free();
 });

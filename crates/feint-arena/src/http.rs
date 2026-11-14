@@ -15,6 +15,7 @@ use duel::QuickDraw;
 use feint_ai::decode_profile;
 use feint_web::HubGame;
 use penalty::Penalty;
+use pingpong::PingPong;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use tokio::sync::Semaphore;
@@ -214,7 +215,7 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
         return error(StatusCode::BAD_REQUEST, "nick");
     };
     let game = query(&uri, "game").unwrap_or_else(|| AirHockey::ID.to_owned());
-    if ![AirHockey::ID, Penalty::ID, QuickDraw::ID].contains(&game.as_str()) {
+    if ![AirHockey::ID, Penalty::ID, QuickDraw::ID, PingPong::ID].contains(&game.as_str()) {
         return error(StatusCode::BAD_REQUEST, "game");
     }
     let work = arena.clone();

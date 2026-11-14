@@ -9,6 +9,7 @@ use feint_protocol::ActionT;
 use feint_web::cards::{CARD_CAP_TICKS, CARD_GAME_ID, card_header_at};
 use feint_web::{Column, HubGame, Play, Replayer, SessionError};
 use penalty::Penalty;
+use pingpong::PingPong;
 
 pub const MAX_TICKS: u64 = 240 * 60 * 30;
 
@@ -83,6 +84,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
         AirHockey::ID => verify_game::<AirHockey>(record, bytes, profile),
         Penalty::ID => verify_game::<Penalty>(record, bytes, profile),
         QuickDraw::ID => verify_game::<QuickDraw>(record, bytes, profile),
+        PingPong::ID => verify_game::<PingPong>(record, bytes, profile),
         CARD_GAME_ID => verify_cards(record, bytes, profile),
         _ => Err(VerifyError::Game),
     }

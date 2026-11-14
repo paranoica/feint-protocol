@@ -435,3 +435,38 @@ fn an_advisor_where_none_ships_is_refused() {
     });
     assert_eq!(verify(&advised, None).err(), Some(VerifyError::Game));
 }
+
+#[test]
+fn table_tennis_records_verify_with_their_own_columns() {
+    use feint_web::Play;
+    let mut s = Play::<pingpong::PingPong>::new(2, 5).unwrap();
+    while !s.finished() && s.tick() < 240 * 1800 {
+        let v = s.view();
+        s.set_input(&[-1.9, v[3], 1.0, 1.0, 0.3, 0.6, 0.8]);
+        s.advance(4);
+    }
+    assert!(s.finished());
+    let bytes = s.record();
+    let v = verify(&bytes, None).unwrap();
+    assert_eq!(
+        (v.game, v.columns),
+        ("pingpong", pingpong::PingPong::COLUMNS)
+    );
+    assert!(v.finished);
+    assert_eq!(v.digest, s.digest());
+    assert_eq!(v.frames.len() as u64, v.record.ticks);
+    let last = &v.frames.last().unwrap().values;
+    let at = |name: &str| {
+        last[pingpong::PingPong::COLUMNS
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap()]
+        .unwrap()
+    };
+    assert_eq!([at("score0"), at("score1")], s.score().map(f64::from));
+    let edited = forge(&bytes, |r| {
+        let i = r.actions.iter().position(|a| a.player == 1).unwrap();
+        r.actions[i].values = Some(vec![1.9, 0.5, 1.0, 1.0, -0.5, 0.5, 0.0]);
+    });
+    assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
+}

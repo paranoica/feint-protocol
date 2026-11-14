@@ -3,6 +3,7 @@ use duel::QuickDraw;
 use feint_ai::{InsightView, Profile, decode_profile, encode_profile};
 use feint_protocol::EventKind;
 use penalty::Penalty;
+use pingpong::PingPong;
 use wasm_bindgen::prelude::*;
 
 use crate::hub::HubGame;
@@ -130,6 +131,9 @@ fn start(
         <QuickDraw as HubGame>::ID => Ok(Box::new(
             Play::<QuickDraw>::with_profile(level, seed, profile).map_err(refused)?,
         )),
+        <PingPong as HubGame>::ID => Ok(Box::new(
+            Play::<PingPong>::with_profile(level, seed, profile).map_err(refused)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -154,6 +158,9 @@ fn start_trained(
         <QuickDraw as HubGame>::ID => Ok(Box::new(
             Play::<QuickDraw>::trained(level, seed, checkpoint).map_err(refused)?,
         )),
+        <PingPong as HubGame>::ID => Ok(Box::new(
+            Play::<PingPong>::trained(level, seed, checkpoint).map_err(refused)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -170,6 +177,9 @@ fn spectate(game: &str, left: u8, right: u8, seed: u32) -> Result<Box<dyn Live>,
         <QuickDraw as HubGame>::ID => Ok(Box::new(
             Play::<QuickDraw>::spectate(left, right, seed).map_err(unknown)?,
         )),
+        <PingPong as HubGame>::ID => Ok(Box::new(
+            Play::<PingPong>::spectate(left, right, seed).map_err(unknown)?,
+        )),
         _ => Err(unknown(game)),
     }
 }
@@ -181,6 +191,7 @@ pub fn games() -> Vec<String> {
         <AirHockey as HubGame>::ID.to_string(),
         <Penalty as HubGame>::ID.to_string(),
         <QuickDraw as HubGame>::ID.to_string(),
+        <PingPong as HubGame>::ID.to_string(),
     ]
 }
 

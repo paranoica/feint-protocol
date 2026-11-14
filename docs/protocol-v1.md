@@ -2,8 +2,8 @@
 
 The protocol between a game and the Feint core: what a game says about itself, what each
 player may see, how actions travel, and how a match is recorded so that anyone can replay
-and verify it. It is game-neutral: nothing in it names a particular game. Three real-time
-games (air hockey, penalty, duel) and two turn-based card games with hidden information
+and verify it. It is game-neutral: nothing in it names a particular game. Four real-time
+games (air hockey, penalty, duel, table tennis) and two turn-based card games with hidden information
 (Kuhn poker, «Верю — не верю») run on it unchanged.
 
 The source of truth is [`schema/feint.fbs`](../schema/feint.fbs) (FlatBuffers). The Rust
