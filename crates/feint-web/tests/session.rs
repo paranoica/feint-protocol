@@ -504,11 +504,11 @@ fn a_duel_plays_through_the_hub_with_held_draws_and_one_shot_sidesteps() {
 }
 
 #[test]
-fn penalty_levels_three_and_four_play_with_the_context_model_and_say_so() {
+fn penalty_level_four_plays_with_the_context_model_and_says_so() {
     for level in 1..=5u8 {
         let p = feint_web::Play::<penalty::Penalty>::new(level, 3).unwrap();
         let record = feint_ai::decode_record(&p.record()).unwrap();
-        let want = if matches!(level, 3 | 4) {
+        let want = if level == 4 {
             feint_ai::Opponent::Advised(
                 std::num::NonZeroU64::new(penalty::trained::SHIPPED).unwrap(),
             )

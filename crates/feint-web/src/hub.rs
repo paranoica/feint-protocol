@@ -257,11 +257,11 @@ impl HubGame for penalty::Penalty {
     const ID: &'static str = "penalty";
 
     fn shipped_advisor(level: u8) -> Option<u64> {
-        matches!(level, 3 | 4).then_some(penalty::trained::SHIPPED)
+        (level == 4).then_some(penalty::trained::SHIPPED)
     }
 
     fn advisor(level: u8, id: u64) -> Result<Box<dyn Advisor<penalty::Shootout>>, SessionError> {
-        if !matches!(level, 3 | 4) {
+        if level != 4 {
             return Err(SessionError::Level);
         }
         penalty::trained::advisor(id)
