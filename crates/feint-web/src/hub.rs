@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use airhockey::{AirHockey, GAME_VERSION, HockeyPlaybook, Params};
-use feint_ai::{Controller, Playbook};
+use feint_ai::{Advisor, Controller, Playbook};
 use feint_ml::trained::{TrainedError, trained_pilot};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
 
@@ -55,6 +55,12 @@ pub trait HubGame: GameAdapter + Sized + 'static {
         _checkpoint: u64,
         _spec: &GameSpecT,
     ) -> Result<Box<dyn Controller<Self>>, SessionError> {
+        Err(SessionError::Unsupported)
+    }
+    fn shipped_advisor(_level: u8) -> Option<u64> {
+        None
+    }
+    fn advisor(_level: u8, _id: u64) -> Result<Box<dyn Advisor<Self::State>>, SessionError> {
         Err(SessionError::Unsupported)
     }
     fn frame(&self) -> Vec<Option<f64>>;
@@ -249,6 +255,19 @@ impl HubGame for penalty::Penalty {
     type Book = penalty::PenaltyPlaybook;
     type Human = Pad;
     const ID: &'static str = "penalty";
+
+    fn shipped_advisor(level: u8) -> Option<u64> {
+        (level == 4).then_some(penalty::trained::SHIPPED)
+    }
+
+    fn advisor(level: u8, id: u64) -> Result<Box<dyn Advisor<penalty::Shootout>>, SessionError> {
+        if level != 4 {
+            return Err(SessionError::Level);
+        }
+        penalty::trained::advisor(id)
+            .map(|a| Box::new(a) as Box<dyn Advisor<penalty::Shootout>>)
+            .map_err(|_| SessionError::Checkpoint)
+    }
     const VERSION: u32 = penalty::GAME_VERSION;
     const ARENA: bool = true;
     const COLUMNS: &'static [Column] = &[

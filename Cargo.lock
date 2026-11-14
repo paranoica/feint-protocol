@@ -480,6 +480,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "feint-context"
+version = "0.1.0"
+dependencies = [
+ "feint-safetensors",
+ "feint-turn",
+]
+
+[[package]]
 name = "feint-ffi"
 version = "0.1.0"
 dependencies = [
@@ -966,6 +974,7 @@ name = "penalty"
 version = "0.1.0"
 dependencies = [
  "feint-ai",
+ "feint-context",
  "feint-protocol",
  "rand_chacha",
 ]

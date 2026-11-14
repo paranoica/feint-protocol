@@ -1,7 +1,7 @@
 use feint_protocol::{GameAdapter, PlayerId};
 
 use crate::difficulty::{Difficulty, Memory};
-use crate::model::{OpponentModel, Profile, ProfileError};
+use crate::model::{Advisor, OpponentModel, Predictor, Profile, ProfileError};
 use crate::playbook::{Choice, Playbook, Stance};
 
 const MIN_AWAY_SAMPLES: u32 = 6;
@@ -28,6 +28,7 @@ pub(crate) struct Seen {
 pub(crate) struct Insight<S> {
     memory: Memory,
     model: Option<OpponentModel>,
+    advisor: Option<Box<dyn Advisor<S>>>,
     prev: Option<S>,
     prev_score: Vec<i64>,
     attempt: Option<Attempt>,
@@ -52,6 +53,7 @@ impl<S: Clone> Insight<S> {
         Self {
             memory: difficulty.memory,
             model,
+            advisor: None,
             prev: None,
             prev_score: Vec::new(),
             attempt: None,
@@ -71,6 +73,9 @@ impl<S: Clone> Insight<S> {
     }
 
     pub(crate) fn new_match(&mut self) {
+        if let Some(advisor) = &mut self.advisor {
+            advisor.new_match();
+        }
         if self.memory == Memory::Match
             && let Some(model) = &mut self.model
         {
@@ -108,6 +113,9 @@ impl<S: Clone> Insight<S> {
         A: GameAdapter<State = S>,
         P: Playbook<A>,
     {
+        if let Some(advisor) = &mut self.advisor {
+            advisor.see(state, me);
+        }
         let possession = playbook.possession(state, me);
         let had = self.away == 0 && self.possession.is_some();
         let returned = self.away >= MIN_AWAY_SAMPLES;
@@ -258,7 +266,7 @@ impl<S: Clone> Insight<S> {
     }
 
     pub(crate) fn odds(&self, depth: u8, signal: Option<u8>) -> Option<Vec<(Stance, f64)>> {
-        let odds = self.model.as_ref()?.their_odds(signal?)?;
+        let odds = self.answers()?.their_odds(signal?)?;
         (depth >= 2).then(|| {
             odds.into_iter()
                 .map(|(real, p)| (real.map_or(Stance::Still, Stance::Shoot), p))
@@ -270,7 +278,7 @@ impl<S: Clone> Insight<S> {
         if depth == 0 {
             return Stance::Still;
         }
-        let Some(model) = &self.model else {
+        let Some(model) = self.answers() else {
             return Stance::Naive;
         };
         let habit = model.likely_shot().map_or(Stance::Naive, Stance::Shoot);
@@ -284,8 +292,24 @@ impl<S: Clone> Insight<S> {
         }
     }
 
-    pub(crate) fn model(&self) -> Option<&OpponentModel> {
-        self.model.as_ref()
+    pub(crate) fn shot_odds(&self, depth: u8) -> Option<Vec<(Stance, f64)>> {
+        let odds = self.answers()?.shot_odds()?;
+        (depth >= 1).then(|| {
+            odds.into_iter()
+                .map(|(k, p)| (Stance::Shoot(k), p))
+                .collect()
+        })
+    }
+
+    pub(crate) fn answers(&self) -> Option<&dyn Predictor> {
+        match &self.advisor {
+            Some(advisor) => Some(advisor.as_ref() as &dyn Predictor),
+            None => self.model.as_ref().map(|m| m as &dyn Predictor),
+        }
+    }
+
+    pub(crate) fn advise(&mut self, advisor: Box<dyn Advisor<S>>) {
+        self.advisor = Some(advisor);
     }
 
     pub(crate) fn profile(&self, game_id: &str) -> Option<Profile> {

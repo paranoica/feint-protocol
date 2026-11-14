@@ -113,9 +113,19 @@ fn verify_game<G: HubGame>(
     }
     let mut human = Replayer::new(human_actions(&record)?);
     let mut bot = match record.header.opponent {
-        Opponent::HandMade => {
+        Opponent::HandMade if G::shipped_advisor(level).is_some() => {
+            return Err(VerifyError::Level);
+        }
+        Opponent::HandMade | Opponent::Advised(_) => {
             let mut bot =
                 Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| VerifyError::Level)?;
+            if let Opponent::Advised(id) = record.header.opponent {
+                bot.advise(G::advisor(level, id.get()).map_err(|e| match e {
+                    SessionError::Level => VerifyError::Level,
+                    SessionError::Unsupported => VerifyError::Game,
+                    _ => VerifyError::Checkpoint,
+                })?);
+            }
             if let Some(profile) = profile {
                 bot.load_profile(profile, G::ID)
                     .map_err(|_| VerifyError::Profile)?;

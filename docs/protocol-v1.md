@@ -140,8 +140,12 @@ WebAssembly and the C interface play the same match to the same digest.
 
 `MatchHeader`: `game_id`, `game_version`, `seed`, `level` (the bot's level; card games use
 the fixed preset 5), `bodies` (one `BodyParams` per player), `bot` (`HandMade` or `Trained`)
-and `checkpoint` (the trained policy's id, 0 for a hand-made bot). A hand-made header writes
-neither of the last two, so its bytes are the same as before they existed.
+and `checkpoint`. With `Trained`, `checkpoint` is the trained policy's id and must not be 0.
+With `HandMade`, 0 means the core's own opponent model, and any other value is the id of the
+in-match context model that advises the hand-made bot (penalty level 4); the arena
+rebuilds the bot with that model and refuses an id it does not ship, a level that has no
+advisor, and a plain hand-made record at a level that has one. A plain hand-made header writes neither field, so its bytes are the same as before
+they existed.
 
 `MatchResult`: `score`, `duration_ticks`, `level`, `seed`.
 
@@ -210,6 +214,7 @@ v0.1 was the first schema (2026-11-09). Everything that changed until 1.0, with 
 | `BotKind` enum, `MatchHeader.bot`, `MatchHeader.checkpoint` | stage 2 | a record names the trained policy it was played against, so the arena can rebuild it; defaults keep hand-made headers byte-identical |
 | comments moved out of the schema | stage 1 | the meaning lives in this document |
 | `protocol_version` `"0.1"` → `"1.0"`; 0.1 refused | stage 3 | the release; stored data migrated once |
+| `HandMade` with a non-zero `checkpoint` names the context model that advises the bot (refused before) | stage 4 | the arena must rebuild the same advised bot; no stored record carried this pair, so no bytes change meaning and an older 1.0 reader refuses such a record instead of misreading it |
 
 ### Meaning, without a wire change
 

@@ -233,11 +233,13 @@ fn trained_with_checkpoint_zero_is_refused() {
 }
 
 #[test]
-fn hand_made_with_a_checkpoint_is_refused() {
+fn hand_made_with_a_checkpoint_is_a_bot_with_that_advisor() {
+    let record = decode_record(&header_frames(0, 5)).unwrap();
     assert_eq!(
-        decode_record(&header_frames(0, 5)),
-        Err(RecordError::Opponent)
+        record.header.opponent,
+        Opponent::Advised(NonZeroU64::new(5).unwrap())
     );
+    assert_eq!(encode_record(&record), header_frames(0, 5));
 }
 
 #[test]

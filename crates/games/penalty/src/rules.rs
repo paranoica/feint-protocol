@@ -18,6 +18,7 @@ pub struct Params {
     pub max_lean_rate: f64,
     pub walk_share: f64,
     pub wide: f64,
+    pub play_out: bool,
 }
 
 impl Default for Params {
@@ -41,6 +42,7 @@ impl Default for Params {
             max_lean_rate: 4.0,
             walk_share: 0.3,
             wide: 0.8,
+            play_out: false,
         }
     }
 }
@@ -290,7 +292,7 @@ impl Shootout {
         let taken = [self.kicks.div_ceil(2), self.kicks / 2];
         let each = self.params.kicks_each;
         let [a, b] = self.score;
-        if self.kicks <= 2 * each {
+        if self.kicks <= 2 * each && !self.params.play_out {
             let left = [each - taken[0].min(each), each - taken[1].min(each)];
             if a > b + left[1] || b > a + left[0] {
                 return true;

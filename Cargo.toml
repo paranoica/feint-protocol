@@ -18,6 +18,7 @@ members = [
     "crates/feint-ml",
     "crates/feint-turn",
     "crates/feint-ml-check",
+    "crates/feint-context",
 ]
 exclude = ["crates/feint-gym"]
 
@@ -31,6 +32,7 @@ publish = false
 [workspace.dependencies]
 feint-protocol = { path = "crates/feint-protocol" }
 feint-ai = { path = "crates/feint-ai" }
+feint-context = { path = "crates/feint-context" }
 feint-ml = { path = "crates/feint-ml" }
 feint-safetensors = { path = "crates/feint-safetensors" }
 feint-turn = { path = "crates/feint-turn" }

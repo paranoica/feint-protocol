@@ -502,3 +502,44 @@ fn a_duel_plays_through_the_hub_with_held_draws_and_one_shot_sidesteps() {
     }
     assert!(watched.record().is_empty());
 }
+
+#[test]
+fn penalty_level_four_plays_with_the_context_model_and_says_so() {
+    for level in 1..=5u8 {
+        let p = feint_web::Play::<penalty::Penalty>::new(level, 3).unwrap();
+        let record = feint_ai::decode_record(&p.record()).unwrap();
+        let want = if level == 4 {
+            feint_ai::Opponent::Advised(
+                std::num::NonZeroU64::new(penalty::trained::SHIPPED).unwrap(),
+            )
+        } else {
+            feint_ai::Opponent::HandMade
+        };
+        assert_eq!(record.header.opponent, want, "level {level}");
+    }
+    let hockey = feint_web::Play::<airhockey::AirHockey>::new(4, 3).unwrap();
+    assert_eq!(
+        feint_ai::decode_record(&hockey.record())
+            .unwrap()
+            .header
+            .opponent,
+        feint_ai::Opponent::HandMade
+    );
+}
+
+#[test]
+fn spectating_penalty_level_four_runs_the_advised_bots() {
+    let advised = feint_web::Play::<penalty::Penalty>::spectate(4, 4, 1).unwrap();
+    for seat in [0, 1] {
+        assert!(
+            advised.insight_of(seat).likely_shot.is_some(),
+            "the context model answers from the first kick, seat {seat}"
+        );
+    }
+    let mixed = feint_web::Play::<penalty::Penalty>::spectate(3, 4, 1).unwrap();
+    assert!(
+        mixed.insight_of(0).likely_shot.is_none(),
+        "level 3 keeps the count model"
+    );
+    assert!(mixed.insight_of(1).likely_shot.is_some());
+}

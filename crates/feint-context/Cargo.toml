@@ -1,0 +1,15 @@
+[package]
+name = "feint-context"
+description = "Game-neutral inference of the in-match context model: a small causal transformer over event tokens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+feint-safetensors.workspace = true
+feint-turn.workspace = true
+
+[lints]
+workspace = true

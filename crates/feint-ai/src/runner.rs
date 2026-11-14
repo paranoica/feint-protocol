@@ -11,6 +11,7 @@ pub enum Opponent {
     #[default]
     HandMade,
     Trained(NonZeroU64),
+    Advised(NonZeroU64),
 }
 
 #[derive(Clone, Debug, PartialEq)]

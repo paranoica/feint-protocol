@@ -34,9 +34,13 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
     header.seed = record.header.seed;
     header.level = record.header.levels[1];
     header.bodies = Some(record.header.bodies.clone());
-    if let Opponent::Trained(checkpoint) = record.header.opponent {
-        header.bot = BotKind::Trained;
-        header.checkpoint = checkpoint.get();
+    match record.header.opponent {
+        Opponent::HandMade => {}
+        Opponent::Trained(checkpoint) => {
+            header.bot = BotKind::Trained;
+            header.checkpoint = checkpoint.get();
+        }
+        Opponent::Advised(advisor) => header.checkpoint = advisor.get(),
     }
     frame(&mut out, &MessageT::MatchHeader(Box::new(header)));
     for action in &record.actions {
@@ -54,6 +58,9 @@ pub fn encode_record(record: &Record) -> Vec<u8> {
 fn opponent(bot: BotKind, checkpoint: u64) -> Result<Opponent, RecordError> {
     match (bot, checkpoint) {
         (BotKind::HandMade, 0) => Ok(Opponent::HandMade),
+        (BotKind::HandMade, c) => NonZeroU64::new(c)
+            .map(Opponent::Advised)
+            .ok_or(RecordError::Opponent),
         (BotKind::Trained, c) => NonZeroU64::new(c)
             .map(Opponent::Trained)
             .ok_or(RecordError::Opponent),

@@ -249,7 +249,7 @@ fn same_ticks(path: &Path, replay: &Replay) -> Result<bool, MigrateError> {
 }
 
 fn replay_hand_made(record: &Record) -> Option<Replay> {
-    if record.header.opponent != Opponent::HandMade {
+    if matches!(record.header.opponent, Opponent::Trained(_)) {
         return None;
     }
     let version = record.header.game_version;
@@ -341,7 +341,7 @@ fn to_i64(v: u64) -> i64 {
 impl Row {
     fn agrees(&self, record: &Record, finished: Option<bool>) -> bool {
         let checkpoint = match record.header.opponent {
-            Opponent::HandMade => String::new(),
+            Opponent::HandMade | Opponent::Advised(_) => String::new(),
             Opponent::Trained(id) => format!("{:016x}", id.get()),
         };
         let score = |i: usize| record.score.get(i).copied().unwrap_or(0);

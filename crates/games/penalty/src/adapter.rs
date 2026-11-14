@@ -5,7 +5,7 @@ use feint_protocol::{
 
 use crate::rules::{Body, Dive, KickEvent, Params, Phase, Shootout};
 
-pub const GAME_VERSION: u32 = 1;
+pub const GAME_VERSION: u32 = 2;
 pub const OBSERVATION_LEN: usize = 14;
 
 pub struct Penalty {

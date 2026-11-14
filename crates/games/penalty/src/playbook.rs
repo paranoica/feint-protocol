@@ -69,7 +69,7 @@ impl PenaltyPlaybook {
         }
     }
 
-    fn lean_class(lean: f64) -> Option<u8> {
+    pub(crate) fn lean_class(lean: f64) -> Option<u8> {
         (lean.abs() > READ_LEAN).then_some(if lean < 0.0 { 0 } else { 2 })
     }
 
@@ -349,6 +349,11 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         } else {
             f64::from(s.kicks) / f64::from(regular)
         }
+    }
+
+    fn unknown(&self, s: &Shootout, me: PlayerId) -> Option<Vec<(Stance, f64)>> {
+        let third = 1.0 / 3.0;
+        (me == s.keeper()).then(|| (0..3).map(|k| (Stance::Shoot(k), third)).collect())
     }
 
     fn possession(&self, s: &Shootout, me: PlayerId) -> Option<u64> {

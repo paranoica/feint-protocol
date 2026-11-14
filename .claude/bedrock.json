@@ -155,6 +155,10 @@
       "run": "cd python && uv run python -m feint_train.turns --game kuhn --logdir runs/kuhn-{args} --seed {args} --envs 1024 --mix learner=0.6,frozen=0.4 --evaluate random,pass,bet --eval-every 25 --eval-matches 4000 --updates 1000000 --hours 0.33 --lr 3e-4 --entropy 0.003 --resume",
       "heavy": true
     },
+    "halves": {
+      "run": "cargo test --release --locked -q -p penalty --test halves -- --ignored --nocapture",
+      "heavy": true
+    },
     "migrate-v1": {
       "run": "cargo run --release --locked -q -p feint-arena --bin migrate-v1 -- {args}",
       "heavy": true

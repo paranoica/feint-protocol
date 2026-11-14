@@ -6,15 +6,82 @@ use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT,
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
-const DELAY_TICKS: usize = 72;
+pub const DELAY_TICKS: usize = 72;
 const HONEST_LEAN: f32 = 0.35;
 const FAKE_LEAN: f32 = 0.45;
 const STRAIGHTEN: f32 = 0.25;
 const STRAIGHTEN_AT: f32 = 1.0;
 const EARLY_GUESS: f32 = 0.5;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Habits {
+    pub corner: [f32; 3],
+    pub honest: f32,
+    pub fake: f32,
+    pub straighten: f32,
+    pub guess: f32,
+    pub follows_lean: bool,
+    pub noise: f32,
+}
+
+impl Default for Habits {
+    fn default() -> Self {
+        Self {
+            corner: [1.0, 1.0, 1.0],
+            honest: HONEST_LEAN,
+            fake: FAKE_LEAN,
+            straighten: STRAIGHTEN,
+            guess: EARLY_GUESS,
+            follows_lean: false,
+            noise: 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Kick {
+    pub corner: f32,
+    pub tell: f32,
+    pub straightens: bool,
+    pub guesses: bool,
+    pub noise: f32,
+}
+
+impl Habits {
+    pub fn draw(&self, unit: &mut dyn FnMut() -> f32) -> Kick {
+        let [a, b, c] = self.corner;
+        let x = unit() * (a + b + c);
+        let pick = if x < a {
+            0.0
+        } else if x < a + b {
+            1.0
+        } else {
+            2.0
+        };
+        let t = unit();
+        let tell = if t < self.honest {
+            1.0
+        } else if t < self.honest + self.fake {
+            -1.0
+        } else {
+            0.0
+        };
+        let straightens = unit() < self.straighten;
+        let guesses = unit() < self.guess;
+        let noise = (unit() - 0.5) * self.noise;
+        Kick {
+            corner: (pick - 1.0) * 2.7,
+            tell,
+            straightens,
+            guesses,
+            noise,
+        }
+    }
+}
+
 pub struct Human {
     me: PlayerId,
+    habits: Habits,
     seen: VecDeque<ObservationT>,
     rng: ChaCha8Rng,
     corner: f32,
@@ -28,8 +95,14 @@ pub struct Human {
 impl Human {
     #[must_use]
     pub fn new() -> Self {
+        Self::with_habits(Habits::default())
+    }
+
+    #[must_use]
+    pub fn with_habits(habits: Habits) -> Self {
         Self {
             me: 0,
+            habits,
             seen: VecDeque::new(),
             rng: ChaCha8Rng::seed_from_u64(0),
             corner: 0.0,
@@ -77,19 +150,13 @@ impl Controller<Penalty> for Human {
         }
         if kicks != self.kick_seen {
             self.kick_seen = kicks;
-            let pick = (self.unit() * 3.0).min(2.0).floor();
-            self.corner = (pick - 1.0) * 2.7;
-            let tell = self.unit();
-            self.tell = if tell < HONEST_LEAN {
-                1.0
-            } else if tell < HONEST_LEAN + FAKE_LEAN {
-                -1.0
-            } else {
-                0.0
-            };
-            self.straightens = self.unit() < STRAIGHTEN;
-            self.guesses = self.unit() < EARLY_GUESS;
-            self.noise = (self.unit() - 0.5) * 1.0;
+            let habits = self.habits;
+            let kick = habits.draw(&mut || self.unit());
+            self.corner = kick.corner;
+            self.tell = kick.tell;
+            self.straightens = kick.straightens;
+            self.guesses = kick.guesses;
+            self.noise = kick.noise;
         }
         let mut a = ActionT::default();
         a.tick = obs.tick;
@@ -98,7 +165,8 @@ impl Controller<Penalty> for Human {
             let planted = phase == 5.0;
             let flying = phase == 2.0 && t > 0.0;
             if self.guesses && planted && lean.abs() > 0.3 {
-                [0.0, 0.0, 1.0, -2.8 * lean.signum() + self.noise]
+                let side = if self.habits.follows_lean { 2.8 } else { -2.8 };
+                [0.0, 0.0, 1.0, side * lean.signum() + self.noise]
             } else if flying {
                 let f = 106.0 / 240.0;
                 let aim = v[6] * f / t.min(f);

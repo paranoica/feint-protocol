@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const [glue, wasm, out, trainedOut, fakesJson, cardOut] = process.argv.slice(2);
+const [glue, wasm, out, trainedOut, fakesJson, cardOut, penaltyOut] = process.argv.slice(2);
 const { initSync, WebMatch, checkpoints, WebCards, card_games, card_checkpoints } = await import(glue);
 initSync({ module: readFileSync(wasm) });
 
@@ -111,4 +111,27 @@ if (cardOut) {
   }
   writeFileSync(cardOut, record);
   process.stdout.write(`${first.digest_hex()}\n`);
+}
+
+if (penaltyOut) {
+  const shootout = WebMatch.create("penalty", 4, 0x9e4a);
+  let corner = 2.8;
+  while (!shootout.finished() && shootout.tick() < 240 * 300) {
+    const v = shootout.view();
+    if (v[0] === 0) {
+      shootout.set_input(new Float32Array([0.8, 1, 0, corner]));
+      if (v[1] === 0 && v[2] < 0.6) {
+        shootout.push_input(new Float32Array([0.8, 1, 1, corner]));
+      }
+    } else {
+      shootout.set_input(new Float32Array([0, 0, 0, 0]));
+      corner = -corner;
+    }
+    shootout.advance(4);
+  }
+  if (!shootout.finished()) {
+    throw new Error("the level-4 shootout did not finish");
+  }
+  writeFileSync(penaltyOut, shootout.record());
+  process.stdout.write(`${shootout.digest_hex()}\n`);
 }

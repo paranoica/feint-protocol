@@ -218,10 +218,16 @@ impl<G: HubGame> Play<G> {
             return Err(SessionError::Profile);
         }
         let game = G::build(level);
-        let header =
-            Self::header(level, seed, Opponent::HandMade, &game).ok_or(SessionError::Level)?;
+        let advisor = G::shipped_advisor(level);
+        let opponent = advisor
+            .and_then(NonZeroU64::new)
+            .map_or(Opponent::HandMade, Opponent::Advised);
+        let header = Self::header(level, seed, opponent, &game).ok_or(SessionError::Level)?;
         let mut bot =
             Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| SessionError::Level)?;
+        if let Some(id) = advisor {
+            bot.advise(G::advisor(level, id)?);
+        }
         if let Some(profile) = profile {
             bot.load_profile(profile, G::ID)
                 .map_err(|_| SessionError::Profile)?;
@@ -262,7 +268,11 @@ impl<G: HubGame> Play<G> {
         let spec = game.spec();
         let make = |level: u8| {
             let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
-            let bot = Bot::new(difficulty, G::book(), &spec).map_err(|_| SessionError::Level)?;
+            let mut bot =
+                Bot::new(difficulty, G::book(), &spec).map_err(|_| SessionError::Level)?;
+            if let Some(id) = G::shipped_advisor(level) {
+                bot.advise(G::advisor(level, id)?);
+            }
             Ok::<_, SessionError>((bot, difficulty.body(&spec)))
         };
         let (mut left_bot, left_body) = make(left)?;

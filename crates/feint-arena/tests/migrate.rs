@@ -229,8 +229,18 @@ fn store_with_old_data(name: &str) -> Stored {
     let saved = save(&mut store, "t1", 8, &first.record(), None, None);
     assert_eq!(saved.profile_version, Some(1));
     let p1 = decode_profile(&store.profile_blob("ann", 1).unwrap()).unwrap();
-    let (second, _) = common::shootout(5, 9, Some(&p1));
-    let saved = save(&mut store, "t2", 9, &second.record(), Some(1), Some(&p1));
+    let (seed, second) = (9..60)
+        .map(|seed| (seed, common::shootout(5, seed, Some(&p1)).0))
+        .find(|(_, m)| verify(&m.record(), None).err() == Some(VerifyError::Mismatch))
+        .expect("a shootout where the profile changes how the bot plays");
+    let saved = save(
+        &mut store,
+        "t2",
+        seed as u32,
+        &second.record(),
+        Some(1),
+        Some(&p1),
+    );
     assert_eq!(saved.profile_version, Some(2));
     let scripted = upgrade_record(FIXTURE).unwrap().unwrap();
     let fixture_seed = decode_record(&scripted).unwrap().header.seed as u32;

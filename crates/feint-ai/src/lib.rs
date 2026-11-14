@@ -17,7 +17,9 @@ pub use bot::{
 };
 pub use difficulty::{Difficulty, LongGame, Memory};
 pub use long_game::{DECISIVE, PATTERN_BONUS, Plan};
-pub use model::{COUNT_CAP, MIN_EVIDENCE, OpponentModel, Profile, ProfileError};
+pub use model::{
+    Advisor, COUNT_CAP, MIN_EVIDENCE, OpponentModel, Predictor, Profile, ProfileError,
+};
 pub use playbook::{Choice, Controller, Cue, Playbook, Read, Stance};
 pub use reaction::{BadCadence, Cadence, ReactionBuffer, delay_ticks};
 pub use record::{
