@@ -371,7 +371,6 @@ fn the_private_key_is_the_bots_hand_by_rank() {
 #[test]
 fn the_searching_bot_answers_two_tables_that_differ_only_in_hidden_cards_alike() {
     use believe::Believe;
-    use feint_ai::Controller;
     use feint_protocol::GameAdapter;
     let game = Cards::default();
     let params = game.params().clone();
