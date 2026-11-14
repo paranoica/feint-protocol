@@ -427,3 +427,68 @@ fn what_the_bot_learns_after_its_move_splits_the_tree() {
     let root = search.root();
     assert!(root[0].mean > 0.9, "{root:?}");
 }
+
+struct OnlyHidden;
+
+impl Game for OnlyHidden {
+    type World = Trail;
+    type Action = u8;
+
+    fn to_act(&self, w: &Trail) -> Option<u8> {
+        w.moves.is_empty().then_some(0)
+    }
+
+    fn legal(&self, w: &Trail, _player: u8) -> Vec<u8> {
+        vec![w.hidden]
+    }
+
+    fn apply(&self, w: &mut Trail, _player: u8, a: u8) {
+        w.moves.push(a);
+    }
+
+    fn value(&self, _w: &Trail, _me: u8) -> f64 {
+        1.0
+    }
+
+    fn public(&self, _w: &Trail, _player: u8, a: u8) -> u64 {
+        u64::from(a)
+    }
+}
+
+impl Model<OnlyHidden> for Nobody {
+    fn policy(&self, _g: &OnlyHidden, _w: &Trail, _p: u8) -> Vec<(u8, f64)> {
+        Vec::new()
+    }
+
+    fn observe(&mut self, _g: &OnlyHidden, _b: &Trail, _p: u8, _a: u8) {}
+}
+
+#[test]
+fn a_node_whose_moves_are_all_illegal_in_a_world_takes_that_worlds_moves() {
+    let mut prior = Uniform;
+    let mut b = budget(200, 1);
+    b.top_k = 1;
+    let mut setup = Setup {
+        game: &OnlyHidden,
+        model: &Nobody,
+        prior: &mut prior,
+        me: 0,
+        budget: b,
+    };
+    let mut alternate = |rng: &mut ChaCha8Rng| {
+        use rand_chacha::rand_core::RngCore;
+        Trail {
+            moves: Vec::new(),
+            hidden: u8::from(rng.next_u32().is_multiple_of(2)),
+        }
+    };
+    let mut search = Search::new();
+    search.run(
+        &mut setup,
+        &mut alternate,
+        &mut ChaCha8Rng::seed_from_u64(4),
+    );
+    let root = search.root();
+    assert_eq!(root.len(), 2, "{root:?}");
+    assert!(root.iter().all(|e| e.visits > 0), "{root:?}");
+}

@@ -12,7 +12,7 @@ use crate::rules::{Counts, MAX_RANKS, Move, Moves, Params, Table, by_rank};
 use crate::sample::table_from_view;
 use crate::traps::{leaf, learn};
 
-const WORLD_TRIES: u32 = 32;
+pub const POOL: usize = 32;
 
 pub struct Cards {
     params: Params,
@@ -74,10 +74,13 @@ impl Game for Cards {
     }
 
     fn private(&self, world: &Table, me: u8) -> u64 {
-        by_rank(&self.params, world.hands[usize::from(me.min(1))])
-            .iter()
-            .enumerate()
-            .fold(0u64, |key, (rank, &c)| key | (u64::from(c) << (4 * rank)))
+        let me = usize::from(me.min(1));
+        let hand = by_rank(&self.params, world.hands[me]);
+        hand.iter()
+            .chain(world.known[me].iter())
+            .fold(0xcbf2_9ce4_8422_2325_u64, |h, &c| {
+                (h ^ u64::from(c)).wrapping_mul(0x0100_0000_01b3)
+            })
     }
 
     fn public(&self, _world: &Table, _player: u8, action: Move) -> u64 {
@@ -211,70 +214,120 @@ fn take_counts(params: &Params, from: u64, counts: &Counts, rng: &mut ChaCha8Rng
     mask
 }
 
+fn candidate<L: LayModel>(
+    game: &Cards,
+    obs: &ObservationT,
+    model: &L,
+    rng: &mut ChaCha8Rng,
+) -> (Table, f64) {
+    let params = &game.params;
+    let me = usize::from(obs.player.min(1));
+    let other = 1 - me;
+    let mut t = table_from_view(params, obs, rng);
+    let theirs_last = t.batches > 0 && usize::from(t.last_by) == other;
+    if !theirs_last {
+        return (t, 1.0);
+    }
+    let unweighted = t.clone();
+    let last_n = t.last.count_ones();
+    let laid_n = t.laid[other].count_ones();
+    let possession = t.hands[other] | t.laid[other];
+    let earlier = take_random(possession, laid_n.saturating_sub(last_n), rng);
+    let before = possession & !earlier;
+    let claim = t.claim.map_or(0, usize::from);
+    let pre = before_the_lay(&t, me, before, earlier, rng);
+    let odds = model.lay_odds(game, &pre, other as u8, claim, last_n);
+    let weight: f64 = odds.iter().map(|o| o.1.max(0.0)).sum();
+    if weight <= 0.0 {
+        return (unweighted, 0.0);
+    }
+    let u = unit(rng) * weight;
+    let mut acc = 0.0;
+    let mut counts: Counts = [0; MAX_RANKS];
+    for (c, p) in &odds {
+        acc += p.max(0.0);
+        counts = *c;
+        if u < acc {
+            break;
+        }
+    }
+    let last = take_counts(params, before, &counts, rng);
+    t.last = last;
+    t.laid[other] = earlier | last;
+    t.hands[other] = before & !last;
+    if last.count_ones() != last_n || t.validate(params).is_err() {
+        return (unweighted, 0.0);
+    }
+    (t, weight)
+}
+
+#[must_use]
+pub fn before_the_lay(
+    t: &Table,
+    me: usize,
+    before: u64,
+    earlier: u64,
+    rng: &mut ChaCha8Rng,
+) -> Table {
+    let other = 1 - me;
+    let mut pre = t.clone();
+    pre.hands[other] = before;
+    pre.laid[other] = earlier;
+    pre.batches = t.batches.saturating_sub(1);
+    pre.to_act = other as u8;
+    pre.out = None;
+    pre.actions = t.actions.saturating_sub(1);
+    if pre.batches == 0 {
+        pre.claim = None;
+        pre.last = 0;
+    } else {
+        pre.last = take_random(t.laid[me], 1, rng);
+        pre.last_by = me as u8;
+    }
+    pre
+}
+
+pub fn worlds<L: LayModel>(
+    game: &Cards,
+    obs: &ObservationT,
+    model: &L,
+    rng: &mut ChaCha8Rng,
+    n: usize,
+) -> Vec<(Table, f64)> {
+    let pool: Vec<(Table, f64)> = (0..n.max(1))
+        .map(|_| candidate(game, obs, model, rng))
+        .collect();
+    if pool.iter().any(|w| w.1 > 0.0) {
+        pool
+    } else {
+        pool.into_iter().map(|(t, _)| (t, 1.0)).collect()
+    }
+}
+
+fn draw(pool: &[(Table, f64)], rng: &mut ChaCha8Rng) -> Table {
+    let total: f64 = pool.iter().map(|w| w.1).sum();
+    let u = unit(rng) * total;
+    let mut acc = 0.0;
+    for (t, w) in pool {
+        acc += w;
+        if u < acc {
+            return t.clone();
+        }
+    }
+    pool.iter()
+        .rev()
+        .find(|w| w.1 > 0.0)
+        .map_or_else(|| pool[0].0.clone(), |w| w.0.clone())
+}
+
 pub fn world<L: LayModel>(
     game: &Cards,
     obs: &ObservationT,
     model: &L,
     rng: &mut ChaCha8Rng,
 ) -> Table {
-    let params = &game.params;
-    let me = usize::from(obs.player.min(1));
-    let other = 1 - me;
-    let mut last_world = table_from_view(params, obs, rng);
-    for _ in 0..WORLD_TRIES {
-        let mut t = table_from_view(params, obs, rng);
-        let theirs_last = t.batches > 0 && usize::from(t.last_by) == other;
-        if !theirs_last {
-            return t;
-        }
-        last_world = t.clone();
-        let last_n = t.last.count_ones();
-        let laid_n = t.laid[other].count_ones();
-        let possession = t.hands[other] | t.laid[other];
-        let earlier = take_random(possession, laid_n.saturating_sub(last_n), rng);
-        let before = possession & !earlier;
-        let claim = t.claim.map_or(0, usize::from);
-        let mut pre = t.clone();
-        pre.hands[other] = before;
-        pre.laid[other] = earlier;
-        pre.batches = t.batches - 1;
-        pre.to_act = other as u8;
-        pre.out = None;
-        pre.actions = t.actions.saturating_sub(1);
-        if pre.batches == 0 {
-            pre.claim = None;
-            pre.last = 0;
-        } else {
-            pre.last = take_random(t.laid[me], 1, rng);
-            pre.last_by = me as u8;
-        }
-        let odds = model.lay_odds(game, &pre, other as u8, claim, last_n);
-        let weight: f64 = odds.iter().map(|o| o.1.max(0.0)).sum();
-        if weight <= 0.0 || unit(rng) >= weight {
-            continue;
-        }
-        let u = unit(rng) * weight;
-        let mut acc = 0.0;
-        let mut counts: Counts = [0; MAX_RANKS];
-        for (c, p) in &odds {
-            acc += p.max(0.0);
-            counts = *c;
-            if u < acc {
-                break;
-            }
-        }
-        let last = take_counts(params, before, &counts, rng);
-        if last.count_ones() != last_n {
-            continue;
-        }
-        t.last = last;
-        t.laid[other] = earlier | last;
-        t.hands[other] = before & !last;
-        if t.validate(params).is_ok() {
-            return t;
-        }
-    }
-    last_world
+    let pool = worlds(game, obs, model, rng, POOL);
+    draw(&pool, rng)
 }
 
 pub fn choose<M: Model<Cards> + LayModel>(
@@ -293,7 +346,8 @@ pub fn choose<M: Model<Cards> + LayModel>(
         me,
         budget,
     };
-    let mut sample = |r: &mut ChaCha8Rng| world(game, obs, model, r);
+    let pool = worlds(game, obs, model, rng, POOL);
+    let mut sample = |r: &mut ChaCha8Rng| draw(&pool, r);
     decide(&mut setup, &mut sample, rng)
 }
 

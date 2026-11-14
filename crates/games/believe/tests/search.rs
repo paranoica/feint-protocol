@@ -352,7 +352,7 @@ fn the_policy_model_gives_the_policys_odds_for_each_batch_it_could_have_laid() {
 }
 
 #[test]
-fn the_private_key_is_the_bots_hand_by_rank() {
+fn the_private_key_is_the_bots_hand_and_what_it_has_seen_by_rank() {
     let game = Cards::default();
     let params = game.params();
     let mut t = Table::empty(params);
@@ -362,10 +362,23 @@ fn the_private_key_is_the_bots_hand_by_rank() {
     u.hands[0] = (1 << 2) | (1 << 6) | (1 << 7);
     u.hands[1] = 1 << 9;
     assert_eq!(game.private(&t, 0), game.private(&u, 0));
-    assert_eq!(game.private(&t, 0), 1 | (2 << 4));
     let mut v = t.clone();
     v.hands[0] = 0b11 | (1 << 4);
     assert_ne!(game.private(&t, 0), game.private(&v, 0));
+    let mut w = t.clone();
+    w.known[0][3] = 1;
+    assert_ne!(
+        game.private(&t, 0),
+        game.private(&w, 0),
+        "revealed cards are private too"
+    );
+    let mut x = t.clone();
+    x.known[1][3] = 1;
+    assert_eq!(
+        game.private(&t, 0),
+        game.private(&x, 0),
+        "not what the opponent knows"
+    );
 }
 
 #[test]
@@ -406,4 +419,59 @@ fn the_searching_bot_answers_two_tables_that_differ_only_in_hidden_cards_alike()
     assert_eq!(a, b);
     assert!(x.is_some());
     assert_eq!(x, y);
+}
+
+#[derive(Default)]
+struct Spy {
+    seen: std::cell::RefCell<Vec<Table>>,
+}
+
+impl LayModel for Spy {
+    fn lay_odds(
+        &self,
+        _game: &Cards,
+        pre: &Table,
+        _player: u8,
+        _claim: usize,
+        _n: u32,
+    ) -> Vec<(Counts, f64)> {
+        self.seen.borrow_mut().push(pre.clone());
+        Vec::new()
+    }
+}
+
+#[test]
+fn the_table_before_the_opponents_lay_is_rebuilt_from_the_view() {
+    let game = Cards::default();
+    let params = game.params();
+    let mut checked = 0;
+    for seed in 0..60 {
+        let Some(t) = mid_round(seed) else {
+            continue;
+        };
+        let obs = view(&game, &t, 0);
+        let spy = Spy::default();
+        let _ = world(&game, &obs, &spy, &mut ChaCha8Rng::seed_from_u64(seed));
+        let last_n = t.last.count_ones();
+        for pre in spy.seen.borrow().iter() {
+            assert_eq!(pre.batches, t.batches - 1);
+            assert_eq!(pre.to_act, 1);
+            assert_eq!(pre.out, None);
+            assert_eq!(pre.actions, t.actions - 1);
+            assert_eq!(pre.hands[1].count_ones(), t.hands[1].count_ones() + last_n);
+            assert_eq!(pre.laid[1].count_ones(), t.laid[1].count_ones() - last_n);
+            assert_eq!(by_rank(params, pre.hands[0]), by_rank(params, t.hands[0]));
+            assert_eq!(by_rank(params, pre.laid[0]), by_rank(params, t.laid[0]));
+            if pre.batches == 0 {
+                assert_eq!((pre.claim, pre.last), (None, 0));
+            } else {
+                assert_eq!(pre.claim, t.claim);
+                assert_eq!(pre.last_by, 0);
+                assert_eq!(pre.last & !pre.laid[0], 0);
+                assert_eq!(pre.last.count_ones(), 1);
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked >= 100, "{checked}");
 }
