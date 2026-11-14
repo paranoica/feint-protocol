@@ -42,8 +42,8 @@ if [[ "$search_release" != "$search_wasm" ]]; then
   echo "the card search is not deterministic across builds" >&2
   exit 1
 fi
-if (( search_ms > 250 )); then
-  echo "a card search move takes $search_ms ms in wasm, over 250" >&2
+if (( search_ms > 200 )); then
+  echo "a card search move takes $search_ms ms in wasm, over 200" >&2
   exit 1
 fi
 

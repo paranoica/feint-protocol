@@ -210,3 +210,22 @@ fn a_card_bot_of_an_unknown_level_is_not_built() {
     assert!(CardMatch::with_level(1, SHIPPED, 9).is_err());
     assert!(CardMatch::with_level(1, SHIPPED, 8).is_ok());
 }
+
+#[test]
+fn a_card_record_stops_replaying_at_its_first_wrong_bot_move() {
+    let m = played_at(5, 4, 6);
+    let bytes = m.record();
+    let mut record = decode_record(&bytes).unwrap();
+    let first = record.actions.iter().position(|a| a.player == 1).unwrap();
+    record.actions[first].discrete = (record.actions[first].discrete + 1) % 276;
+    let started = std::time::Instant::now();
+    assert_eq!(
+        verify(&encode_record(&record), None).err(),
+        Some(VerifyError::Mismatch)
+    );
+    let wrong = started.elapsed();
+    let started = std::time::Instant::now();
+    assert!(verify(&bytes, None).is_ok());
+    let whole = started.elapsed();
+    assert!(wrong * 4 < whole, "{wrong:?} vs {whole:?}");
+}

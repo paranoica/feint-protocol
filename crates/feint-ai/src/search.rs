@@ -14,6 +14,11 @@ pub trait Game {
     fn value(&self, world: &Self::World, me: u8) -> f64;
 
     fn public(&self, world: &Self::World, player: u8, action: Self::Action) -> u64;
+
+    fn private(&self, world: &Self::World, me: u8) -> u64 {
+        let _ = (world, me);
+        0
+    }
 }
 
 pub trait Model<G: Game>: Clone {
@@ -59,13 +64,13 @@ struct Edge<A> {
     visits: u32,
     available: u32,
     total: f64,
-    child: Option<usize>,
+    children: Vec<(u64, usize)>,
 }
 
 #[derive(Default)]
 struct Node<A> {
     edges: Vec<Edge<A>>,
-    outcomes: Vec<(u64, usize)>,
+    outcomes: Vec<((u64, u64), usize)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,7 +147,7 @@ impl<A: Copy + PartialEq> Search<A> {
                 visits: 0,
                 available: 0,
                 total: 0.0,
-                child: None,
+                children: Vec::new(),
             });
         }
     }
@@ -195,7 +200,8 @@ impl<A: Copy + PartialEq> Search<A> {
                     let legal = game.legal(&world, me);
                     let edges = &self.nodes[node].edges;
                     let missing = legal.iter().any(|a| !edges.iter().any(|e| e.action == *a));
-                    if edges.is_empty() || (missing && edges.len() < budget.top_k) {
+                    let stuck = !edges.iter().any(|e| legal.contains(&e.action));
+                    if stuck || (missing && edges.len() < budget.top_k) {
                         Self::extend(
                             &mut self.nodes[node].edges,
                             game,
@@ -211,12 +217,19 @@ impl<A: Copy + PartialEq> Search<A> {
                     };
                     path.push((node, i));
                     let action = self.nodes[node].edges[i].action;
+                    mind.observe(game, &world, me, action);
                     game.apply(&mut world, me, action);
-                    node = match self.nodes[node].edges[i].child {
+                    let key = game.private(&world, me);
+                    let found = self.nodes[node].edges[i]
+                        .children
+                        .iter()
+                        .find(|c| c.0 == key)
+                        .map(|c| c.1);
+                    node = match found {
                         Some(c) => c,
                         None => {
                             let c = self.fresh();
-                            self.nodes[node].edges[i].child = Some(c);
+                            self.nodes[node].edges[i].children.push((key, c));
                             c
                         }
                     };
@@ -242,10 +255,10 @@ impl<A: Copy + PartialEq> Search<A> {
                     else {
                         break;
                     };
-                    let key = game.public(&world, player, action);
-                    let before = world.clone();
-                    mind.observe(game, &before, player, action);
+                    let public = game.public(&world, player, action);
+                    mind.observe(game, &world, player, action);
                     game.apply(&mut world, player, action);
+                    let key = (public, game.private(&world, me));
                     node = match self.nodes[node].outcomes.iter().find(|o| o.0 == key) {
                         Some(&(_, c)) => c,
                         None => {

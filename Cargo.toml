@@ -45,3 +45,12 @@ rand_chacha = "0.9"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+
+[profile.dev.package.feint-turn]
+opt-level = 3
+
+[profile.dev.package.believe]
+opt-level = 3
+
+[profile.dev.package.feint-ai]
+opt-level = 3

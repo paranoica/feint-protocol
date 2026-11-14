@@ -229,7 +229,14 @@ fn verify_cards(
     let mut human = Replayer::new(human_actions(&record)?);
     let mut runner = Runner::start(&mut game, [&mut human, bot.as_mut()], header)
         .map_err(|_| VerifyError::Bodies)?;
-    while runner.ticks() < record.ticks && runner.step(&mut game, [&mut human, bot.as_mut()]) {}
+    let mut seen = 0;
+    while runner.ticks() < record.ticks && runner.step(&mut game, [&mut human, bot.as_mut()]) {
+        let fresh = &runner.actions()[seen..];
+        if record.actions.get(seen..seen + fresh.len()) != Some(fresh) {
+            return Err(VerifyError::Mismatch);
+        }
+        seen = runner.actions().len();
+    }
     let report = runner.finish(&mut game, [&mut human, bot.as_mut()]);
     if encode_record(&report.record()) != bytes {
         return Err(VerifyError::Mismatch);

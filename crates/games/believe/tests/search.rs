@@ -163,7 +163,16 @@ fn a_sampled_world_keeps_the_bots_view_and_follows_the_players_laying_rule() {
 struct BigLiar;
 
 impl LayModel for BigLiar {
-    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)> {
+    fn lay_odds(
+        &self,
+        game: &Cards,
+        pre: &Table,
+        player: u8,
+        claim: usize,
+        n: u32,
+    ) -> Vec<(Counts, f64)> {
+        let params = game.params();
+        let hand = &by_rank(params, pre.hands[usize::from(player)]);
         let mut counts = [0u8; MAX_RANKS];
         let mut left = n;
         for (rank, &h) in hand.iter().enumerate().take(usize::from(params.ranks)) {
@@ -308,4 +317,94 @@ fn worlds_believe_a_lie_as_often_as_the_players_rule_and_the_deal_make_it() {
     let got = f64::from(lies) / f64::from(n);
     let se = (want * (1.0 - want) / f64::from(n)).sqrt();
     assert!((got - want).abs() < 4.0 * se, "{got} vs {want}");
+}
+
+#[test]
+fn the_policy_model_gives_the_policys_odds_for_each_batch_it_could_have_laid() {
+    use believe::search::PolicyModel;
+    use feint_ai::search::Model;
+    let game = Cards::default();
+    let model = PolicyModel::new(policy(CHECKPOINTS[0].id).unwrap_or_else(|e| panic!("{e}")));
+    let mut checked = 0;
+    for seed in 0..40 {
+        let t = Table::deal(game.params(), seed);
+        let player = t.to_act;
+        let all = model.policy(&game, &t, player);
+        let total: f64 = all.iter().map(|m| m.1).sum();
+        assert!((total - 1.0).abs() < 1e-4, "{total}");
+        for claim in 0..5usize {
+            for n in 1..=3u32 {
+                let odds = model.lay_odds(&game, &t, player, claim, n);
+                for (counts, p) in &odds {
+                    let m = Move::Lay {
+                        claim: claim as u8,
+                        counts: *counts,
+                    };
+                    let want = all.iter().find(|x| x.0 == m).map(|x| x.1);
+                    assert_eq!(want, Some(*p));
+                    assert_eq!(counts.iter().map(|&k| u32::from(k)).sum::<u32>(), n);
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 100, "{checked}");
+}
+
+#[test]
+fn the_private_key_is_the_bots_hand_by_rank() {
+    let game = Cards::default();
+    let params = game.params();
+    let mut t = Table::empty(params);
+    t.hands[0] = 0b1 | (1 << 4) | (1 << 5);
+    t.hands[1] = 1 << 1;
+    let mut u = t.clone();
+    u.hands[0] = (1 << 2) | (1 << 6) | (1 << 7);
+    u.hands[1] = 1 << 9;
+    assert_eq!(game.private(&t, 0), game.private(&u, 0));
+    assert_eq!(game.private(&t, 0), 1 | (2 << 4));
+    let mut v = t.clone();
+    v.hands[0] = 0b11 | (1 << 4);
+    assert_ne!(game.private(&t, 0), game.private(&v, 0));
+}
+
+#[test]
+fn the_searching_bot_answers_two_tables_that_differ_only_in_hidden_cards_alike() {
+    use believe::Believe;
+    use feint_ai::Controller;
+    use feint_protocol::GameAdapter;
+    let game = Cards::default();
+    let params = game.params().clone();
+    let mut t = Table::empty(&params);
+    let ids = |list: &[u32]| list.iter().fold(0u64, |m, &i| m | (1 << i));
+    t.hands[0] = ids(&[0, 1, 4, 5, 8, 12, 13, 16]);
+    t.hands[1] = ids(&[2, 6, 9, 10, 14, 17]);
+    t.laid[1] = ids(&[3]);
+    t.last = t.laid[1];
+    t.last_by = 1;
+    t.claim = Some(0);
+    t.batches = 1;
+    t.to_act = 0;
+    t.aside = params.deck_mask() & !(t.hands[0] | t.hands[1] | t.laid[1]);
+    let mut u = t.clone();
+    u.laid[1] = ids(&[18]);
+    u.last = u.laid[1];
+    u.hands[1] = ids(&[2, 6, 9, 10, 14, 3]);
+    u.aside = params.deck_mask() & !(u.hands[0] | u.hands[1] | u.laid[1]);
+    assert!(t.validate(&params).is_ok() && u.validate(&params).is_ok());
+    let act = |table: &Table| {
+        let g =
+            Believe::from_table(params.clone(), table.clone()).unwrap_or_else(|e| panic!("{e}"));
+        let mut obs = ObservationT::default();
+        g.observe(g.live(), 0, &mut obs);
+        let mut bot =
+            believe::bot::for_level(8, CHECKPOINTS[0].id).unwrap_or_else(|e| panic!("{e:?}"));
+        bot.new_match(&g.spec(), 0, 77);
+        (obs.clone(), bot.on_tick(&g, &obs))
+    };
+    let (a, x) = act(&t);
+    let (b, y) = act(&u);
+    assert_eq!(a, b);
+    assert!(x.is_some());
+    assert_eq!(x, y);
 }

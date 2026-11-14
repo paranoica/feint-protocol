@@ -73,6 +73,13 @@ impl Game for Cards {
         leaf(world, me)
     }
 
+    fn private(&self, world: &Table, me: u8) -> u64 {
+        by_rank(&self.params, world.hands[usize::from(me.min(1))])
+            .iter()
+            .enumerate()
+            .fold(0u64, |key, (rank, &c)| key | (u64::from(c) << (4 * rank)))
+    }
+
     fn public(&self, _world: &Table, _player: u8, action: Move) -> u64 {
         match action {
             Move::Call => 0,
@@ -85,7 +92,14 @@ impl Game for Cards {
 }
 
 pub trait LayModel {
-    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)>;
+    fn lay_odds(
+        &self,
+        game: &Cards,
+        pre: &Table,
+        player: u8,
+        claim: usize,
+        n: u32,
+    ) -> Vec<(Counts, f64)>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -112,8 +126,16 @@ impl Model<Cards> for Oracle {
 }
 
 impl LayModel for Oracle {
-    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)> {
-        self.person.lay_odds(params, hand, claim, n)
+    fn lay_odds(
+        &self,
+        game: &Cards,
+        pre: &Table,
+        player: u8,
+        claim: usize,
+        n: u32,
+    ) -> Vec<(Counts, f64)> {
+        let hand = by_rank(&game.params, pre.hands[usize::from(player)]);
+        self.person.lay_odds(&game.params, &hand, claim, n)
     }
 }
 
@@ -205,16 +227,30 @@ pub fn world<L: LayModel>(
         if !theirs_last {
             return t;
         }
+        last_world = t.clone();
         let last_n = t.last.count_ones();
         let laid_n = t.laid[other].count_ones();
         let possession = t.hands[other] | t.laid[other];
         let earlier = take_random(possession, laid_n.saturating_sub(last_n), rng);
         let before = possession & !earlier;
         let claim = t.claim.map_or(0, usize::from);
-        let odds = model.lay_odds(params, &by_rank(params, before), claim, last_n);
+        let mut pre = t.clone();
+        pre.hands[other] = before;
+        pre.laid[other] = earlier;
+        pre.batches = t.batches - 1;
+        pre.to_act = other as u8;
+        pre.out = None;
+        pre.actions = t.actions.saturating_sub(1);
+        if pre.batches == 0 {
+            pre.claim = None;
+            pre.last = 0;
+        } else {
+            pre.last = take_random(t.laid[me], 1, rng);
+            pre.last_by = me as u8;
+        }
+        let odds = model.lay_odds(game, &pre, other as u8, claim, last_n);
         let weight: f64 = odds.iter().map(|o| o.1.max(0.0)).sum();
         if weight <= 0.0 || unit(rng) >= weight {
-            last_world = t;
             continue;
         }
         let u = unit(rng) * weight;
@@ -229,7 +265,6 @@ pub fn world<L: LayModel>(
         }
         let last = take_counts(params, before, &counts, rng);
         if last.count_ones() != last_n {
-            last_world = t;
             continue;
         }
         t.last = last;
@@ -238,7 +273,6 @@ pub fn world<L: LayModel>(
         if t.validate(params).is_ok() {
             return t;
         }
-        last_world = t;
     }
     last_world
 }
@@ -302,36 +336,25 @@ impl Model<Cards> for PolicyModel {
 }
 
 impl LayModel for PolicyModel {
-    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)> {
-        let _ = claim;
-        let mut out = Vec::new();
-        let ranks = usize::from(params.ranks);
-        let mut current: Counts = [0; MAX_RANKS];
-        fn walk(
-            hand: &Counts,
-            ranks: usize,
-            from: usize,
-            left: u32,
-            current: &mut Counts,
-            out: &mut Vec<(Counts, f64)>,
-        ) {
-            if left == 0 {
-                out.push((*current, 1.0));
-                return;
-            }
-            for rank in from..ranks {
-                if current[rank] < hand[rank] {
-                    current[rank] += 1;
-                    walk(hand, ranks, rank, left - 1, current, out);
-                    current[rank] -= 1;
+    fn lay_odds(
+        &self,
+        game: &Cards,
+        pre: &Table,
+        player: u8,
+        claim: usize,
+        n: u32,
+    ) -> Vec<(Counts, f64)> {
+        self.policy(game, pre, player)
+            .into_iter()
+            .filter_map(|(m, p)| match m {
+                Move::Lay { claim: c, counts }
+                    if usize::from(c) == claim
+                        && counts.iter().map(|&k| u32::from(k)).sum::<u32>() == n =>
+                {
+                    Some((counts, p))
                 }
-            }
-        }
-        walk(hand, ranks, 0, n, &mut current, &mut out);
-        let k = out.len().max(1) as f64;
-        for o in &mut out {
-            o.1 = 1.0 / k;
-        }
-        out
+                _ => None,
+            })
+            .collect()
     }
 }

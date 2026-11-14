@@ -290,3 +290,140 @@ fn an_action_is_only_tried_in_worlds_where_it_is_legal() {
     let one = root.iter().find(|e| e.action == 1).map_or(0, |e| e.visits);
     assert!(one > 0 && one < 2_000, "{root:?}");
 }
+
+struct Echo;
+
+impl Game for Echo {
+    type World = Trail;
+    type Action = u8;
+
+    fn to_act(&self, w: &Trail) -> Option<u8> {
+        match w.moves.len() {
+            0 => Some(0),
+            1 => Some(1),
+            _ => None,
+        }
+    }
+
+    fn legal(&self, _w: &Trail, _player: u8) -> Vec<u8> {
+        vec![0, 1]
+    }
+
+    fn apply(&self, w: &mut Trail, _player: u8, a: u8) {
+        w.moves.push(a);
+    }
+
+    fn value(&self, w: &Trail, _me: u8) -> f64 {
+        f64::from(u8::from(w.moves.get(1) == Some(&1)))
+    }
+
+    fn public(&self, _w: &Trail, _player: u8, a: u8) -> u64 {
+        u64::from(a)
+    }
+}
+
+#[derive(Clone)]
+struct Mirror {
+    last: Option<u8>,
+}
+
+impl Model<Echo> for Mirror {
+    fn policy(&self, _g: &Echo, _w: &Trail, _p: u8) -> Vec<(u8, f64)> {
+        vec![(self.last.unwrap_or(0), 1.0)]
+    }
+
+    fn observe(&mut self, _g: &Echo, _before: &Trail, player: u8, a: u8) {
+        if player == 0 {
+            self.last = Some(a);
+        }
+    }
+}
+
+#[test]
+fn the_opponent_model_sees_the_bots_own_moves() {
+    let mut prior = Uniform;
+    let mut setup = Setup {
+        game: &Echo,
+        model: &Mirror { last: None },
+        prior: &mut prior,
+        me: 0,
+        budget: budget(400, 1),
+    };
+    let mut search = Search::new();
+    search.run(&mut setup, &mut fresh, &mut ChaCha8Rng::seed_from_u64(1));
+    assert_eq!(search.best(), Some(1));
+    let root = search.root();
+    let mean = |a: u8| root.iter().find(|e| e.action == a).map(|e| e.mean);
+    assert_eq!(mean(1), Some(1.0));
+    assert_eq!(mean(0), Some(0.0));
+}
+
+struct Reveal;
+
+impl Game for Reveal {
+    type World = Trail;
+    type Action = u8;
+
+    fn to_act(&self, w: &Trail) -> Option<u8> {
+        (w.moves.len() < 2).then_some(0)
+    }
+
+    fn legal(&self, w: &Trail, _player: u8) -> Vec<u8> {
+        if w.moves.is_empty() {
+            vec![0]
+        } else {
+            vec![0, 1]
+        }
+    }
+
+    fn apply(&self, w: &mut Trail, _player: u8, a: u8) {
+        w.moves.push(a);
+    }
+
+    fn value(&self, w: &Trail, _me: u8) -> f64 {
+        f64::from(u8::from(w.moves.get(1) == Some(&w.hidden)))
+    }
+
+    fn public(&self, _w: &Trail, _player: u8, a: u8) -> u64 {
+        u64::from(a)
+    }
+
+    fn private(&self, w: &Trail, _me: u8) -> u64 {
+        if w.moves.is_empty() {
+            0
+        } else {
+            1 + u64::from(w.hidden)
+        }
+    }
+}
+
+impl Model<Reveal> for Nobody {
+    fn policy(&self, _g: &Reveal, _w: &Trail, _p: u8) -> Vec<(u8, f64)> {
+        Vec::new()
+    }
+
+    fn observe(&mut self, _g: &Reveal, _b: &Trail, _p: u8, _a: u8) {}
+}
+
+#[test]
+fn what_the_bot_learns_after_its_move_splits_the_tree() {
+    let mut prior = Uniform;
+    let mut setup = Setup {
+        game: &Reveal,
+        model: &Nobody,
+        prior: &mut prior,
+        me: 0,
+        budget: budget(4_000, 2),
+    };
+    let mut coin = |rng: &mut ChaCha8Rng| {
+        use rand_chacha::rand_core::RngCore;
+        Trail {
+            moves: Vec::new(),
+            hidden: u8::from(rng.next_u32().is_multiple_of(2)),
+        }
+    };
+    let mut search = Search::new();
+    search.run(&mut setup, &mut coin, &mut ChaCha8Rng::seed_from_u64(3));
+    let root = search.root();
+    assert!(root[0].mean > 0.9, "{root:?}");
+}

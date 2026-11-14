@@ -1031,3 +1031,21 @@ fn a_card_match_is_stored_without_parquet_and_counted_in_results() {
     assert_eq!(r.status, 400, "an unfinished card match is refused");
     assert_eq!(count(&s, "SELECT COUNT(*) FROM matches"), 1);
 }
+
+#[test]
+fn a_record_of_another_seed_is_refused_before_it_is_replayed() {
+    let s = start("seed-first");
+    let (_, seed) = ticket(&s);
+    let (other, _) = ticket(&s);
+    let mut forged = feint_ai::decode_record(&card_match(seed).record()).unwrap();
+    let bot = forged.actions.iter().position(|a| a.player == 1).unwrap();
+    forged.actions[bot].discrete += 1;
+    let r = call(
+        s.addr,
+        "POST",
+        &format!("/api/matches?nick=cara&ticket={other}"),
+        &feint_ai::encode_record(&forged),
+    );
+    assert_eq!(r.status, 400);
+    assert_eq!(json_field(&r.body, "error"), "seed");
+}

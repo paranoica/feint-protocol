@@ -396,13 +396,14 @@ fn accept(arena: &Arena, claim: &Claim, body: &[u8]) -> Result<Saved, Refusal> {
     if claimed != claim.seed {
         return Err(Refusal::Conflict);
     }
+    let named = feint_ai::decode_record(body).map_err(|_| Refusal::Bad("record"))?;
+    if named.header.seed != claim.seed {
+        return Err(Refusal::Bad("seed"));
+    }
     let verified = verify(body, profile.as_ref()).map_err(|e| match e {
         VerifyError::Profile => Refusal::Bad("profile"),
         _ => Refusal::Bad("record"),
     })?;
-    if verified.record.header.seed != claim.seed {
-        return Err(Refusal::Bad("seed"));
-    }
     if !verified.finished {
         return Err(Refusal::Bad("unfinished"));
     }

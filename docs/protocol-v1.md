@@ -138,8 +138,9 @@ WebAssembly and the C interface play the same match to the same digest.
 
 ## 7. Matches: `MatchHeader`, `MatchResult`, records
 
-`MatchHeader`: `game_id`, `game_version`, `seed`, `level` (the bot's level; card games use
-the fixed preset 5), `bodies` (one `BodyParams` per player), `bot` (`HandMade` or `Trained`)
+`MatchHeader`: `game_id`, `game_version`, `seed`, `level` (the bot's level; in the card
+game 5 is the trained policy alone and 6, 7, 8 are that policy searching one, two and three
+of its own moves ahead), `bodies` (one `BodyParams` per player), `bot` (`HandMade` or `Trained`)
 and `checkpoint`. With `Trained`, `checkpoint` is the trained policy's id and must not be 0.
 With `HandMade`, 0 means the core's own opponent model, and any other value is the id of the
 in-match context model that advises the hand-made bot (penalty level 4); the arena
@@ -225,6 +226,7 @@ v0.1 was the first schema (2026-11-09). Everything that changed until 1.0, with 
 | `to_act = -1` ends a turn-based match | training and the CFR module detect terminal states from the observation alone |
 | `legal` is the action mask for discrete policies | the trained card bot samples only legal moves |
 | Card-game headers carry level 5 and a trained checkpoint; a hand-made card record is refused | no hand-made card bot exists; the arena needs a fixed preset to rebuild the match |
+| Card-game levels 6–8 name a search depth over the same checkpoint (stage 5); level 5 records are unchanged | the level is the only thing that differs between those bots, so no new header field is needed; the arena rebuilds the bot of the named level |
 
 The `GameAdapter` trait has not changed since 0.1.
 

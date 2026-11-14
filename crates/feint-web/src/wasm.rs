@@ -427,6 +427,7 @@ pub fn card_levels() -> Vec<u8> {
     believe::bot::LEVELS.to_vec()
 }
 
+#[must_use]
 #[wasm_bindgen]
 pub fn card_checkpoints() -> Vec<String> {
     believe::trained::CHECKPOINTS
