@@ -188,8 +188,23 @@ fn header(level: u8, game: &Penalty, me: PlayerId, seed: u64) -> RunHeader {
     }
 }
 
+pub type MakeAdvisor<'a> = &'a dyn Fn(Habits) -> Option<Box<dyn Advisor<Shootout>>>;
+
+fn advisor_for(advice: Advice, habits: Habits) -> Option<Box<dyn Advisor<Shootout>>> {
+    match advice {
+        Advice::Count => None,
+        Advice::Blind => Some(Box::new(Blind)),
+        Advice::Oracle => Some(Box::new(Oracle::new(habits))),
+    }
+}
+
 #[must_use]
 pub fn one_match(level: u8, advice: Advice, person: u64) -> Played {
+    one_match_with(level, person, &|h| advisor_for(advice, h))
+}
+
+#[must_use]
+pub fn one_match_with(level: u8, person: u64, make: MakeAdvisor<'_>) -> Played {
     let params = measured_params();
     let habits = Habits::person(person);
     let me: PlayerId = if person.is_multiple_of(2) { 0 } else { 1 };
@@ -197,10 +212,8 @@ pub fn one_match(level: u8, advice: Advice, person: u64) -> Played {
     let spec = game.spec();
     let mut bot = Bot::new(preset(level), PenaltyPlaybook::new(params), &spec)
         .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
-    match advice {
-        Advice::Count => {}
-        Advice::Blind => bot.advise(Box::new(Blind)),
-        Advice::Oracle => bot.advise(Box::new(Oracle::new(habits))),
+    if let Some(advisor) = make(habits) {
+        bot.advise(advisor);
     }
     let mut human = Human::with_habits(habits);
     let head = header(level, &game, me, person);
@@ -323,10 +336,15 @@ impl Halves {
 
 #[must_use]
 pub fn halves(level: u8, advice: Advice, persons: Range<u64>) -> Halves {
+    halves_with(level, persons, &|h| advisor_for(advice, h))
+}
+
+#[must_use]
+pub fn halves_with(level: u8, persons: Range<u64>, make: MakeAdvisor<'_>) -> Halves {
     let regulation = 2 * Params::default().kicks_each as usize;
     let mut h = Halves::default();
     for person in persons {
-        let played = one_match(level, advice, person);
+        let played = one_match_with(level, person, make);
         let mut m = MatchHalves {
             person,
             ..MatchHalves::default()

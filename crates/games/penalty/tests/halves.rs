@@ -1,4 +1,7 @@
-use penalty::persons::{Advice, Halves, TEST_PERSONS, halves};
+use std::sync::Arc;
+
+use penalty::context::{ContextAdvisor, LAYOUT};
+use penalty::persons::{Advice, Halves, TEST_PERSONS, halves, halves_with};
 
 fn report(level: u8, advice: Advice, matches: u64) -> Halves {
     let h = halves(level, advice, TEST_PERSONS..TEST_PERSONS + matches);
@@ -35,6 +38,30 @@ fn halves_against_new_persons() {
         let (d, se) = h.against(&blind);
         println!(
             "{name} against blind, paired by person: {d:+.3} ± {:.3}",
+            1.96 * se
+        );
+    }
+    if let Ok(path) = std::env::var("HALVES_CONTEXT") {
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let model =
+            Arc::new(feint_context::ContextModel::from_safetensors(&bytes, LAYOUT).unwrap());
+        let h = halves_with(level, TEST_PERSONS..TEST_PERSONS + matches, &|_| {
+            Some(Box::new(ContextAdvisor::new(Arc::clone(&model))))
+        });
+        let (diff, se) = h.difference();
+        println!(
+            "level {level} Context: halves {:.3} -> {:.3}, difference {diff:+.3} ± {:.3}; shooter {:.3} -> {:.3}, keeper {:.3} -> {:.3}",
+            h.share(0),
+            h.share(1),
+            1.96 * se,
+            h.shooter(0),
+            h.shooter(1),
+            h.keeper(0),
+            h.keeper(1)
+        );
+        let (d, se) = h.against(&blind);
+        println!(
+            "context against blind, paired by person: {d:+.3} ± {:.3}",
             1.96 * se
         );
     }
