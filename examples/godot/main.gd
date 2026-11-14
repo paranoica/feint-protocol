@@ -18,12 +18,16 @@ func _ready() -> void:
 		return
 	game = ClassDB.instantiate("FeintMatch")
 	if "--check" in OS.get_cmdline_user_args():
-		if game.start(1, 9, 3) or game.start(1, 1, 0) or game.start(-1, 1, 3):
+		if game.start(1, 9, 3) or game.start(1, 1, 0) or game.start(-1, 1, 3) or game.start(1, 9.0, 3):
 			printerr("FEINT a level or seed out of range was accepted")
 			get_tree().quit(6)
 			return
-		if not game.start(5, 0, 3):
+		if not game.start(5.0, 0, true):
 			get_tree().quit(4)
+			return
+		if game.layout(1.0) != game.layout(1) or game.layout(1) <= 0.0:
+			printerr("FEINT a float index is not read as that index")
+			get_tree().quit(8)
 			return
 		for i in 2400:
 			if game.step(0.1 * sin(i * 0.01), 0.2) < 0:

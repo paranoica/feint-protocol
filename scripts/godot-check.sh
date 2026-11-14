@@ -27,7 +27,7 @@ if [[ "$exported" != "feint_godot_init" ]]; then
   echo "the extension exports more than its entry point: $exported" >&2
   exit 1
 fi
-if ! timeout 120 godot --headless --path "$project" --import > /dev/null 2>&1; then
+if ! timeout 120 godot --headless -e --path "$project" --quit-after 300 > /dev/null 2>&1; then
   echo "the Godot project does not import" >&2
   exit 1
 fi

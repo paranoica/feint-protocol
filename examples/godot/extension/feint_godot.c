@@ -32,6 +32,7 @@ static struct {
   GDExtensionInterfaceVariantGetPtrDestructor destructor;
   GDExtensionInterfaceVariantGetType variant_type;
   GDExtensionMethodBindPtr notify;
+  int registered;
   StringName class_name;
   StringName parent_name;
 } api;
@@ -63,6 +64,16 @@ static int64_t as_int(GDExtensionConstVariantPtr v) {
   int64_t out = 0;
   api.to_type(GDEXTENSION_VARIANT_TYPE_INT)(&out, (GDExtensionVariantPtr)v);
   return out;
+}
+
+static int64_t as_bool(GDExtensionConstVariantPtr v) {
+  uint8_t out = 0;
+  api.to_type(GDEXTENSION_VARIANT_TYPE_BOOL)(&out, (GDExtensionVariantPtr)v);
+  return out != 0;
+}
+
+static int64_t as_whole(double x) {
+  return (x > -9.0e18 && x < 9.0e18) ? (int64_t)x : -1;
 }
 
 static double as_float(GDExtensionConstVariantPtr v) {
@@ -115,8 +126,9 @@ static void call(void *userdata, GDExtensionClassInstancePtr instance, const GDE
     GDExtensionVariantType given = api.variant_type(args[k]);
     int is_int = given == GDEXTENSION_VARIANT_TYPE_INT;
     int is_float = given == GDEXTENSION_VARIANT_TYPE_FLOAT;
-    if (method->args[k] == GDEXTENSION_VARIANT_TYPE_INT && is_int) {
-      a.i[k] = as_int(args[k]);
+    int is_bool = given == GDEXTENSION_VARIANT_TYPE_BOOL;
+    if (method->args[k] == GDEXTENSION_VARIANT_TYPE_INT && (is_int || is_float || is_bool)) {
+      a.i[k] = is_int ? as_int(args[k]) : is_float ? as_whole(as_float(args[k])) : as_bool(args[k]);
     } else if (method->args[k] == GDEXTENSION_VARIANT_TYPE_FLOAT && (is_float || is_int)) {
       a.f[k] = is_int ? (double)as_int(args[k]) : as_float(args[k]);
     } else {
@@ -297,6 +309,7 @@ static void initialize(void *userdata, GDExtensionInitializationLevel level) {
   info.create_instance_func = create;
   info.free_instance_func = destroy;
   api.register_class(api.library, &api.class_name, &api.parent_name, &info);
+  api.registered = 1;
   register_methods();
 }
 
@@ -305,7 +318,10 @@ static void deinitialize(void *userdata, GDExtensionInitializationLevel level) {
   if (level != GDEXTENSION_INITIALIZATION_SCENE) {
     return;
   }
-  api.unregister_class(api.library, &api.class_name);
+  if (api.registered) {
+    api.unregister_class(api.library, &api.class_name);
+    api.registered = 0;
+  }
 }
 
 EXPORT GDExtensionBool feint_godot_init(GDExtensionInterfaceGetProcAddress get, GDExtensionClassLibraryPtr library,
