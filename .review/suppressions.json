@@ -39,6 +39,14 @@
       "quote_substr": "if view.last_batch > copies.saturating_sub(accounted) {",
       "reason": "the counter lays every card of the claimed rank at its first answer, so a later opponent batch always meets a forced call; the cumulative claim is never needed",
       "ts": 1794535123.61001
+    },
+    {
+      "fingerprint": "8832a0ef1e48",
+      "category": "correctness",
+      "file_glob": "crates/feint-arena/src/*",
+      "quote_substr": "    let [0, level] = record.header.levels else {",
+      "reason": "the order of Level and Ticks errors for a malformed card header is not relied on anywhere",
+      "ts": 1794658840.532345
     }
   ]
 }
