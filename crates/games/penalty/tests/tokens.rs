@@ -1,4 +1,3 @@
-use feint_ai::Difficulty;
 use penalty::context::{FOLLOW, GUESS, KickToken, SHOT, TELL};
 use penalty::persons::{Advice, Habits, match_tokens};
 
@@ -24,9 +23,8 @@ fn shooting(tokens: &[KickToken]) -> impl Iterator<Item = &KickToken> {
 
 #[test]
 fn a_habitual_person_reads_back_from_the_tokens() {
-    let d = Difficulty::preset(4).unwrap();
     for seat in [0, 1] {
-        let tokens = match_tokens(d, Advice::Blind, left_honest_guesser(), seat, 7);
+        let tokens = match_tokens(4, Advice::Blind, left_honest_guesser(), seat, 7);
         assert_eq!(tokens.len(), 10, "seat {seat}");
         for (k, t) in tokens.iter().enumerate() {
             assert_eq!(t.human_shoots(), (k % 2 == 0) == (seat == 1), "kick {k}");
@@ -55,7 +53,7 @@ fn a_habitual_person_reads_back_from_the_tokens() {
     }
     let mut early = 0;
     for seed in 0..20 {
-        let tokens = match_tokens(d, Advice::Blind, left_honest_guesser(), 0, seed);
+        let tokens = match_tokens(4, Advice::Blind, left_honest_guesser(), 0, seed);
         early += tokens
             .iter()
             .filter(|t| !t.human_shoots() && t.target[GUESS] == 1)
@@ -69,7 +67,6 @@ fn a_habitual_person_reads_back_from_the_tokens() {
 
 #[test]
 fn a_liar_who_never_guesses_reads_back_too() {
-    let d = Difficulty::preset(4).unwrap();
     let liar = Habits {
         corner: [0.0, 0.0, 1.0],
         honest: 0.0,
@@ -77,7 +74,7 @@ fn a_liar_who_never_guesses_reads_back_too() {
         guess: 0.0,
         ..left_honest_guesser()
     };
-    let tokens = match_tokens(d, Advice::Blind, liar, 0, 3);
+    let tokens = match_tokens(4, Advice::Blind, liar, 0, 3);
     for t in shooting(&tokens) {
         assert_eq!(t.target[SHOT], 2, "{t:?}");
         assert!(matches!(t.target[TELL], FAKE | NO_LEAN), "{t:?}");

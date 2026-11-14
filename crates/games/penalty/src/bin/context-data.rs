@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use feint_ai::Difficulty;
 use penalty::context::{KICKS, KickToken, TARGETS, TOKEN_WIDTH, npy_f32, npy_i8};
 use penalty::persons::{Advice, Habits, match_tokens};
 
@@ -34,7 +33,6 @@ fn main() -> ExitCode {
         eprintln!("first, persons and threads are numbers");
         return ExitCode::FAILURE;
     };
-    let d = Difficulty::preset(4).expect("level 4 exists");
     let started = Instant::now();
     let threads = threads.max(1);
     let chunks: Vec<Vec<(u64, Vec<KickToken>)>> = std::thread::scope(|scope| {
@@ -50,7 +48,7 @@ fn main() -> ExitCode {
                                 Advice::Oracle
                             };
                             let seat = u8::from(id % 4 >= 2);
-                            (id, match_tokens(d, advice, Habits::person(id), seat, id))
+                            (id, match_tokens(4, advice, Habits::person(id), seat, id))
                         })
                         .collect::<Vec<_>>()
                 })

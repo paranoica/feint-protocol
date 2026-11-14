@@ -150,6 +150,13 @@ pub struct KickResult {
     pub bot_won: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Played {
+    pub me: PlayerId,
+    pub kicks: Vec<KickResult>,
+    pub score: [u32; 2],
+}
+
 #[must_use]
 pub fn measured_params() -> Params {
     Params {
@@ -159,8 +166,13 @@ pub fn measured_params() -> Params {
     }
 }
 
-fn header(d: Difficulty, game: &Penalty, me: PlayerId, seed: u64) -> RunHeader {
+fn preset(level: u8) -> Difficulty {
+    Difficulty::preset(level).unwrap_or_else(|| panic!("no level {level}"))
+}
+
+fn header(level: u8, game: &Penalty, me: PlayerId, seed: u64) -> RunHeader {
     let spec = game.spec();
+    let d = preset(level);
     let bodies = if me == 0 {
         vec![d.body(&spec), human_body(game)]
     } else {
@@ -171,19 +183,19 @@ fn header(d: Difficulty, game: &Penalty, me: PlayerId, seed: u64) -> RunHeader {
         game_version: crate::GAME_VERSION,
         seed,
         bodies,
-        levels: if me == 0 { [5, 0] } else { [0, 5] },
+        levels: if me == 0 { [level, 0] } else { [0, level] },
         opponent: Opponent::HandMade,
     }
 }
 
 #[must_use]
-pub fn one_match(d: Difficulty, advice: Advice, person: u64) -> Vec<KickResult> {
+pub fn one_match(level: u8, advice: Advice, person: u64) -> Played {
     let params = measured_params();
     let habits = Habits::person(person);
     let me: PlayerId = if person.is_multiple_of(2) { 0 } else { 1 };
-    let mut game = Penalty::new(params.clone(), 5);
+    let mut game = Penalty::new(params.clone(), level);
     let spec = game.spec();
-    let mut bot = Bot::new(d, PenaltyPlaybook::new(params), &spec)
+    let mut bot = Bot::new(preset(level), PenaltyPlaybook::new(params), &spec)
         .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
     match advice {
         Advice::Count => {}
@@ -191,7 +203,7 @@ pub fn one_match(d: Difficulty, advice: Advice, person: u64) -> Vec<KickResult> 
         Advice::Oracle => bot.advise(Box::new(Oracle::new(habits))),
     }
     let mut human = Human::with_habits(habits);
-    let head = header(d, &game, me, person);
+    let head = header(level, &game, me, person);
     let mut kicks = Vec::new();
     let [first, second]: [&mut dyn feint_ai::Controller<Penalty>; 2] = if me == 0 {
         [&mut bot, &mut human]
@@ -219,61 +231,133 @@ pub fn one_match(d: Difficulty, advice: Advice, person: u64) -> Vec<KickResult> 
             start = after.clone();
         }
     }
-    kicks
+    Played {
+        me,
+        kicks,
+        score: game.live().score,
+    }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Halves {
-    pub matches: u32,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MatchHalves {
+    pub person: u64,
     pub shooter: [[u32; 2]; 2],
     pub keeper: [[u32; 2]; 2],
 }
 
-impl Halves {
-    #[must_use]
-    pub fn share(&self, half: usize) -> f64 {
+impl MatchHalves {
+    fn share(&self, half: usize) -> f64 {
         let won = self.shooter[half][0] + self.keeper[half][0];
         let kicks = self.shooter[half][1] + self.keeper[half][1];
         f64::from(won) / f64::from(kicks.max(1))
     }
 
     #[must_use]
+    pub fn difference(&self) -> f64 {
+        self.share(1) - self.share(0)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Halves {
+    pub matches: Vec<MatchHalves>,
+}
+
+fn mean_se(values: impl Iterator<Item = f64> + Clone) -> (f64, f64) {
+    let n = values.clone().count() as f64;
+    if n < 2.0 {
+        return (values.sum::<f64>() / n.max(1.0), f64::NAN);
+    }
+    let mean = values.clone().sum::<f64>() / n;
+    let var = values.map(|v| (v - mean) * (v - mean)).sum::<f64>() / (n - 1.0);
+    (mean, (var / n).sqrt())
+}
+
+impl Halves {
+    fn pooled(&self, half: usize, role: impl Fn(&MatchHalves) -> [[u32; 2]; 2]) -> f64 {
+        let (won, n) = self.matches.iter().fold((0, 0), |(w, n), m| {
+            let r = role(m)[half];
+            (w + r[0], n + r[1])
+        });
+        f64::from(won) / f64::from(n.max(1))
+    }
+
+    #[must_use]
+    pub fn share(&self, half: usize) -> f64 {
+        let (won, n) = self.matches.iter().fold((0, 0), |(w, n), m| {
+            (
+                w + m.shooter[half][0] + m.keeper[half][0],
+                n + m.shooter[half][1] + m.keeper[half][1],
+            )
+        });
+        f64::from(won) / f64::from(n.max(1))
+    }
+
+    #[must_use]
+    pub fn shooter(&self, half: usize) -> f64 {
+        self.pooled(half, |m| m.shooter)
+    }
+
+    #[must_use]
+    pub fn keeper(&self, half: usize) -> f64 {
+        self.pooled(half, |m| m.keeper)
+    }
+
+    #[must_use]
     pub fn difference(&self) -> (f64, f64) {
-        let n = |h: usize| f64::from((self.shooter[h][1] + self.keeper[h][1]).max(1));
-        let (a, b) = (self.share(0), self.share(1));
-        let se = (a * (1.0 - a) / n(0) + b * (1.0 - b) / n(1)).sqrt();
-        (b - a, se)
+        mean_se(self.matches.iter().map(MatchHalves::difference))
+    }
+
+    #[must_use]
+    pub fn against(&self, control: &Self) -> (f64, f64) {
+        let paired = self.matches.iter().filter_map(|m| {
+            control
+                .matches
+                .iter()
+                .find(|c| c.person == m.person)
+                .map(|c| m.difference() - c.difference())
+        });
+        mean_se(paired)
     }
 }
 
 #[must_use]
-pub fn halves(d: Difficulty, advice: Advice, persons: Range<u64>) -> Halves {
+pub fn halves(level: u8, advice: Advice, persons: Range<u64>) -> Halves {
     let regulation = 2 * Params::default().kicks_each as usize;
     let mut h = Halves::default();
     for person in persons {
-        let kicks = one_match(d, advice, person);
-        for (k, kick) in kicks.iter().take(regulation).enumerate() {
+        let played = one_match(level, advice, person);
+        let mut m = MatchHalves {
+            person,
+            ..MatchHalves::default()
+        };
+        for (k, kick) in played.kicks.iter().take(regulation).enumerate() {
             let half = usize::from(k >= regulation / 2);
             let row = if kick.bot_shoots {
-                &mut h.shooter[half]
+                &mut m.shooter[half]
             } else {
-                &mut h.keeper[half]
+                &mut m.keeper[half]
             };
             row[0] += u32::from(kick.bot_won);
             row[1] += 1;
         }
-        h.matches += 1;
+        h.matches.push(m);
     }
     h
 }
 
 #[must_use]
-pub fn digest_against(d: Difficulty, mut human: Human, seed: u64) -> u64 {
-    let mut game = Penalty::new(Params::default(), 3);
+pub fn digest_at(level: u8, seed: u64) -> u64 {
+    let mut game = Penalty::new(Params::default(), level);
     let spec = game.spec();
-    let mut bot = Bot::new(d, PenaltyPlaybook::new(Params::default()), &spec)
-        .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
-    let head = header(d, &game, 0, seed);
+    let mut bot = Bot::new(
+        preset(level),
+        PenaltyPlaybook::new(Params::default()),
+        &spec,
+    )
+    .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+    let mut human = Human::new();
+    let head = header(level, &game, 0, seed);
     run_match(&mut game, [&mut bot, &mut human], head, 240 * 900)
         .unwrap_or_else(|e| panic!("a match runs: {e:?}"))
         .digest
@@ -321,16 +405,16 @@ impl Advisor<Shootout> for Recorder {
 
 #[must_use]
 pub fn match_tokens(
-    d: Difficulty,
+    level: u8,
     advice: Advice,
     habits: Habits,
     seat: PlayerId,
     seed: u64,
 ) -> Vec<KickToken> {
     let params = measured_params();
-    let mut game = Penalty::new(params.clone(), 5);
+    let mut game = Penalty::new(params.clone(), level);
     let spec = game.spec();
-    let mut bot = Bot::new(d, PenaltyPlaybook::new(params), &spec)
+    let mut bot = Bot::new(preset(level), PenaltyPlaybook::new(params), &spec)
         .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
     let inner: Box<dyn Advisor<Shootout>> = match advice {
         Advice::Oracle => Box::new(Oracle::new(habits)),
@@ -342,7 +426,7 @@ pub fn match_tokens(
         tokens: Arc::clone(&tokens),
     }));
     let mut human = Human::with_habits(habits);
-    let head = header(d, &game, seat, seed);
+    let head = header(level, &game, seat, seed);
     let played = if seat == 0 {
         run_match(&mut game, [&mut bot, &mut human], head, 240 * 900)
     } else {

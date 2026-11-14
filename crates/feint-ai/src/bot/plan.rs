@@ -112,9 +112,9 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .map(|(s, p)| (s, p / mass))
                 .collect::<Vec<_>>()
         });
-        let unknown = self
-            .playbook
-            .unknown(state, self.me)
+        let unknown = (depth >= 1)
+            .then(|| self.playbook.unknown(state, self.me))
+            .flatten()
             .map(|uniform| self.insight.shot_odds(depth).unwrap_or(uniform));
         let outcomes = odds
             .as_ref()

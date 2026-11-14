@@ -1,26 +1,20 @@
-use feint_ai::Difficulty;
-use penalty::persons::{Advice, TEST_PERSONS, halves};
+use penalty::persons::{Advice, Halves, TEST_PERSONS, halves};
 
-fn report(level: u8, advice: Advice, matches: u64) -> (f64, f64, f64, f64) {
-    let d = Difficulty::preset(level).unwrap();
-    let h = halves(d, advice, TEST_PERSONS..TEST_PERSONS + matches);
-    let rate = |r: [u32; 2]| f64::from(r[0]) / f64::from(r[1].max(1));
+fn report(level: u8, advice: Advice, matches: u64) -> Halves {
+    let h = halves(level, advice, TEST_PERSONS..TEST_PERSONS + matches);
     let (diff, se) = h.difference();
-    let all = (h.share(0) * f64::from(h.shooter[0][1] + h.keeper[0][1])
-        + h.share(1) * f64::from(h.shooter[1][1] + h.keeper[1][1]))
-        / f64::from(h.shooter[0][1] + h.keeper[0][1] + h.shooter[1][1] + h.keeper[1][1]);
     println!(
-        "level {level} {advice:?}: {} matches, share {all:.3}; halves {:.3} -> {:.3}, difference {diff:+.3} ± {:.3}; shooter {:.3} -> {:.3}, keeper {:.3} -> {:.3}",
-        h.matches,
+        "level {level} {advice:?}: {} matches; halves {:.3} -> {:.3}, difference {diff:+.3} ± {:.3}; shooter {:.3} -> {:.3}, keeper {:.3} -> {:.3}",
+        h.matches.len(),
         h.share(0),
         h.share(1),
         1.96 * se,
-        rate(h.shooter[0]),
-        rate(h.shooter[1]),
-        rate(h.keeper[0]),
-        rate(h.keeper[1]),
+        h.shooter(0),
+        h.shooter(1),
+        h.keeper(0),
+        h.keeper(1),
     );
-    (all, diff, se, h.share(1))
+    h
 }
 
 #[test]
@@ -33,15 +27,19 @@ fn halves_against_new_persons() {
     let level: u8 = std::env::var("HALVES_LEVEL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(5);
-    report(2, Advice::Count, matches);
+        .unwrap_or(4);
     let blind = report(level, Advice::Blind, matches);
-    report(level, Advice::Count, matches);
+    let count = report(level, Advice::Count, matches);
     let oracle = report(level, Advice::Oracle, matches);
+    for (name, h) in [("count", &count), ("oracle", &oracle)] {
+        let (d, se) = h.against(&blind);
+        println!(
+            "{name} against blind, paired by person: {d:+.3} ± {:.3}",
+            1.96 * se
+        );
+    }
+    let best = oracle.share(1) - blind.share(0) - blind.difference().0;
     println!(
-        "ceiling: oracle share {:.3} against blind {:.3}, gain {:+.3}",
-        oracle.0,
-        blind.0,
-        oracle.0 - blind.0
+        "best case for a learner at level {level}: {best:+.3} (blind first half, oracle second half, less the blind difference)"
     );
 }

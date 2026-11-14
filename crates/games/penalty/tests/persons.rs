@@ -1,6 +1,5 @@
-use feint_ai::{Difficulty, Predictor};
-use penalty::human::Human;
-use penalty::persons::{Advice, Blind, Habits, Oracle, TEST_PERSONS, halves, one_match};
+use feint_ai::Predictor;
+use penalty::persons::{Advice, Blind, Habits, Oracle, TEST_PERSONS, digest_at, halves, one_match};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
@@ -151,27 +150,90 @@ fn blind_advice_knows_nothing() {
 }
 
 #[test]
-fn a_harness_match_plays_all_ten_kicks_and_counts_each_role() {
-    let d = Difficulty::preset(5).unwrap();
+fn a_harness_match_plays_all_ten_kicks_and_scores_each_role() {
     for id in [TEST_PERSONS, TEST_PERSONS + 1, TEST_PERSONS + 2] {
-        let kicks = one_match(d, Advice::Blind, id);
-        assert_eq!(kicks.len(), 10, "person {id}");
+        let played = one_match(4, Advice::Blind, id);
+        assert_eq!(played.kicks.len(), 10, "person {id}");
         let bot_first = id % 2 == 0;
-        for (k, kick) in kicks.iter().enumerate() {
+        assert_eq!(played.me == 0, bot_first);
+        for (k, kick) in played.kicks.iter().enumerate() {
             assert_eq!(kick.bot_shoots, (k % 2 == 0) == bot_first, "kick {k}");
         }
+        let bot_goals = played
+            .kicks
+            .iter()
+            .filter(|k| k.bot_shoots && k.bot_won)
+            .count();
+        let human_goals = played
+            .kicks
+            .iter()
+            .filter(|k| !k.bot_shoots && !k.bot_won)
+            .count();
+        let me = usize::from(played.me);
+        assert_eq!(
+            (bot_goals, human_goals),
+            (played.score[me] as usize, played.score[1 - me] as usize)
+        );
     }
-    let h = halves(d, Advice::Blind, TEST_PERSONS..TEST_PERSONS + 4);
-    assert_eq!(h.matches, 4);
-    let total: u32 = h.shooter.iter().chain(&h.keeper).map(|x| x[1]).sum();
-    assert_eq!(total, 40);
-    assert_eq!(h.shooter[0][1] + h.shooter[1][1], 20);
+    let h = halves(4, Advice::Blind, TEST_PERSONS..TEST_PERSONS + 4);
+    assert_eq!(h.matches.len(), 4);
+    for m in &h.matches {
+        let kicks: u32 = m.shooter.iter().chain(&m.keeper).map(|x| x[1]).sum();
+        assert_eq!(kicks, 10);
+        assert_eq!(m.shooter[0][1] + m.shooter[1][1], 5);
+    }
 }
 
 #[test]
-fn the_default_human_still_plays_the_same_match() {
-    let d = Difficulty::preset(3).unwrap();
-    let a = penalty::persons::digest_against(d, Human::new(), 11);
-    let b = penalty::persons::digest_against(d, Human::with_habits(Habits::default()), 11);
-    assert_eq!(a, b);
+fn the_halves_statistics_pair_matches_and_persons() {
+    let row = |person: u64, first: u32, second: u32| penalty::persons::MatchHalves {
+        person,
+        shooter: [[first, 5], [second, 5]],
+        keeper: [[0, 0], [0, 0]],
+    };
+    let a = penalty::persons::Halves {
+        matches: vec![row(1, 2, 4), row(2, 3, 3), row(3, 1, 4)],
+    };
+    let (mean, se) = a.difference();
+    let d = [0.4, 0.0, 0.6];
+    let m = (0.4 + 0.0 + 0.6) / 3.0;
+    let var = d.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / 2.0;
+    assert!((mean - m).abs() < 1e-12);
+    assert!((se - (var / 3.0).sqrt()).abs() < 1e-12);
+    let b = penalty::persons::Halves {
+        matches: vec![row(3, 2, 2), row(1, 2, 3), row(9, 0, 5)],
+    };
+    let (paired, _) = a.against(&b);
+    assert!(
+        (paired - ((0.4 - 0.2) + (0.6 - 0.0)) / 2.0).abs() < 1e-12,
+        "only persons in both"
+    );
+}
+
+#[test]
+fn penalty_matches_keep_their_pinned_digests_per_level() {
+    let pinned = [
+        0x5068_0d58_3177_8ab9_u64,
+        0xd85b_b196_d922_3c90,
+        0x840b_9408_e7ce_6831,
+        0x5e97_008f_01de_313b,
+        0x75d3_4b29_f35c_d32f,
+    ];
+    for (level, want) in (1..=5).zip(pinned) {
+        assert_eq!(digest_at(level, 11), want, "level {level}");
+    }
+}
+
+#[test]
+fn a_shooter_who_knows_the_person_scores_more_than_a_blind_one() {
+    let persons = TEST_PERSONS..TEST_PERSONS + 150;
+    let knowing = halves(4, Advice::Oracle, persons.clone());
+    let blind = halves(4, Advice::Blind, persons);
+    let shooter = |h: &penalty::persons::Halves| (h.shooter(0) + h.shooter(1)) / 2.0;
+    assert!(
+        shooter(&knowing) > shooter(&blind) + 0.03,
+        "knowing {:.3}, blind {:.3}",
+        shooter(&knowing),
+        shooter(&blind)
+    );
 }
