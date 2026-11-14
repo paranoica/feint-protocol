@@ -974,6 +974,7 @@ name = "penalty"
 version = "0.1.0"
 dependencies = [
  "feint-ai",
+ "feint-context",
  "feint-protocol",
  "rand_chacha",
 ]

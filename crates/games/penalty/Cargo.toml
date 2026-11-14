@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 feint-ai.workspace = true
+feint-context.workspace = true
 feint-protocol.workspace = true
 rand_chacha.workspace = true
 

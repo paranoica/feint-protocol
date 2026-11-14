@@ -366,6 +366,7 @@ pub fn digest_at(level: u8, seed: u64) -> u64 {
 struct Recorder {
     inner: Box<dyn Advisor<Shootout>>,
     tokens: Arc<Mutex<Tokenizer>>,
+    states: Option<Arc<Mutex<Vec<Shootout>>>>,
 }
 
 impl Predictor for Recorder {
@@ -404,6 +405,9 @@ impl Advisor<Shootout> for Recorder {
         if let Ok(mut t) = self.tokens.lock() {
             t.see(state, me);
         }
+        if let Some(Ok(mut kept)) = self.states.as_ref().map(|s| s.lock()) {
+            kept.push(state.clone());
+        }
     }
 }
 
@@ -415,6 +419,22 @@ pub fn match_tokens(
     seat: PlayerId,
     seed: u64,
 ) -> Vec<KickToken> {
+    recorded(level, advice, habits, seat, seed, false).0
+}
+
+#[must_use]
+pub fn match_states(level: u8, habits: Habits, seat: PlayerId, seed: u64) -> Vec<Shootout> {
+    recorded(level, Advice::Blind, habits, seat, seed, true).1
+}
+
+fn recorded(
+    level: u8,
+    advice: Advice,
+    habits: Habits,
+    seat: PlayerId,
+    seed: u64,
+    keep_states: bool,
+) -> (Vec<KickToken>, Vec<Shootout>) {
     let params = measured_params();
     let mut game = Penalty::new(params.clone(), level);
     let spec = game.spec();
@@ -428,9 +448,11 @@ pub fn match_tokens(
         }
     };
     let tokens = Arc::new(Mutex::new(Tokenizer::default()));
+    let states = keep_states.then(|| Arc::new(Mutex::new(Vec::new())));
     bot.advise(Box::new(Recorder {
         inner,
         tokens: Arc::clone(&tokens),
+        states: states.clone(),
     }));
     let mut human = Human::with_habits(habits);
     let head = header(level, &game, seat, seed);
@@ -440,8 +462,12 @@ pub fn match_tokens(
         run_match(&mut game, [&mut human, &mut bot], head, 240 * 900)
     };
     played.unwrap_or_else(|e| panic!("a measured match runs: {e:?}"));
-    tokens
+    let tokens = tokens
         .lock()
         .map(|t| t.tokens().to_vec())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let states = states
+        .and_then(|s| s.lock().ok().map(|v| v.clone()))
+        .unwrap_or_default();
+    (tokens, states)
 }

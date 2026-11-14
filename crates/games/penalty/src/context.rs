@@ -189,3 +189,115 @@ pub fn npy_i8(shape: &[usize], values: &[i8]) -> Vec<u8> {
     out.extend(values.iter().map(|v| v.to_le_bytes()[0]));
     out
 }
+
+pub const LAYOUT: &str = "context-v1:penalty:20:10:8";
+
+#[derive(Clone, Copy, Debug)]
+struct Answers {
+    corner: [f64; 3],
+    tell: [f64; 3],
+    guess: f64,
+    follow: f64,
+}
+
+pub struct ContextAdvisor {
+    model: std::sync::Arc<feint_context::ContextModel>,
+    tokens: Tokenizer,
+    asked: usize,
+    answers: Answers,
+}
+
+fn ask(model: &feint_context::ContextModel, tokens: &[KickToken]) -> Answers {
+    let features: Vec<[f32; TOKEN_WIDTH]> = tokens.iter().map(|t| t.features).collect();
+    let out = model.predict(&features).map(f64::from);
+    let corner = feint_context::softmax(&out[0..3]);
+    let tell = feint_context::softmax(&out[3..6]);
+    Answers {
+        corner: [corner[0], corner[1], corner[2]],
+        tell: [tell[0], tell[1], tell[2]],
+        guess: feint_context::sigmoid(out[6]),
+        follow: feint_context::sigmoid(out[7]),
+    }
+}
+
+impl ContextAdvisor {
+    #[must_use]
+    pub fn new(model: std::sync::Arc<feint_context::ContextModel>) -> Self {
+        let answers = ask(&model, &[]);
+        Self {
+            model,
+            tokens: Tokenizer::default(),
+            asked: 0,
+            answers,
+        }
+    }
+}
+
+impl feint_ai::Predictor for ContextAdvisor {
+    fn likely_shot(&self) -> Option<u8> {
+        let c = self.answers.corner;
+        let mut best = 0;
+        for k in 1..3 {
+            if c[k] > c[best] {
+                best = k;
+            }
+        }
+        u8::try_from(best).ok()
+    }
+
+    fn likely_cover(&self, shown: u8) -> Option<u8> {
+        if shown == 1 || shown > 2 || self.answers.guess < 0.5 {
+            return None;
+        }
+        Some(if self.answers.follow >= 0.5 {
+            shown
+        } else {
+            2 - shown
+        })
+    }
+
+    fn likely_real(&self, _shown: u8) -> Option<u8> {
+        None
+    }
+
+    fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>> {
+        if shown == 1 || shown > 2 {
+            return None;
+        }
+        let a = self.answers;
+        let same = a.corner[usize::from(shown)] * a.tell[0];
+        let other = a.corner[usize::from(2 - shown)] * a.tell[1];
+        let total = same + other;
+        (total > 0.0).then(|| {
+            vec![
+                (Some(shown), same / total),
+                (Some(2 - shown), other / total),
+            ]
+        })
+    }
+
+    fn knowing_beats_reading(&self) -> bool {
+        false
+    }
+
+    fn shot_odds(&self) -> Option<Vec<(u8, f64)>> {
+        Some((0..3u8).zip(self.answers.corner).collect())
+    }
+}
+
+impl feint_ai::Advisor<Shootout> for ContextAdvisor {
+    fn see(&mut self, state: &Shootout, me: PlayerId) {
+        self.tokens.see(state, me);
+        let n = self.tokens.tokens().len();
+        if n != self.asked {
+            self.asked = n;
+            self.answers = ask(&self.model, self.tokens.tokens());
+        }
+    }
+
+    fn new_match(&mut self) {
+        self.tokens.clear();
+        self.asked = 0;
+        self.answers = ask(&self.model, &[]);
+    }
+}
