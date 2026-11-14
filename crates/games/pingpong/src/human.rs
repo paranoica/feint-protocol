@@ -14,9 +14,9 @@ const BITE: f32 = 0.85;
 const READ_FACING: f32 = 0.3;
 const WIND_UP: f32 = 0.6;
 const READY_BACK: f64 = 0.5;
-const MISS_BASE: f32 = 0.04;
-const MISS_PER_SPEED: f32 = 0.05;
-const MISJUDGE: f32 = 0.04;
+const MISS_BASE: f32 = 0.02;
+const MISS_PER_SPEED: f32 = 0.03;
+const MISJUDGE: f32 = 0.015;
 const AIM_SPREAD: f32 = 0.15;
 
 pub struct Human {
