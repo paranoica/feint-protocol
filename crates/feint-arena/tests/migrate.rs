@@ -248,8 +248,15 @@ fn store_with_old_data(name: &str) -> Stored {
         .execute(
             "INSERT INTO matches (player_id, game, level, seed, score_human, score_bot, ticks,
              finished, digest, created, checkpoint, record_path)
-             VALUES (1, 'airhockey', 5, 1, 0, 0, 3000, 0, 'feed', 1, '', ?1)",
-            [relative],
+             VALUES (1, 'airhockey', ?1, ?2, ?3, ?4, ?5, 0, 'feed', 1, '', ?6)",
+            rusqlite::params![
+                i64::from(legacy.header.levels[1]),
+                legacy.header.seed as i64,
+                legacy.score[0],
+                legacy.score[1],
+                legacy.ticks as i64,
+                relative
+            ],
         )
         .unwrap();
     let proven = store.connection().last_insert_rowid();
@@ -330,9 +337,18 @@ fn migrating_a_data_dir_keeps_a_backup_and_is_idempotent() {
     let Stored { root, proven } = store_with_old_data("dir");
     let before = snapshot(&root);
     let old_blobs = blobs(&root.join("feint.db"));
+    fs::create_dir_all(root.join("backup-0.1.tmp/matches")).unwrap();
+    fs::write(root.join("backup-0.1.tmp/matches/junk.rec"), b"junk").unwrap();
     let check = migrate(&root, false).unwrap();
     assert_eq!((check.records_upgraded, check.profiles_upgraded), (4, 2));
-    assert_eq!(snapshot(&root), before, "a check writes nothing");
+    assert_eq!(
+        snapshot(&root)
+            .into_iter()
+            .filter(|f| !f.0.starts_with("backup-0.1.tmp"))
+            .collect::<Vec<_>>(),
+        before,
+        "a check writes nothing"
+    );
     assert!(!root.join("backup-0.1").exists());
 
     let report = migrate(&root, true).unwrap();
@@ -445,6 +461,57 @@ fn an_incomplete_backup_is_refused() {
         "no records"
     );
     assert_eq!(snapshot(&root), before);
+    let files: Vec<_> = snapshot(&root)
+        .into_iter()
+        .filter(|f| f.0.starts_with("matches"))
+        .collect();
+    let first_rec = files
+        .iter()
+        .position(|f| f.0.extension().is_some_and(|e| e == "rec"))
+        .unwrap();
+    for (i, (path, bytes)) in files.iter().enumerate() {
+        let mut copy = bytes.clone();
+        if i == first_rec {
+            copy[40] ^= 1;
+        }
+        fs::create_dir_all(backup.join(path).parent().unwrap()).unwrap();
+        fs::write(backup.join(path), copy).unwrap();
+    }
+    let before = snapshot(&root);
+    assert!(
+        matches!(migrate(&root, true), Err(MigrateError::Backup(_))),
+        "a record differs"
+    );
+    assert_eq!(snapshot(&root), before);
+    let (path, bytes) = &files[first_rec];
+    fs::write(backup.join(path), bytes).unwrap();
+    let before = snapshot(&root);
+    assert!(
+        matches!(migrate(&root, true), Err(MigrateError::Backup(_))),
+        "the database holds none of the profiles"
+    );
+    assert_eq!(snapshot(&root), before);
+    fs::remove_file(backup.join("feint.db")).unwrap();
+    rusqlite::Connection::open(root.join("feint.db"))
+        .unwrap()
+        .execute(
+            "VACUUM INTO ?1",
+            [backup.join("feint.db").to_string_lossy().as_ref()],
+        )
+        .unwrap();
+    let mut copy = bytes.clone();
+    copy[40] ^= 1;
+    fs::write(backup.join(path), copy).unwrap();
+    let before = snapshot(&root);
+    assert!(
+        matches!(migrate(&root, true), Err(MigrateError::Backup(_))),
+        "a record differs while the database is whole"
+    );
+    assert_eq!(snapshot(&root), before);
+    fs::write(backup.join(path), bytes).unwrap();
+    let report = migrate(&root, true).unwrap();
+    assert!(!report.backup_made, "a whole backup is kept and used");
+    assert_eq!(report.records_upgraded, 4);
 }
 
 #[test]
@@ -480,60 +547,237 @@ fn a_record_file_without_a_row_is_reported_and_left_alone() {
     assert_eq!(fs::read(root.join("matches/stray.rec")).unwrap(), FIXTURE);
 }
 
-#[test]
-fn a_record_the_bot_no_longer_plays_is_proven_by_replaying_its_inputs() {
-    use feint_protocol::GameAdapter;
-    use feint_web::HubGame;
-    let Stored { root, .. } = store_with_old_data("bot");
+fn old_blob(root: &Path, version: i64) -> Vec<u8> {
+    let conn = rusqlite::Connection::open(root.join("feint.db")).unwrap();
+    conn.query_row(
+        "SELECT blob FROM profiles WHERE version = ?1",
+        [version],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+fn edit_row(root: &Path, sql: &str) {
+    let conn = rusqlite::Connection::open(root.join("feint.db")).unwrap();
+    conn.execute(sql, []).unwrap();
+}
+
+fn stored_path(root: &Path, id: i64, column: &str) -> PathBuf {
     let conn = rusqlite::Connection::open(root.join("feint.db")).unwrap();
     let stored: String = conn
-        .query_row("SELECT record_path FROM matches WHERE id = 3", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            &format!("SELECT {column} FROM matches WHERE id = ?1"),
+            [id],
+            |r| r.get(0),
+        )
         .unwrap();
-    let path = resolve(&root, &stored).unwrap();
-    let mut record =
-        decode_record(&upgrade_record(&fs::read(&path).unwrap()).unwrap().unwrap()).unwrap();
-    let bots: Vec<usize> = (0..record.actions.len())
-        .filter(|&i| record.actions[i].player == 1)
-        .collect();
-    for &i in &bots[bots.len() / 2..] {
-        for v in record.actions[i].values.as_mut().unwrap() {
-            *v = -*v;
-        }
-    }
-    let was: String = conn
-        .query_row("SELECT digest FROM matches WHERE id = 3", [], |r| r.get(0))
-        .unwrap();
-    let mut game = airhockey::AirHockey::build(record.header.levels[1]);
-    let digest = feint_ai::replay_record(&mut game, &record).unwrap();
-    assert_ne!(format!("{digest:016x}"), was, "the edit changes the match");
-    let mut seen = feint_protocol::ObservationT::default();
-    game.observe(game.live(), 0, &mut seen);
-    record.score = seen.score.unwrap();
-    let bytes = encode_record(&record);
+    resolve(root, &stored).unwrap()
+}
+
+#[test]
+fn a_match_the_bot_now_plays_otherwise_is_proven_by_its_inputs_and_parquet() {
+    let Stored { root, .. } = store_with_old_data("bot");
+    let rec = stored_path(&root, 2, "record_path");
+    let bytes = upgrade_record(&fs::read(&rec).unwrap()).unwrap().unwrap();
     assert_eq!(
         verify(&bytes, None).err(),
         Some(VerifyError::Mismatch),
-        "today's bot plays it otherwise"
+        "without the profile it learned from, the bot plays the shootout otherwise"
     );
-    fs::write(&path, downgrade(&bytes)).unwrap();
+    edit_row(&root, "UPDATE matches SET profile_used = NULL WHERE id = 2");
+    let report = migrate(&root, false).unwrap();
+    assert_eq!(report.replayed, vec![(2, "penalty".to_string())]);
+    assert_eq!(report.verified, 2);
+
+    let parquet = stored_path(&root, 2, "parquet_path");
+    let kept = fs::read(&parquet).unwrap();
+    fs::copy(stored_path(&root, 1, "parquet_path"), &parquet).unwrap();
     assert_eq!(
         migrate(&root, false).err(),
-        Some(MigrateError::Verify(3, "Mismatch".into())),
-        "the inputs replay to another digest than the arena stored"
+        Some(MigrateError::Verify(2, "Mismatch".into())),
+        "another match's ticks"
     );
-    conn.execute(
-        "UPDATE matches SET digest = ?1 WHERE id = 3",
-        [format!("{digest:016x}")],
+    let p1 = decode_profile(&upgrade_envelope(&old_blob(&root, 1)).unwrap().unwrap()).unwrap();
+    let truth = verify(&bytes, Some(&p1)).unwrap();
+    let rewrite = |frames: &[feint_arena::Frame]| {
+        let file = fs::File::create(&parquet).unwrap();
+        feint_arena::parquet_out::write(
+            frames,
+            truth.columns,
+            5,
+            truth.record.header.seed,
+            0,
+            file,
+        )
+        .unwrap();
+    };
+    let mut frames = truth.frames.clone();
+    rewrite(&frames);
+    assert_eq!(
+        migrate(&root, false).unwrap().replayed,
+        vec![(2, "penalty".to_string())]
+    );
+    let last = frames.len() - 1;
+    let v = frames[last]
+        .values
+        .iter()
+        .position(Option::is_some)
+        .unwrap();
+    frames[last].values[v] = frames[last].values[v].map(|x| x + 1.0);
+    rewrite(&frames);
+    assert_eq!(
+        migrate(&root, false).err(),
+        Some(MigrateError::Verify(2, "Mismatch".into())),
+        "one value of one tick differs"
+    );
+    let bare: Vec<feint_arena::Frame> = truth
+        .frames
+        .iter()
+        .map(|f| feint_arena::Frame {
+            values: Vec::new(),
+            ..f.clone()
+        })
+        .collect();
+    feint_arena::parquet_out::write(
+        &bare,
+        &[],
+        5,
+        truth.record.header.seed,
+        0,
+        fs::File::create(&parquet).unwrap(),
     )
     .unwrap();
-    drop(conn);
-    let report = migrate(&root, true).unwrap();
     assert_eq!(
-        report.replayed,
-        vec![(3, "airhockey".to_string(), "Mismatch".to_string())]
+        migrate(&root, false).err(),
+        Some(MigrateError::Verify(2, "Mismatch".into())),
+        "a file without the game's columns proves nothing"
     );
-    assert_eq!(report.verified, 2);
-    assert_eq!(fs::read(&path).unwrap(), bytes);
+    frames.pop();
+    rewrite(&frames);
+    assert_eq!(
+        migrate(&root, false).err(),
+        Some(MigrateError::Verify(2, "Mismatch".into())),
+        "one tick short"
+    );
+    fs::write(&parquet, &kept).unwrap();
+    edit_row(
+        &root,
+        "UPDATE matches SET digest = '0000000000000000' WHERE id = 2",
+    );
+    assert_eq!(
+        migrate(&root, false).err(),
+        Some(MigrateError::Verify(2, "Mismatch".into())),
+        "another final state"
+    );
+}
+
+#[test]
+fn a_row_that_disagrees_with_its_record_stops_the_run() {
+    for (i, sql) in [
+        "UPDATE matches SET score_human = score_human + 1 WHERE id = 1",
+        "UPDATE matches SET seed = seed + 1 WHERE id = 1",
+        "UPDATE matches SET level = 4 WHERE id = 1",
+        "UPDATE matches SET ticks = ticks + 1 WHERE id = 1",
+        "UPDATE matches SET finished = 0 WHERE id = 1",
+        "UPDATE matches SET game = 'duel' WHERE id = 1",
+        "UPDATE matches SET checkpoint = 'aa' WHERE id = 1",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let Stored { root, .. } = store_with_old_data(&format!("row{i}"));
+        edit_row(&root, sql);
+        assert_eq!(
+            migrate(&root, false).err(),
+            Some(MigrateError::Row(1)),
+            "{sql}"
+        );
+    }
+    let Stored { root, proven } = store_with_old_data("rowold");
+    edit_row(
+        &root,
+        &format!("UPDATE matches SET score_bot = 9 WHERE id = {proven}"),
+    );
+    assert_eq!(migrate(&root, false).err(), Some(MigrateError::Row(proven)));
+}
+
+#[test]
+fn only_an_older_game_version_is_byte_proven() {
+    for (name, edit) in [
+        (
+            "newer",
+            Box::new(|r: &mut feint_ai::Record| r.header.game_version = 99)
+                as Box<dyn Fn(&mut feint_ai::Record)>,
+        ),
+        (
+            "unknown",
+            Box::new(|r: &mut feint_ai::Record| r.header.game_id = "nosuch".into()),
+        ),
+    ] {
+        let Stored { root, proven } = store_with_old_data(name);
+        let rec = stored_path(&root, proven, "record_path");
+        let mut record =
+            decode_record(&upgrade_record(&fs::read(&rec).unwrap()).unwrap().unwrap()).unwrap();
+        edit(&mut record);
+        fs::write(&rec, downgrade(&encode_record(&record))).unwrap();
+        assert_eq!(
+            migrate(&root, false).err(),
+            Some(MigrateError::Verify(proven, "Game".into())),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_second_run_waits_for_the_lock_and_a_check_needs_none() {
+    let Stored { root, .. } = store_with_old_data("lock");
+    fs::write(root.join("migrate-v1.lock"), b"").unwrap();
+    let before = snapshot(&root);
+    assert!(matches!(migrate(&root, true), Err(MigrateError::Locked(_))));
+    assert_eq!(snapshot(&root), before);
+    assert_eq!(migrate(&root, false).unwrap().records_upgraded, 4);
+    fs::remove_file(root.join("migrate-v1.lock")).unwrap();
+    migrate(&root, true).unwrap();
+    assert!(
+        !root.join("migrate-v1.lock").exists(),
+        "the lock goes with the run"
+    );
+}
+
+#[test]
+fn a_trained_match_that_does_not_replay_with_its_bot_is_refused() {
+    let root = scratch("trained").join("data");
+    let mut store = Store::open(&root).unwrap();
+    let mut s = feint_web::Session::trained(5, 31, feint_ml::registry::CHECKPOINTS[0].id).unwrap();
+    for _ in 0..150 {
+        let p = s.positions();
+        s.set_pointer(p[0], p[1]);
+        s.advance(4);
+    }
+    let bytes = s.record();
+    store.issue_ticket(100, "t", 31).unwrap();
+    let verified = verify(&bytes, None).unwrap();
+    store
+        .save(&Upload {
+            now: 200,
+            nick: "ann",
+            token: "t",
+            used: None,
+            bytes: &bytes,
+            verified: &verified,
+            profile: None,
+        })
+        .unwrap();
+    drop(store);
+    let rec = stored_path(&root, 1, "record_path");
+    let mut record = decode_record(&bytes).unwrap();
+    let bot = record.actions.iter().position(|a| a.player == 1).unwrap();
+    record.actions[bot].deceptive = !record.actions[bot].deceptive;
+    let edited = encode_record(&record);
+    assert_eq!(verify(&edited, None).err(), Some(VerifyError::Mismatch));
+    fs::write(&rec, downgrade(&edited)).unwrap();
+    assert_eq!(
+        migrate(&root, false).err(),
+        Some(MigrateError::Verify(1, "Mismatch".into()))
+    );
 }

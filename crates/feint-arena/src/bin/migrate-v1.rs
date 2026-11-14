@@ -5,13 +5,13 @@ use feint_arena::migrate::{BACKUP, FROM, migrate};
 use feint_protocol::PROTOCOL_VERSION;
 
 fn main() -> ExitCode {
-    let mut write = true;
+    let mut write = false;
     let mut root = PathBuf::from("data");
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
-            "--check" => write = false,
+            "--write" => write = true,
             a if a.starts_with('-') => {
-                eprintln!("usage: migrate-v1 [--check] [data dir]");
+                eprintln!("usage: migrate-v1 [--write] [data dir]");
                 return ExitCode::FAILURE;
             }
             a => root = PathBuf::from(a),
@@ -22,38 +22,41 @@ fn main() -> ExitCode {
             let mode = if write {
                 "migrated"
             } else {
-                "check only, nothing written"
+                "check only, nothing written (pass --write to migrate)"
             };
             println!("{FROM} -> {PROTOCOL_VERSION} in {}: {mode}", root.display());
             println!(
-                "records: {} upgraded, {} already {PROTOCOL_VERSION}; {} verified by replay against the stored digest",
-                r.records_upgraded, r.records_current, r.verified
+                "records: {} to upgrade or upgraded, {} already {PROTOCOL_VERSION}",
+                r.records_upgraded, r.records_current
             );
-            for (id, game, why) in &r.replayed {
+            println!(
+                "{} replayed with the bot to the stored digest and bytes",
+                r.verified
+            );
+            for (id, game) in &r.replayed {
                 println!(
-                    "record {id}: {game}, today's bot plays it otherwise ({why}); its recorded inputs replay to the stored digest and score"
+                    "record {id}: {game}, today's bot plays it otherwise; the recorded inputs replay to the stored digest, score and per-tick Parquet"
                 );
             }
             for (id, game, version) in &r.byte_proven {
                 println!(
-                    "record {id}: {game} game version {version} cannot replay today; proven byte for byte except the version string"
+                    "record {id}: {game} game version {version} is older than today's; proven byte for byte except the version string"
                 );
             }
             println!(
-                "profiles: {} upgraded, {} already {PROTOCOL_VERSION}",
+                "profiles: {} to upgrade or upgraded, {} already {PROTOCOL_VERSION}",
                 r.profiles_upgraded, r.profiles_current
             );
             for path in &r.stray {
                 println!("not in the database, left alone: {}", path.display());
             }
             if write {
-                let backup = root.join(BACKUP);
                 let made = if r.backup_made {
                     "made"
                 } else {
                     "kept as it was"
                 };
-                println!("backup {}: {made}", backup.display());
+                println!("backup {}: {made}", root.join(BACKUP).display());
             }
             ExitCode::SUCCESS
         }

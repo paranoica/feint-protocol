@@ -88,6 +88,9 @@ observation and never enters `opponent_signals`:
   after the match.
 - "Known" features are what a careful person derives from what they saw, never card
   identities.
+- Known limit (FNT-D44): the browser runs the card match itself and receives the deal seed
+  first, so a script can compute the bot's hand. Card results are practice until the server
+  reveals the deal only after the match (commit–reveal).
 
 The bot reads observations only. `live()` exists for the runner, replay and the digest;
 bot code that reads it is a bug.
@@ -126,7 +129,7 @@ the event belongs to nobody).
 | `state_from_observation(obs, rng)` | a plausible full state consistent with a view, for planning; hidden facts are sampled |
 | `simulate(state, actions, ticks)` | the rules run forward on a copy |
 | `signals(state, action, out)` | what the opponent sees of an action |
-| `digest(state)` | FNV-1a over the state's exact bits; equal digests mean equal matches |
+| `digest(state)` | FNV-1a over the exact bits of the state at one tick; equal digests mean equal states at that tick, not equal histories (a penalty or duel digest covers the final score and phase, not every kick) |
 | `result()` | `Some(MatchResult)` once the match is over |
 
 Determinism rules for adapters (FNT-D4): floats only through `+ − × ÷` and `sqrt`
@@ -163,25 +166,28 @@ match: `game_id`, `classes`, and the counts and weights of its opponent model (`
   a default, as `bot` and `checkpoint` were added, keeps old bytes readable and does not by
   itself need a new version.
 - A new version refuses the old one; stored data is upgraded, not read twice.
-- `bedrock cmd migrate-v1` upgrades `data/` from 0.1 to 1.0 with the arena stopped
-  (`bedrock cmd migrate-v1 -- --check` reads only). It first upgrades every record and
-  profile in memory and proves each new envelope differs from the old one only in the
-  version string. Then it checks every record against the digest the arena stored when it
-  accepted the match, in the strongest way the record still allows:
+- `bedrock cmd migrate-v1` upgrades `data/` from 0.1 to 1.0 with the arena stopped. Without
+  arguments it only checks and writes nothing; `bedrock cmd migrate-v1 -- --write` migrates.
+  It first upgrades every record and profile in memory and proves each new envelope differs
+  from the old one only in the version string. Then it checks every record against what the
+  arena stored when it accepted the match (digest, and the row's game, level, seed, ticks,
+  score, finished flag and checkpoint), in the strongest way the record still allows:
   1. verified: the whole match is played again, the bot included, with the profile it was
      played with, and re-encodes to the same bytes;
-  2. replayed: today's bot no longer plays the match the same way (the hand-made bot has
-     changed since without a game version bump), so the recorded inputs of both players
-     are replayed through the game and must reach the stored digest and score;
-  3. byte-proven: the game version is older than the one built today, so nothing can
-     replay it; the byte proof alone carries it.
+  2. replayed: only when the hand-made bot now plays the match otherwise (`Mismatch`; the
+     bot changed without a game version bump): the recorded inputs of both players are
+     replayed through the game, and every tick must give the Parquet file the arena wrote
+     from the accepted run, byte for byte, plus the stored digest and score;
+  3. byte-proven: only when the record's game version is older than the one built today;
+     nothing can replay it, so the byte proof alone carries it.
 
-  A record that fails its class stops the run before anything is written. Only then does
-  it copy `data/` to `data/backup-0.1/` (built in a temporary folder and renamed; an
-  existing backup is kept and must hold the database and every record still to upgrade),
-  rewrite the records (temporary file, then rename) and the profiles (one transaction,
-  refused if the database changed since the check), and check everything again from disk.
-  Items already at 1.0 are checked but not rewritten, so a second run changes nothing.
+  Any other outcome stops the run before anything is written. A lock file keeps a second
+  run out. Then it copies `data/` to `data/backup-0.1/` (built in a temporary folder,
+  checked against the bytes about to be replaced, then renamed; an existing backup is kept
+  and must hold those same bytes), rewrites the profiles in one transaction and the records
+  (temporary file, then rename) after checking that the match and profile counts, the
+  highest ids and every old byte are what the check read, and checks everything again from
+  disk. Items already at 1.0 are checked but not rewritten, so a second run changes nothing.
 - Old browser tabs still run the 0.1 WebAssembly module: rebuild `web/dist` with the arena
   and reload the page.
 

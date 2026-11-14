@@ -48,7 +48,7 @@ pub fn schema(columns: &[Column]) -> Arc<Schema> {
     Arc::new(Schema::new(fields))
 }
 
-fn batch(
+pub(crate) fn batch(
     frames: &[Frame],
     columns: &[Column],
     level: u8,
