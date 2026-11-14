@@ -206,23 +206,17 @@ impl GameAdapter for Boxing {
     fn advance(&mut self, events: &mut Vec<EventT>) {
         self.scratch.clear();
         let tick = self.game.tick;
-        let before = self.game.phase;
         self.game.step(&mut self.scratch);
-        let mut scored = false;
         for e in &self.scratch {
-            if let Event::Hit { by, .. } = *e {
-                scored = true;
-                let mut out = EventT::default();
-                out.tick = tick;
-                out.kind = EventKind::Score;
-                out.player = by as i8;
-                events.push(out);
-            }
-        }
-        if !scored && before == Phase::Fight && self.game.phase == Phase::Break {
+            let (kind, player) = match *e {
+                Event::Hit { by, .. } => (EventKind::Score, by as i8),
+                Event::RoundEnd => (EventKind::RoundEnd, -1),
+                _ => continue,
+            };
             let mut out = EventT::default();
             out.tick = tick;
-            out.kind = EventKind::RoundEnd;
+            out.kind = kind;
+            out.player = player;
             events.push(out);
         }
     }
@@ -268,7 +262,7 @@ impl GameAdapter for Boxing {
         let them = 1 - me;
         let m = facing(me);
         let mut s = Bout::new(p.clone(), self.game.bodies, self.game.seed);
-        s.tick = obs.tick;
+        s.tick = obs.tick.min(p.match_ticks());
         let template = s.fighters[0];
         let fighter = |x: usize, base: usize, strikes: usize, feints: usize| {
             let mut f = template;

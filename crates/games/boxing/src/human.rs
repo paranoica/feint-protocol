@@ -36,6 +36,7 @@ pub struct Bites {
 pub struct Outcomes {
     pub honest: [u32; 2],
     pub feint: [u32; 2],
+    pub conceded_open: u32,
 }
 
 pub struct Human {
@@ -58,6 +59,8 @@ pub struct Human {
     outcomes: Outcomes,
     counted: [u32; 2],
     bot_points: i64,
+    my_points: i64,
+    exposed: bool,
     after_feint: bool,
     game: Option<Boxing>,
 }
@@ -85,6 +88,8 @@ impl Human {
             outcomes: Outcomes::default(),
             counted: [0, 0],
             bot_points: 0,
+            my_points: 0,
+            exposed: false,
             after_feint: false,
             game: None,
         }
@@ -100,7 +105,11 @@ impl Human {
         self.outcomes
     }
 
-    fn count(&mut self, bot: &crate::Fighter, points: i64) {
+    fn count(&mut self, bot: &crate::Fighter, points: i64, mine: i64) {
+        if mine > self.my_points && self.exposed {
+            self.outcomes.conceded_open += 1;
+        }
+        self.my_points = mine;
         if bot.feints != self.counted[1] {
             self.counted[1] = bot.feints;
             self.after_feint = true;
@@ -116,6 +125,7 @@ impl Human {
             row[1] += u32::from(points > self.bot_points);
         }
         self.bot_points = points;
+        self.exposed = self.after_feint && matches!(bot.stage, Stage::Recover { .. });
     }
 
     fn unit(&mut self) -> f32 {
@@ -206,7 +216,12 @@ impl Controller<Boxing> for Human {
             .as_deref()
             .and_then(|s| s.get(them).copied())
             .unwrap_or(0);
-        self.count(&now_state.fighters[them], points);
+        let mine_points = obs
+            .score
+            .as_deref()
+            .and_then(|s| s.get(me).copied())
+            .unwrap_or(0);
+        self.count(&now_state.fighters[them], points, mine_points);
         if bot.strikes != self.their_strikes {
             self.their_strikes = bot.strikes;
             let high = f32::from(u8::from(bot.last == Some(Height::High)));
@@ -352,6 +367,7 @@ pub fn tally(d: Difficulty, matches: u64) -> Tally {
             out.outcomes.honest[k] += o.honest[k];
             out.outcomes.feint[k] += o.feint[k];
         }
+        out.outcomes.conceded_open += o.conceded_open;
         let b = human.bites();
         out.bites.windups += b.windups;
         out.bites.bit += b.bit;

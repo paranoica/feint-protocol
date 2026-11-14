@@ -92,7 +92,23 @@ fn after_the_cancel_the_feint_jabs_the_other_height() {
     s.fighters[0].stage = Stage::Recover { left: 10 };
     let v = values(&s, &c, 120);
     assert_eq!([v[2], v[3]], [1.0, -1.0], "a low jab");
-    s.fighters[0].stage = Stage::Idle;
+    let s = bout(0.6);
     let v = values(&s, &c, 0);
     assert_eq!([v[2], v[3]], [2.0, 1.0], "it opens with the high hook");
+}
+
+#[test]
+fn the_shown_hook_is_thrown_from_where_it_would_land() {
+    let p = Params::default();
+    let s = bout((p.hook_reach + p.jab_reach) / 2.0);
+    let c = feint(&s, Height::High);
+    let v = values(&s, &c, 0);
+    assert_eq!(v[2], 0.0, "out of hook reach it steps in first");
+    let gap = f64::from(v[0]) - s.fighters[0].x;
+    assert!(gap > 0.0, "it steps forward");
+    let theirs = s.fighters[1].x;
+    assert!(
+        theirs - f64::from(v[0]) <= p.hook_reach,
+        "to a point inside hook reach"
+    );
 }

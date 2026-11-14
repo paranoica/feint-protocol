@@ -67,17 +67,17 @@ export function readFighters(v: number[]): [Fighter, Fighter] {
 
 export function attackFromKey(key: string): [number, number] | null {
   switch (key) {
-    case "q":
-    case "Q":
+    case "j":
+    case "J":
       return [1, 1];
-    case "a":
-    case "A":
+    case "n":
+    case "N":
       return [1, -1];
-    case "e":
-    case "E":
+    case "k":
+    case "K":
       return [2, 1];
-    case "d":
-    case "D":
+    case "m":
+    case "M":
       return [2, -1];
     default:
       return null;
@@ -257,7 +257,7 @@ export const boxingView: GameView = {
         ctx.fillStyle = "rgba(231,238,248,0.6)";
         ctx.font = "600 15px system-ui, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("Mouse moves · W / S guard high or low · Q / A jab high or low · E / D hook · Space cancels a wind-up", width / 2, height - 18);
+        ctx.fillText("Mouse moves · W / S guard high or low · J / N jab high or low · K / M hook high or low · Space cancels a wind-up", width / 2, height - 18);
       }
     }
   },
@@ -282,7 +282,7 @@ export const boxingView: GameView = {
   },
 
   release() {
-    return false;
+    return true;
   },
 
   key(event) {
@@ -307,7 +307,8 @@ export const boxingView: GameView = {
 
   send(match) {
     const mine = readFighters(Array.from(match.view()))[0];
-    if (pending && (mine.stage === WINDUP || performance.now() > pending.until)) {
+    const started = mine.stage === WINDUP && pending !== null && mine.kind === pending.kind && mine.height === pending.height;
+    if (pending && (started || performance.now() > pending.until)) {
       pending = null;
     }
     const attack: [number, number] | null = pending ? [pending.kind, pending.height] : null;

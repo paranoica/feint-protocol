@@ -214,11 +214,14 @@ test("a table tennis match runs in wasm, the paddle follows the input and points
 });
 
 test("boxing keys map to attacks and guards, and the values match the action space", () => {
-  assert.deepEqual(attackFromKey("q"), [1, 1]);
-  assert.deepEqual(attackFromKey("A"), [1, -1]);
-  assert.deepEqual(attackFromKey("e"), [2, 1]);
-  assert.deepEqual(attackFromKey("d"), [2, -1]);
-  assert.equal(attackFromKey("x"), null);
+  assert.deepEqual(attackFromKey("j"), [1, 1]);
+  assert.deepEqual(attackFromKey("N"), [1, -1]);
+  assert.deepEqual(attackFromKey("k"), [2, 1]);
+  assert.deepEqual(attackFromKey("m"), [2, -1]);
+  for (const reserved of ["d", "D", "f", "F", "x"]) {
+    assert.equal(attackFromKey(reserved), null, `${reserved} belongs to the hub`);
+    assert.equal(guardFromKey(reserved, 1), 1);
+  }
   assert.equal(guardFromKey("s", 1), -1);
   assert.equal(guardFromKey("ArrowUp", -1), 1);
   assert.equal(guardFromKey("x", -1), -1);

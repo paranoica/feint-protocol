@@ -164,7 +164,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
             });
         }
         if repertoire >= 2 {
-            let travel = self.approach(s, &v, self.range(Kind::Jab, 0.0));
+            let travel = self.approach(s, &v, self.range(Kind::Hook, 0.0));
             let length = travel
                 + s.windup(me, Kind::Hook)
                 + self.params.cancel_recover
@@ -202,7 +202,8 @@ impl Playbook<Boxing> for BoxingPlaybook {
         if c.id >= Self::FEINTS {
             let shown = Height::of_class(c.shown.unwrap_or(1));
             let real = shown.other();
-            let range = self.range(Kind::Jab, aim[0]);
+            let range = self.range(Kind::Hook, aim[0]);
+            let jab = self.range(Kind::Jab, aim[0]);
             let target = v.theirs - range;
             let (attack, cancel) = match f.stage {
                 Stage::WindUp {
@@ -214,18 +215,11 @@ impl Playbook<Boxing> for BoxingPlaybook {
                     let bit = s.fighters[usize::from(1 - seat)].guard == shown;
                     (None, shown_for >= SHOW_MIN && bit)
                 }
-                Stage::Recover { .. } => {
-                    (Self::strike_at(&v, range, true, (Kind::Jab, real)), false)
+                Stage::Recover { .. } => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),
+                Stage::Idle if elapsed < u64::from(s.windup(seat, Kind::Hook)) => {
+                    (Self::strike_at(&v, range, true, (Kind::Hook, shown)), false)
                 }
-                Stage::Idle => {
-                    let shown_first = elapsed < u64::from(s.windup(seat, Kind::Hook));
-                    let pick = if shown_first {
-                        (Kind::Hook, shown)
-                    } else {
-                        (Kind::Jab, real)
-                    };
-                    (Self::strike_at(&v, range, true, pick), false)
-                }
+                Stage::Idle => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),
                 _ => (None, false),
             };
             return order(me, target, f.guard, attack, cancel);

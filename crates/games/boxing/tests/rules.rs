@@ -77,6 +77,22 @@ fn params_without_a_slower_hook_or_room_are_refused() {
             decision_hz: d().tick_hz + 1,
             ..d()
         },
+        Params {
+            guard_switch: 10 * d().tick_hz + 1,
+            ..d()
+        },
+        Params {
+            hook_windup: 10 * d().tick_hz + 1,
+            ..d()
+        },
+        Params {
+            jab_points: 0,
+            ..d()
+        },
+        Params {
+            hook_points: d().points_to_win + 1,
+            ..d()
+        },
     ];
     for p in bad {
         assert!(p.validate().is_err(), "{p:?}");
@@ -434,15 +450,56 @@ fn rounds_end_with_a_break_and_the_match_ends_on_time() {
         b.step(&mut events);
     }
     assert_eq!(b.phase, Phase::Break);
-    assert!(events.is_empty());
+    assert_eq!(events, vec![Event::RoundEnd]);
+    events.clear();
     while !b.over() {
         b.step(&mut events);
     }
     assert_eq!(b.tick, p.match_ticks());
-    assert_eq!(events, vec![Event::Over]);
+    assert_eq!(events, vec![Event::RoundEnd, Event::Over]);
     let tick = b.tick;
     b.step(&mut events);
     assert_eq!(b.tick, tick, "an ended match does not tick");
+}
+
+#[test]
+fn a_round_that_ends_during_a_break_still_ends_and_restarts_the_break() {
+    let p = Params::default();
+    let mut b = bout();
+    let mut events = Vec::new();
+    while b.tick + u64::from(p.jab_windup) + 1 + 20 < u64::from(p.round_ticks) {
+        b.step(&mut events);
+    }
+    events.clear();
+    close(&mut b, 0.7);
+    hold(&mut b, 1, Height::Low);
+    attack(&mut b, 0, Kind::Jab, Height::High);
+    run(&mut b, p.jab_windup + 1);
+    assert_eq!(b.phase, Phase::Break);
+    let rest = run(&mut b, 20);
+    assert_eq!(b.tick, u64::from(p.round_ticks));
+    assert_eq!(rest, vec![Event::RoundEnd]);
+    assert_eq!(b.phase, Phase::Break);
+    assert_eq!(b.phase_left, p.break_ticks);
+}
+
+#[test]
+fn a_hit_on_the_last_tick_of_a_round_also_ends_the_round() {
+    let p = Params::default();
+    let mut b = bout();
+    let mut events = Vec::new();
+    while b.tick + u64::from(p.jab_windup) + 1 < u64::from(p.round_ticks) {
+        b.step(&mut events);
+    }
+    close(&mut b, 0.7);
+    hold(&mut b, 1, Height::Low);
+    attack(&mut b, 0, Kind::Jab, Height::High);
+    let events = run(&mut b, p.jab_windup + 1);
+    assert_eq!(b.tick, u64::from(p.round_ticks));
+    assert_eq!(
+        events,
+        vec![Event::Hit { by: 0, points: 1 }, Event::RoundEnd]
+    );
 }
 
 #[test]

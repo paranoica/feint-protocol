@@ -123,6 +123,26 @@ impl Params {
         {
             return Err("recoveries and breaks take time");
         }
+        let timers = [
+            self.jab_windup,
+            self.hook_windup,
+            self.active,
+            self.jab_recover,
+            self.hook_recover,
+            self.blocked_recover,
+            self.cancel_recover,
+            self.guard_switch,
+            self.break_ticks,
+        ];
+        if timers.iter().any(|&t| t > 10 * self.tick_hz) {
+            return Err("a move lasts at most ten seconds");
+        }
+        if self.jab_points == 0
+            || self.hook_points == 0
+            || self.jab_points.max(self.hook_points) > self.points_to_win
+        {
+            return Err("a clean hit scores at least one point and at most the match");
+        }
         if self.points_to_win == 0 || self.round_ticks == 0 || self.rounds == 0 {
             return Err("a match needs points and time");
         }
@@ -345,6 +365,7 @@ pub enum Event {
     Blocked { by: u8 },
     Whiff { by: u8 },
     Feint { by: u8 },
+    RoundEnd,
     Over,
 }
 
@@ -586,8 +607,9 @@ impl Bout {
             self.phase = Phase::Over;
             self.phase_left = 0;
             events.push(Event::Over);
-        } else if self.phase == Phase::Fight && self.tick.is_multiple_of(u64::from(p.round_ticks)) {
+        } else if self.tick.is_multiple_of(u64::from(p.round_ticks)) {
             self.rest();
+            events.push(Event::RoundEnd);
         }
     }
 

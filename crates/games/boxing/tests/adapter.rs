@@ -132,6 +132,7 @@ fn a_hostile_observation_reads_back_inside_the_ring() {
     v[17] = 1e30;
     obs.state = Some(v);
     obs.score = Some(vec![-5, i64::from(Params::default().points_to_win) + 1]);
+    obs.tick = u64::MAX;
     let back = game.state_from_observation(&obs, &mut ChaCha8Rng::seed_from_u64(0));
     let p = Params::default();
     for f in &back.fighters {
@@ -141,6 +142,8 @@ fn a_hostile_observation_reads_back_inside_the_ring() {
     assert!(back.gap() >= p.min_gap - 1e-9);
     assert!(back.phase_left <= p.break_ticks);
     assert_eq!(back.score, [0, p.points_to_win]);
+    assert_eq!(back.tick, p.match_ticks());
+    assert!(game.simulate(&back, &[], 4).over());
 }
 
 #[test]

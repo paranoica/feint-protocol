@@ -50,7 +50,7 @@
       "heavy": true
     },
     "strength": {
-      "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored && cargo test --release --locked -q -p airhockey --test against_human -- --ignored && cargo test --release --locked -q -p penalty --test strength -- --ignored && cargo test --release --locked -q -p duel --test strength -- --ignored && cargo test --release --locked -q -p pingpong --test strength -- --ignored && cargo test --release --locked -q -p boxing --test strength -- --ignored && cargo test --release --locked -q -p feint-compare --test report -- --ignored",
+      "run": "cargo test --release --locked -q -p airhockey --test strength -- --ignored && cargo test --release --locked -q -p airhockey --test against_human -- --ignored && cargo test --release --locked -q -p penalty --test strength -- --ignored && cargo test --release --locked -q -p duel --test strength -- --ignored && cargo test --release --locked -q -p pingpong --test strength -- --ignored && cargo test --release --locked -q -p boxing --test strength --test feints -- --ignored --nocapture && cargo test --release --locked -q -p feint-compare --test report -- --ignored",
       "heavy": true
     },
     "bar": {
