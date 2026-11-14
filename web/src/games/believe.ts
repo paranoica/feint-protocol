@@ -132,6 +132,19 @@ export interface CardSource {
   finished(): boolean;
 }
 
+export const CARD_START_LEVEL = 5;
+
+const LEVEL_NAMES: Record<number, string> = {
+  5: "Обученный бот",
+  6: "Думает на 1 ход",
+  7: "Думает на 2 хода",
+  8: "Думает на 3 хода",
+};
+
+export function cardLevels(offered: number[]): { level: number; label: string }[] {
+  return offered.filter((l) => l in LEVEL_NAMES).map((level) => ({ level, label: LEVEL_NAMES[level] }));
+}
+
 export const HOW_TO_PLAY = [
   "У вас и у бота по 8 карт пяти рангов: 9, 10, В, Д, К.",
   "Кладёте рубашкой вверх от 1 до 3 карт и говорите, что это за ранг. Можно соврать.",

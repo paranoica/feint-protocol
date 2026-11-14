@@ -12,7 +12,7 @@ export interface Replay {
 
 export type Screen =
   | { name: "level"; nick: string }
-  | { name: "cards"; nick: string }
+  | { name: "cards"; nick: string; level: number }
   | {
       name: "game";
       game: string;
@@ -128,8 +128,8 @@ export function again(screen: Screen): Screen {
   return { name: "level", nick: screen.nick };
 }
 
-export function cards(screen: Screen, nick: string): Screen {
-  return screen.name === "level" ? { name: "cards", nick: cleanNick(nick) } : screen;
+export function cards(screen: Screen, nick: string, level: number): Screen {
+  return screen.name === "level" ? { name: "cards", nick: cleanNick(nick), level } : screen;
 }
 
 export function leaveCards(screen: Screen): Screen {
