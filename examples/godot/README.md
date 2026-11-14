@@ -27,5 +27,6 @@ godot -e --path examples/godot  # open the project in the editor
 
 ## Notes
 
-- The library is declared for `editor_runtime` and export templates only, so the editor itself does not load it: with the class loaded into the editor, Godot 4.7.2 crashed on closing (narrowed down to registering the class; cause not found). The class is not offered in the editor's autocompletion; running the project from the editor works.
+- The library is declared for `editor_runtime` and export templates only, so the editor itself does not load it: with the class registered in the editor, Godot 4.7.2 crashes on closing, even for an abstract class that is never instantiated (narrowed down to registering the class; cause not found). The class is not offered in the editor's autocompletion; running the project from the editor works.
+- Instances are built with `classdb_construct_object3`: the older `classdb_construct_object2` left every `FeintMatch` with one reference too many, so none was ever freed. `godot-check` fails if Godot reports a leaked object.
 - `extension/gdextension_interface.h` was produced by `godot --headless --dump-gdextension-interface` from Godot 4.7.2 and is Godot's file under the MIT licence (`extension/GODOT-LICENSE.txt`).

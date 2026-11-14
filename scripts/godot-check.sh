@@ -37,6 +37,11 @@ line="$(sed -n 's/^FEINT //p' <<< "$out" | tail -1)"
 native="$(cargo run -q --locked --release -p feint-ffi --bin native)"
 echo "Godot:  $line"
 echo "native: $native"
+if grep -qi "leaked" <<< "$out"; then
+  echo "the Godot run leaked objects" >&2
+  echo "$out" | grep -i leaked >&2
+  exit 1
+fi
 if [[ "$code" != 0 || -z "$line" || "$line" != "$native" ]]; then
   echo "the Godot-hosted match is not the native match (exit $code)" >&2
   echo "$out" | tail -20 >&2

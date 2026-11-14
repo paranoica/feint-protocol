@@ -18,6 +18,18 @@ func _ready() -> void:
 		return
 	game = ClassDB.instantiate("FeintMatch")
 	if "--check" in OS.get_cmdline_user_args():
+		if game.start(1, 9, 3) or game.start(1, 1, 0) or game.start(-1, 1, 3):
+			printerr("FEINT a level or seed out of range was accepted")
+			get_tree().quit(6)
+			return
+		if not game.start(5, 0, 3):
+			get_tree().quit(4)
+			return
+		for i in 2400:
+			if game.step(0.1 * sin(i * 0.01), 0.2) < 0:
+				printerr("FEINT the human paddle failed at tick %d" % i)
+				get_tree().quit(7)
+				return
 		if not game.start(CHECK_SEED, 1, 5):
 			get_tree().quit(4)
 			return

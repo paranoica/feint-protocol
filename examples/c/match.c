@@ -35,6 +35,13 @@ int main(void) {
       return 4;
     }
   }
+  float positions[FEINT_POSITIONS];
+  float layout[FEINT_LAYOUT];
+  if (feint_game_positions(game, positions, FEINT_POSITIONS) != FEINT_POSITIONS ||
+      feint_game_layout(game, layout, FEINT_LAYOUT) != FEINT_LAYOUT || layout[0] <= 0.0f || layout[1] <= 0.0f ||
+      positions[0] < -layout[0] - layout[3] || positions[0] > layout[0] + layout[3]) {
+    return 6;
+  }
   int64_t first = 0;
   int64_t second = 0;
   uint64_t digest = 0;

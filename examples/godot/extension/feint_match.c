@@ -1,7 +1,11 @@
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 
 #include "feint_match.h"
+
+#define BOUND 1000.0
+#define LONGEST (240LL * 60 * 60)
 
 void close_match(Match *m) {
   for (int s = 0; s < 2; s++) {
@@ -71,7 +75,9 @@ int64_t step(Match *m, double x, double y) {
       }
       n = feint_bot_tick(m->bots[s], m->game, m->obs, (size_t)seen, m->out, sizeof m->out);
     } else {
-      float values[2] = {(float)x, (float)y};
+      double cx = (isfinite(x) && fabs(x) < BOUND) ? x : 0.0;
+      double cy = (isfinite(y) && fabs(y) < BOUND) ? y : 0.0;
+      float values[2] = {(float)cx, (float)cy};
       n = feint_action_encode(tick, s, values, 2, m->out, sizeof m->out);
     }
     if (n < 0) {
@@ -98,7 +104,7 @@ int64_t score(const Match *m, int64_t seat) {
 
 void play_out(Match *m, int64_t cap, char *text, size_t size) {
   snprintf(text, size, "error");
-  if (m->game == NULL || m->bots[0] == NULL || m->bots[1] == NULL || cap <= 0) {
+  if (m->game == NULL || m->bots[0] == NULL || m->bots[1] == NULL || cap <= 0 || cap > LONGEST) {
     return;
   }
   uint64_t tick = 0;

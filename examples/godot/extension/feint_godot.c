@@ -20,7 +20,7 @@ static struct {
   GDExtensionClassLibraryPtr library;
   GDExtensionInterfaceStringNameNewWithLatin1Chars string_name_new;
   GDExtensionInterfaceStringNewWithUtf8Chars string_new;
-  GDExtensionInterfaceClassdbConstructObject2 construct;
+  GDExtensionInterfaceClassdbConstructObject3 construct;
   GDExtensionInterfaceObjectSetInstance set_instance;
   GDExtensionInterfaceClassdbGetMethodBind get_method_bind;
   GDExtensionInterfaceObjectMethodBindPtrcall bind_ptrcall;
@@ -30,6 +30,7 @@ static struct {
   GDExtensionInterfaceGetVariantFromTypeConstructor from_type;
   GDExtensionInterfaceGetVariantToTypeConstructor to_type;
   GDExtensionInterfaceVariantGetPtrDestructor destructor;
+  GDExtensionInterfaceVariantGetType variant_type;
   GDExtensionMethodBindPtr notify;
   StringName class_name;
   StringName parent_name;
@@ -111,10 +112,18 @@ static void call(void *userdata, GDExtensionClassInstancePtr instance, const GDE
   }
   Args a = {{0}, {0}};
   for (uint32_t k = 0; k < method->argc; k++) {
-    if (method->args[k] == GDEXTENSION_VARIANT_TYPE_INT) {
+    GDExtensionVariantType given = api.variant_type(args[k]);
+    int is_int = given == GDEXTENSION_VARIANT_TYPE_INT;
+    int is_float = given == GDEXTENSION_VARIANT_TYPE_FLOAT;
+    if (method->args[k] == GDEXTENSION_VARIANT_TYPE_INT && is_int) {
       a.i[k] = as_int(args[k]);
+    } else if (method->args[k] == GDEXTENSION_VARIANT_TYPE_FLOAT && (is_float || is_int)) {
+      a.f[k] = is_int ? (double)as_int(args[k]) : as_float(args[k]);
     } else {
-      a.f[k] = as_float(args[k]);
+      error->error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+      error->argument = (int32_t)k;
+      error->expected = (int32_t)method->args[k];
+      return;
     }
   }
   uint8_t b = 0;
@@ -155,6 +164,9 @@ static void ptrcall(void *userdata, GDExtensionClassInstancePtr instance, const 
   uint8_t b = 0;
   int64_t i = 0;
   double f = 0.0;
+  if (method->ret == RET_STRING) {
+    api.destructor(GDEXTENSION_VARIANT_TYPE_STRING)(ret);
+  }
   run(method, instance, &a, &b, &i, &f, (String *)ret);
   switch (method->ret) {
     case RET_BOOL:
@@ -173,11 +185,14 @@ static void ptrcall(void *userdata, GDExtensionClassInstancePtr instance, const 
 
 static GDExtensionObjectPtr create(void *userdata, GDExtensionBool notify) {
   (void)userdata;
-  GDExtensionObjectPtr object = api.construct(&api.parent_name);
   Match *m = calloc(1, sizeof(Match));
-  if (object == NULL || m == NULL) {
+  if (m == NULL) {
+    return NULL;
+  }
+  GDExtensionObjectPtr object = api.construct(&api.parent_name);
+  if (object == NULL) {
     free(m);
-    return object;
+    return NULL;
   }
   api.set_instance(object, &api.class_name, m);
   if (notify) {
@@ -273,6 +288,9 @@ static void initialize(void *userdata, GDExtensionInitializationLevel level) {
   api.string_name_new(&object_name, "Object", 1);
   api.string_name_new(&notification_name, "notification", 1);
   api.notify = api.get_method_bind(&object_name, &notification_name, NOTIFY_HASH);
+  if (api.notify == NULL) {
+    return;
+  }
   GDExtensionClassCreationInfo6 info;
   memset(&info, 0, sizeof info);
   info.is_exposed = 1;
@@ -295,7 +313,7 @@ EXPORT GDExtensionBool feint_godot_init(GDExtensionInterfaceGetProcAddress get, 
   api.library = library;
   api.string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)get("string_name_new_with_latin1_chars");
   api.string_new = (GDExtensionInterfaceStringNewWithUtf8Chars)get("string_new_with_utf8_chars");
-  api.construct = (GDExtensionInterfaceClassdbConstructObject2)get("classdb_construct_object2");
+  api.construct = (GDExtensionInterfaceClassdbConstructObject3)get("classdb_construct_object3");
   api.set_instance = (GDExtensionInterfaceObjectSetInstance)get("object_set_instance");
   api.get_method_bind = (GDExtensionInterfaceClassdbGetMethodBind)get("classdb_get_method_bind");
   api.bind_ptrcall = (GDExtensionInterfaceObjectMethodBindPtrcall)get("object_method_bind_ptrcall");
@@ -307,9 +325,10 @@ EXPORT GDExtensionBool feint_godot_init(GDExtensionInterfaceGetProcAddress get, 
   api.from_type = (GDExtensionInterfaceGetVariantFromTypeConstructor)get("get_variant_from_type_constructor");
   api.to_type = (GDExtensionInterfaceGetVariantToTypeConstructor)get("get_variant_to_type_constructor");
   api.destructor = (GDExtensionInterfaceVariantGetPtrDestructor)get("variant_get_ptr_destructor");
+  api.variant_type = (GDExtensionInterfaceVariantGetType)get("variant_get_type");
   if (api.string_name_new == NULL || api.string_new == NULL || api.construct == NULL || api.set_instance == NULL ||
       api.get_method_bind == NULL || api.bind_ptrcall == NULL || api.register_class == NULL ||
-      api.register_method == NULL || api.unregister_class == NULL || api.from_type == NULL || api.to_type == NULL || api.destructor == NULL) {
+      api.register_method == NULL || api.unregister_class == NULL || api.variant_type == NULL || api.from_type == NULL || api.to_type == NULL || api.destructor == NULL) {
     return 0;
   }
   init->minimum_initialization_level = GDEXTENSION_INITIALIZATION_SCENE;

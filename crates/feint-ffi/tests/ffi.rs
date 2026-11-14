@@ -277,6 +277,22 @@ fn a_panicked_game_refuses_every_later_call() {
 fn positions_and_layout_are_the_live_tables() {
     unsafe {
         let game = feint_game_new(3, 2, 4);
+        let target = |t: u64, seat: u8| {
+            [
+                -0.6 + 0.002 * t as f32,
+                if seat == 0 { 0.15 } else { -0.15 },
+            ]
+        };
+        let mut bytes = vec![0u8; FEINT_ACTION_MAX];
+        for t in 0..200u64 {
+            for seat in 0..2u8 {
+                let v = target(t, seat);
+                let n =
+                    feint_action_encode(t, seat, v.as_ptr(), 2, bytes.as_mut_ptr(), bytes.len());
+                assert_eq!(feint_game_apply(game, bytes.as_ptr(), n as usize), 0);
+            }
+            feint_game_advance(game);
+        }
         let mut out = [0f32; FEINT_POSITIONS];
         assert_eq!(
             feint_game_positions(game, out.as_mut_ptr(), out.len()),
@@ -285,6 +301,24 @@ fn positions_and_layout_are_the_live_tables() {
         let mut native = AirHockey::new(Params::default(), 4);
         let bodies = vec![body(2, &native).unwrap(), body(4, &native).unwrap()];
         native.reset(3, &bodies).unwrap();
+        let mut events = Vec::new();
+        for t in 0..200u64 {
+            for seat in 0..2u8 {
+                let mut a = ActionT::default();
+                a.tick = t;
+                a.player = seat;
+                a.values = Some(target(t, seat).to_vec());
+                native.apply(&a).unwrap();
+            }
+            native.advance(&mut events);
+        }
+        let w = &native.live().world;
+        assert!(
+            w.mallets
+                .iter()
+                .all(|m| m.vel.x != 0.0 && m.vel.x != m.vel.y),
+            "the mallets move"
+        );
         let w = &native.live().world;
         let want = [
             w.puck.pos.x,
