@@ -8,6 +8,7 @@ members = [
     "crates/games/penalty",
     "crates/games/duel",
     "crates/games/pingpong",
+    "crates/games/boxing",
     "crates/games/kuhn",
     "crates/games/believe",
     "crates/games/cards-check",
@@ -40,6 +41,7 @@ feint-turn = { path = "crates/feint-turn" }
 penalty = { path = "crates/games/penalty" }
 duel = { path = "crates/games/duel" }
 pingpong = { path = "crates/games/pingpong" }
+boxing = { path = "crates/games/boxing" }
 kuhn = { path = "crates/games/kuhn" }
 believe = { path = "crates/games/believe" }
 flatbuffers = "=25.12.19"
