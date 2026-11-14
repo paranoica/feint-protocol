@@ -214,6 +214,7 @@ async function loadComparison(nick: string) {
     }
     let results = parseResults([]);
     try {
+      await saves.settled(SAVE_WAIT_MS);
       const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
       results = mine.ok ? parseResults(await mine.json()) : results;
     } catch {
@@ -249,12 +250,8 @@ async function loadCardRecord(nick: string) {
   let text: string | null = null;
   try {
     await saves.settled(SAVE_WAIT_MS);
-    if (nick.trim() === "") {
-      text = cardRecord([]);
-    } else {
-      const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
-      text = mine.ok ? cardRecord(parseResults(await mine.json())) : null;
-    }
+    const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
+    text = mine.ok ? cardRecord(parseResults(await mine.json())) : null;
   } catch {
     text = null;
   }
