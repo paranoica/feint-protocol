@@ -502,3 +502,27 @@ fn a_duel_plays_through_the_hub_with_held_draws_and_one_shot_sidesteps() {
     }
     assert!(watched.record().is_empty());
 }
+
+#[test]
+fn penalty_levels_three_and_four_play_with_the_context_model_and_say_so() {
+    for level in 1..=5u8 {
+        let p = feint_web::Play::<penalty::Penalty>::new(level, 3).unwrap();
+        let record = feint_ai::decode_record(&p.record()).unwrap();
+        let want = if matches!(level, 3 | 4) {
+            feint_ai::Opponent::Advised(
+                std::num::NonZeroU64::new(penalty::trained::SHIPPED).unwrap(),
+            )
+        } else {
+            feint_ai::Opponent::HandMade
+        };
+        assert_eq!(record.header.opponent, want, "level {level}");
+    }
+    let hockey = feint_web::Play::<airhockey::AirHockey>::new(4, 3).unwrap();
+    assert_eq!(
+        feint_ai::decode_record(&hockey.record())
+            .unwrap()
+            .header
+            .opponent,
+        feint_ai::Opponent::HandMade
+    );
+}

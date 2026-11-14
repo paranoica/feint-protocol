@@ -386,3 +386,34 @@ fn a_trained_record_relabelled_as_hand_made_is_a_mismatch() {
     });
     assert_eq!(verify(&forged, None).err(), Some(VerifyError::Mismatch));
 }
+
+#[test]
+fn a_level_four_shootout_names_its_context_model_and_verifies() {
+    let (s, _) = common::shootout(4, 11, None);
+    let bytes = s.record();
+    let record = feint_ai::decode_record(&bytes).unwrap();
+    assert_eq!(
+        record.header.opponent,
+        feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED))
+    );
+    let v = verify(&bytes, None).unwrap();
+    assert_eq!(v.digest, s.digest());
+    let unknown = forge(&bytes, |r| {
+        r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED ^ 1));
+    });
+    assert_eq!(verify(&unknown, None).err(), Some(VerifyError::Checkpoint));
+}
+
+#[test]
+fn an_advisor_where_none_ships_is_refused() {
+    let (five, _) = common::shootout(5, 12, None);
+    let advised = forge(&five.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED));
+    });
+    assert_eq!(verify(&advised, None).err(), Some(VerifyError::Level));
+    let hockey = scripted(3, 9, 600);
+    let advised = forge(&hockey.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED));
+    });
+    assert_eq!(verify(&advised, None).err(), Some(VerifyError::Game));
+}

@@ -356,7 +356,7 @@ impl Store {
                 used,
                 to_i64(now),
                 match record.header.opponent {
-                    Opponent::HandMade => String::new(),
+                    Opponent::HandMade | Opponent::Advised(_) => String::new(),
                     Opponent::Trained(id) => format!("{:016x}", id.get()),
                 },
             ],
@@ -440,7 +440,7 @@ fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), S
         header.seed,
         match header.opponent {
             Opponent::HandMade => 0,
-            Opponent::Trained(id) => id.get(),
+            Opponent::Trained(id) | Opponent::Advised(id) => id.get(),
         },
         &file,
     )

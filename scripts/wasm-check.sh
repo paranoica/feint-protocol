@@ -51,13 +51,16 @@ scripts/web-build.sh --wasm-only
 record="target/web-check.record"
 trained_record="target/web-check-trained.record"
 card_record="target/web-check-cards.record"
+penalty_record="target/web-check-penalty.record"
 {
   read -r browser rate
   read -r trained_browser
   read -r rerun_browser rerun_level rerun_seed rerun_seat
   read -r card_browser
+  read -r penalty_browser
 } < <(node scripts/web-check.mjs "$root/web/src/wasm/feint_web.js" \
-  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json "$card_record")
+  web/src/wasm/feint_web_bg.wasm "$record" "$trained_record" web/public/fakes.json "$card_record" \
+  "$penalty_record")
 native="$(cargo run -q --locked --release -p feint-web --bin replay -- "$record")"
 echo "browser record: $browser at $rate ticks/s"
 echo "native replay:  $native"
@@ -83,6 +86,14 @@ echo "browser card record:    $card_browser"
 echo "arena verify (native):  $card_native"
 if [[ -z "$card_browser" || "$card_browser" != "$card_native" ]]; then
   echo "a browser card match does not verify natively" >&2
+  exit 1
+fi
+
+penalty_native="$(cargo run -q --locked --release -p feint-arena --bin verify-record -- "$penalty_record")"
+echo "browser level-4 shootout (context advisor): $penalty_browser"
+echo "arena verify (native):                      $penalty_native"
+if [[ -z "$penalty_browser" || "$penalty_browser" != "$penalty_native" ]]; then
+  echo "a browser shootout with the context advisor does not verify natively" >&2
   exit 1
 fi
 
