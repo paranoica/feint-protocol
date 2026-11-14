@@ -76,7 +76,8 @@ function places(haystack, needle) {
   return found;
 }
 
-const record = new Uint8Array(trainedRecord);
+const fourth = await ticket();
+const record = new Uint8Array(play(WebMatch.create_trained("airhockey", 3, fourth.seed, checkpoint)));
 const headerEnd = 4 + new DataView(record.buffer, record.byteOffset).getUint32(0, true);
 const at = places(record.subarray(4, headerEnd), idBytes(checkpoint));
 if (at.length !== 1) {
@@ -86,7 +87,6 @@ const unknown = (BigInt(`0x${checkpoint}`) ^ 1n).toString(16).padStart(16, "0");
 const patched = record.slice();
 patched.set(idBytes(unknown), 4 + at[0]);
 writeFileSync(patchedOut, patched);
-const fourth = await ticket();
 const refused = await fetch(`${base}/api/matches?nick=arena-check&ticket=${fourth.ticket}`, {
   method: "POST",
   headers: { "x-feint": "1" },

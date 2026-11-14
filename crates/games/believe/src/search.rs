@@ -281,7 +281,7 @@ pub fn before_the_lay(
         pre.claim = None;
         pre.last = 0;
     } else {
-        pre.last = if pre.batches == 1 {
+        pre.last = if t.batches <= 3 {
             t.laid[me]
         } else {
             take_random(t.laid[me], 1, rng)
