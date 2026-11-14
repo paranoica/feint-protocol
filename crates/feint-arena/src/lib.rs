@@ -1,4 +1,5 @@
 pub mod http;
+pub mod migrate;
 pub mod parquet_out;
 pub mod store;
 pub mod verify;

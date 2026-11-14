@@ -459,6 +459,7 @@ dependencies = [
  "feint-protocol",
  "feint-turn",
  "feint-web",
+ "flatbuffers",
  "parquet",
  "penalty",
  "rand_chacha",

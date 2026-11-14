@@ -297,9 +297,10 @@ fn duel_records_verify_with_their_own_columns() {
 }
 
 #[test]
-fn hand_made_records_still_verify() {
-    let bytes = include_bytes!("fixtures/hand-made-v3-scripted.rec");
-    let v = verify(bytes, None).unwrap();
+fn hand_made_records_still_verify_once_migrated_to_1_0() {
+    let old = include_bytes!("fixtures/hand-made-v3-scripted.rec");
+    let bytes = feint_arena::migrate::upgrade_record(old).unwrap().unwrap();
+    let v = verify(&bytes, None).unwrap();
     assert_eq!(v.digest, 0x3ead_b537_80e6_dc0d);
     assert_eq!(v.record.ticks, 3_000);
     assert!(!v.finished && v.profile.is_none());
