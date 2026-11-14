@@ -252,7 +252,7 @@ export const boxingView: GameView = {
       ctx.fillStyle = "rgba(231,238,248,0.5)";
       ctx.font = "600 14px system-ui, sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(`guard: ${guard > 0 ? "high" : "low"}`, 16, 24);
+      ctx.fillText(`guard: ${guard > 0 ? "high" : "low"}`, 16, 56);
       if (!scene.countdown && phase === 0 && match.tick() < 240 * 6) {
         ctx.fillStyle = "rgba(231,238,248,0.6)";
         ctx.font = "600 15px system-ui, sans-serif";
