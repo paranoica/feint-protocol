@@ -6,7 +6,7 @@ use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT,
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
-const DELAY_TICKS: usize = 72;
+pub const DELAY_TICKS: usize = 72;
 const HONEST_LEAN: f32 = 0.35;
 const FAKE_LEAN: f32 = 0.45;
 const STRAIGHTEN: f32 = 0.25;

@@ -395,6 +395,10 @@ impl Predictor for Recorder {
 }
 
 impl Advisor<Shootout> for Recorder {
+    fn new_match(&mut self) {
+        self.inner.new_match();
+    }
+
     fn see(&mut self, state: &Shootout, me: PlayerId) {
         self.inner.see(state, me);
         if let Ok(mut t) = self.tokens.lock() {
@@ -418,7 +422,10 @@ pub fn match_tokens(
         .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
     let inner: Box<dyn Advisor<Shootout>> = match advice {
         Advice::Oracle => Box::new(Oracle::new(habits)),
-        Advice::Blind | Advice::Count => Box::new(Blind),
+        Advice::Blind => Box::new(Blind),
+        Advice::Count => {
+            panic!("recording replaces the count model's answers: ask for Blind or Oracle")
+        }
     };
     let tokens = Arc::new(Mutex::new(Tokenizer::default()));
     bot.advise(Box::new(Recorder {

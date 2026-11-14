@@ -9,7 +9,7 @@ pub const TELL: usize = 1;
 pub const GUESS: usize = 2;
 pub const FOLLOW: usize = 3;
 pub const KICKS: usize = 10;
-pub const EARLY_DIVE_TICKS: u32 = 60;
+pub const EARLY_DIVE_TICKS: u32 = crate::human::DELAY_TICKS as u32;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KickToken {
@@ -121,7 +121,8 @@ impl Tokenizer {
         };
         if !p.human_shoots && s.dived && !p.dive_seen {
             p.dive_seen = true;
-            let early = s.phase != Phase::Flight || s.t < EARLY_DIVE_TICKS;
+            let early = matches!(s.phase, Phase::RunUp | Phase::AtBall | Phase::Strike)
+                || (s.phase == Phase::Flight && s.t < EARLY_DIVE_TICKS);
             if early {
                 p.early_dive = s.dive.map(|d| PenaltyPlaybook::class_of(d.target));
             }

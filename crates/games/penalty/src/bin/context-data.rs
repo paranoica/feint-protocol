@@ -56,12 +56,19 @@ fn main() -> ExitCode {
             .collect();
         handles
             .into_iter()
-            .map(|h| h.join().unwrap_or_default())
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| panic!("a worker thread failed"))
+            })
             .collect()
     });
     let mut rows: Vec<(u64, Vec<KickToken>)> = chunks.into_iter().flatten().collect();
     rows.sort_by_key(|r| r.0);
     let n = rows.len();
+    if n as u64 != count {
+        eprintln!("{n} of {count} matches came back");
+        return ExitCode::FAILURE;
+    }
     let mut features = vec![0.0f32; n * KICKS * TOKEN_WIDTH];
     let mut targets = vec![-1i8; n * KICKS * TARGETS];
     let mut habits = Vec::with_capacity(n * 9);

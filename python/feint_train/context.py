@@ -177,14 +177,17 @@ def shot_curves(targets: np.ndarray, habits: np.ndarray) -> dict[str, list[float
 def train(args: argparse.Namespace) -> None:
     torch.manual_seed(args.seed)
     torch.set_num_threads(args.threads)
-    tokens, targets, _ = load_data(args.data)
+    all_tokens, all_targets, _ = load_data(args.data)
+    held = max(1, len(all_tokens) // 20)
+    tokens, targets = all_tokens[held:], all_targets[held:]
+    val_tokens, val_targets = all_tokens[:held], all_targets[:held]
     test_tokens, test_targets, test_habits = load_data(args.test)
     model = ContextModel(args.width, args.layers, args.heads)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     x = torch.from_numpy(tokens)
     y = torch.from_numpy(targets)
-    tx = torch.from_numpy(test_tokens)
-    ty = torch.from_numpy(test_targets)
+    vx = torch.from_numpy(val_tokens)
+    vy = torch.from_numpy(val_targets)
     best = float("inf")
     args.out.mkdir(parents=True, exist_ok=True)
     log = (args.out / "train.jsonl").open("w")
@@ -200,8 +203,12 @@ def train(args: argparse.Namespace) -> None:
             optimizer.step()
         model.eval()
         with torch.no_grad():
-            total, parts = losses(model(tx), ty)
-        row = {"epoch": epoch, "test": float(total), **{k: float(v) for k, v in parts.items()}}
+            total, parts = losses(model(vx), vy)
+        row = {
+            "epoch": epoch,
+            "validation": float(total),
+            **{k: float(v) for k, v in parts.items()},
+        }
         row["seconds"] = round(time.time() - started, 1)
         log.write(json.dumps(row) + "\n")
         log.flush()
