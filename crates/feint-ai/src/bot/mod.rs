@@ -9,7 +9,7 @@ use crate::anticipate::{Anticipation, clamp_to_space};
 use crate::difficulty::Difficulty;
 use crate::insight::{Insight, STEADY_SAMPLES, Seen};
 use crate::long_game::Plan;
-use crate::model::{OpponentModel, Profile, ProfileError};
+use crate::model::{Predictor, Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
 
@@ -136,9 +136,13 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         self.insight.load_profile(profile, game_id)
     }
 
+    pub fn advise(&mut self, advisor: Box<dyn Predictor>) {
+        self.insight.advise(advisor);
+    }
+
     #[must_use]
     pub fn insight(&self) -> InsightView {
-        let model = self.insight.model();
+        let model = self.insight.answers();
         let classes = if model.is_some() {
             self.playbook.signal_classes()
         } else {
@@ -148,7 +152,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             current: self.current(),
             intent: self.own.last().map(|a| (a.intent, a.deceptive)),
             memory: model.is_some(),
-            likely_shot: model.and_then(OpponentModel::likely_shot),
+            likely_shot: model.and_then(|m| m.likely_shot()),
             likely_cover: (0..classes)
                 .map(|s| model.and_then(|m| m.likely_cover(s)))
                 .collect(),

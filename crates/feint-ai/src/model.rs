@@ -351,3 +351,33 @@ impl OpponentModel {
         Ok(())
     }
 }
+
+pub trait Predictor: Send {
+    fn likely_shot(&self) -> Option<u8>;
+    fn likely_cover(&self, shown: u8) -> Option<u8>;
+    fn likely_real(&self, shown: u8) -> Option<u8>;
+    fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>>;
+    fn knowing_beats_reading(&self) -> bool;
+}
+
+impl Predictor for OpponentModel {
+    fn likely_shot(&self) -> Option<u8> {
+        OpponentModel::likely_shot(self)
+    }
+
+    fn likely_cover(&self, shown: u8) -> Option<u8> {
+        OpponentModel::likely_cover(self, shown)
+    }
+
+    fn likely_real(&self, shown: u8) -> Option<u8> {
+        OpponentModel::likely_real(self, shown)
+    }
+
+    fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>> {
+        OpponentModel::their_odds(self, shown)
+    }
+
+    fn knowing_beats_reading(&self) -> bool {
+        OpponentModel::knowing_beats_reading(self)
+    }
+}

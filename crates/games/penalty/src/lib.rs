@@ -1,5 +1,6 @@
 mod adapter;
 pub mod human;
+pub mod persons;
 mod playbook;
 mod rules;
 

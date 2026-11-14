@@ -134,7 +134,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 }
             }
             let read = choice.shown.zip(choice.real).is_some_and(|(shown, real)| {
-                self.insight.model().is_some_and(|m| {
+                self.insight.answers().is_some_and(|m| {
                     m.likely_cover(shown) == Some(real) || m.likely_real(shown) == Some(real)
                 })
             });
