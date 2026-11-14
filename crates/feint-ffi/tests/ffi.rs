@@ -272,3 +272,128 @@ fn a_panicked_game_refuses_every_later_call() {
         feint_game_free(game);
     }
 }
+
+#[test]
+fn positions_and_layout_are_the_live_tables() {
+    unsafe {
+        let game = feint_game_new(3, 2, 4);
+        let mut out = [0f32; FEINT_POSITIONS];
+        assert_eq!(
+            feint_game_positions(game, out.as_mut_ptr(), out.len()),
+            FEINT_POSITIONS as isize
+        );
+        let mut native = AirHockey::new(Params::default(), 4);
+        let bodies = vec![body(2, &native).unwrap(), body(4, &native).unwrap()];
+        native.reset(3, &bodies).unwrap();
+        let w = &native.live().world;
+        let want = [
+            w.puck.pos.x,
+            w.puck.pos.y,
+            w.puck.vel.x,
+            w.puck.vel.y,
+            w.mallets[0].pos.x,
+            w.mallets[0].pos.y,
+            w.mallets[0].vel.x,
+            w.mallets[0].vel.y,
+            w.mallets[1].pos.x,
+            w.mallets[1].pos.y,
+            w.mallets[1].vel.x,
+            w.mallets[1].vel.y,
+        ]
+        .map(|v| v as f32);
+        assert_eq!(out, want);
+        let mut layout = [0f32; FEINT_LAYOUT];
+        assert_eq!(
+            feint_game_layout(game, layout.as_mut_ptr(), layout.len()),
+            FEINT_LAYOUT as isize
+        );
+        let p = Params::default();
+        assert_eq!(
+            layout,
+            [
+                p.half_length,
+                p.half_width,
+                p.mouth_half_width,
+                p.puck_radius,
+                p.mallet_radius
+            ]
+            .map(|v| v as f32)
+        );
+        assert_eq!(
+            feint_game_positions(game, out.as_mut_ptr(), 11),
+            FEINT_ERR_SMALL
+        );
+        assert_eq!(
+            feint_game_positions(game, std::ptr::null_mut(), 12),
+            FEINT_ERR_NULL
+        );
+        assert_eq!(
+            feint_game_positions(std::ptr::null(), out.as_mut_ptr(), 12),
+            FEINT_ERR_NULL
+        );
+        assert_eq!(
+            feint_game_layout(game, layout.as_mut_ptr(), 4),
+            FEINT_ERR_SMALL
+        );
+        feint_game_free(game);
+    }
+}
+
+#[test]
+fn an_encoded_action_is_the_message_the_game_takes() {
+    unsafe {
+        let values = [0.25f32, -0.1];
+        let mut out = vec![0u8; FEINT_ACTION_MAX];
+        let n = feint_action_encode(
+            42,
+            1,
+            values.as_ptr(),
+            values.len(),
+            out.as_mut_ptr(),
+            out.len(),
+        );
+        assert!(n > 0);
+        let Ok(MessageT::Action(a)) = decode(&out[..n as usize]) else {
+            panic!("an action message");
+        };
+        assert_eq!(
+            (a.tick, a.player, a.values.as_deref()),
+            (42, 1, Some(&values[..]))
+        );
+        let game = feint_game_new(1, 0, 3);
+        let mut now = 0u64;
+        assert_eq!(feint_game_tick(game, &mut now), 0);
+        let k = feint_action_encode(now, 1, values.as_ptr(), 2, out.as_mut_ptr(), out.len());
+        assert_eq!(feint_game_apply(game, out.as_ptr(), k as usize), 0);
+        let far = [9.0f32, 0.0];
+        let m = feint_action_encode(now, 0, far.as_ptr(), 2, out.as_mut_ptr(), out.len());
+        assert_eq!(
+            feint_game_apply(game, out.as_ptr(), m as usize),
+            FEINT_ERR_INPUT
+        );
+        assert_eq!(
+            feint_action_encode(1, 2, values.as_ptr(), 2, out.as_mut_ptr(), out.len()),
+            FEINT_ERR_INPUT
+        );
+        assert_eq!(
+            feint_action_encode(1, 0, std::ptr::null(), 2, out.as_mut_ptr(), out.len()),
+            FEINT_ERR_NULL
+        );
+        assert_eq!(
+            feint_action_encode(1, 0, values.as_ptr(), 2, out.as_mut_ptr(), 3),
+            FEINT_ERR_SMALL
+        );
+        assert_eq!(
+            feint_action_encode(
+                1,
+                0,
+                values.as_ptr(),
+                FEINT_VALUES_MAX + 1,
+                out.as_mut_ptr(),
+                out.len()
+            ),
+            FEINT_ERR_INPUT
+        );
+        feint_game_free(game);
+    }
+}
