@@ -136,6 +136,7 @@ fn the_feint_plan_does_not_depend_on_when_the_choice_was_made() {
     let mut s = bout(0.6);
     let held = feint(&s, Height::High);
     s.fighters[0].cancelled = true;
+    s.fighters[0].feints += 1;
     let fresh = feint(&s, Height::High);
     assert_eq!(values(&s, &held, 0), values(&s, &fresh, 0));
 }

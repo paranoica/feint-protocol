@@ -577,4 +577,7 @@ fn the_digest_tracks_the_state() {
     let mut c = bout();
     c.fighters[0].queued = Some((Kind::Jab, Height::Low));
     assert_ne!(a.digest(), c.digest());
+    let mut d = bout();
+    d.fighters[0].cancelled = true;
+    assert_ne!(a.digest(), d.digest());
 }
