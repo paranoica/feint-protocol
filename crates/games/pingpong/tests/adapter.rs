@@ -139,7 +139,7 @@ fn a_body_outside_the_declared_maxima_is_refused() {
     fast.values = Some(vec![(p.max_speed * 2.0) as f32, 1.0]);
     let fine = human_body(&game);
     assert!(game.reset(1, &[fast, fine.clone()]).is_err());
-    assert!(game.reset(1, &[fine.clone()]).is_err());
+    assert!(game.reset(1, std::slice::from_ref(&fine)).is_err());
     assert!(game.reset(1, &[fine.clone(), fine]).is_ok());
 }
 
