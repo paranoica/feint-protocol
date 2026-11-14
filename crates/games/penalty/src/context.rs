@@ -200,11 +200,14 @@ struct Answers {
     follow: f64,
 }
 
+pub const CONFIDENCE: f64 = 0.6;
+
 pub struct ContextAdvisor {
     model: std::sync::Arc<feint_context::ContextModel>,
     tokens: Tokenizer,
     asked: usize,
     answers: Answers,
+    confidence: f64,
 }
 
 fn ask(model: &feint_context::ContextModel, tokens: &[KickToken]) -> Answers {
@@ -223,12 +226,21 @@ fn ask(model: &feint_context::ContextModel, tokens: &[KickToken]) -> Answers {
 impl ContextAdvisor {
     #[must_use]
     pub fn new(model: std::sync::Arc<feint_context::ContextModel>) -> Self {
+        Self::with_confidence(model, CONFIDENCE)
+    }
+
+    #[must_use]
+    pub fn with_confidence(
+        model: std::sync::Arc<feint_context::ContextModel>,
+        confidence: f64,
+    ) -> Self {
         let answers = ask(&model, &[]);
         Self {
             model,
             tokens: Tokenizer::default(),
             asked: 0,
             answers,
+            confidence,
         }
     }
 }
@@ -246,14 +258,12 @@ impl feint_ai::Predictor for ContextAdvisor {
     }
 
     fn likely_cover(&self, shown: u8) -> Option<u8> {
-        if shown == 1 || shown > 2 || self.answers.guess < 0.5 {
+        let a = self.answers;
+        let sure = a.follow.max(1.0 - a.follow);
+        if shown == 1 || shown > 2 || a.guess < self.confidence || sure < self.confidence {
             return None;
         }
-        Some(if self.answers.follow >= 0.5 {
-            shown
-        } else {
-            2 - shown
-        })
+        Some(if a.follow >= 0.5 { shown } else { 2 - shown })
     }
 
     fn likely_real(&self, _shown: u8) -> Option<u8> {

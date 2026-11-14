@@ -45,9 +45,21 @@ fn halves_against_new_persons() {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let model =
             Arc::new(feint_context::ContextModel::from_safetensors(&bytes, LAYOUT).unwrap());
-        let h = halves_with(level, TEST_PERSONS..TEST_PERSONS + matches, &|_| {
-            Some(Box::new(ContextAdvisor::new(Arc::clone(&model))))
+        let from: u64 = std::env::var("HALVES_FROM")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(TEST_PERSONS);
+        let confidence: f64 = std::env::var("HALVES_CONFIDENCE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(penalty::context::CONFIDENCE);
+        let h = halves_with(level, from..from + matches, &|_| {
+            Some(Box::new(ContextAdvisor::with_confidence(
+                Arc::clone(&model),
+                confidence,
+            )))
         });
+        println!("context from person {from}, confidence {confidence}");
         let (diff, se) = h.difference();
         println!(
             "level {level} Context: halves {:.3} -> {:.3}, difference {diff:+.3} ± {:.3}; shooter {:.3} -> {:.3}, keeper {:.3} -> {:.3}",
