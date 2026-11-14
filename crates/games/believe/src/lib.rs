@@ -6,6 +6,7 @@ mod moves;
 mod rules;
 mod sample;
 mod scripted;
+pub mod search;
 pub mod trained;
 pub mod traps;
 

@@ -142,6 +142,35 @@ impl Person {
     }
 
     #[must_use]
+    pub fn lay_odds(
+        &self,
+        params: &Params,
+        hand: &[u8; MAX_RANKS],
+        claim: usize,
+        n: u32,
+    ) -> Vec<([u8; MAX_RANKS], f64)> {
+        let ranks = usize::from(params.ranks);
+        let q = self.call_rate();
+        let single = |rank: usize, k: u8| {
+            let mut counts = [0u8; MAX_RANKS];
+            counts[rank] = k;
+            counts
+        };
+        if hand[claim] > 0 {
+            let k = hand[claim].min(params.max_batch);
+            return if u32::from(k) == n {
+                vec![(single(claim, k), 1.0 - q)]
+            } else {
+                Vec::new()
+            };
+        }
+        match most_held(hand, ranks, Some(claim)) {
+            Some(rank) if n == 1 => vec![(single(rank, 1), (1.0 - q) * self.bluff_rate())],
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
     pub fn moves(&self, params: &Params, table: &Table, me: u8) -> Vec<(Move, f64)> {
         let ranks = usize::from(params.ranks);
         let mine = usize::from(me);

@@ -1,0 +1,261 @@
+use feint_ai::search::{Budget, Game, Model, Prior, Setup, decide};
+use feint_protocol::{ChaCha8Rng, GameAdapter, ObservationT};
+use feint_turn::TurnPolicy;
+use rand_chacha::rand_core::RngCore;
+
+use crate::adapter::Believe;
+use crate::minds::Person;
+use crate::rules::{Counts, MAX_RANKS, Move, Moves, Params, Table, by_rank};
+use crate::sample::table_from_view;
+use crate::traps::{leaf, learn};
+
+const WORLD_TRIES: u32 = 32;
+
+pub struct Cards {
+    params: Params,
+    moves: Moves,
+    adapter: Believe,
+}
+
+impl Default for Cards {
+    fn default() -> Self {
+        let params = Params::default();
+        Self {
+            moves: Moves::new(&params),
+            adapter: Believe::default(),
+            params,
+        }
+    }
+}
+
+impl Cards {
+    #[must_use]
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+
+    #[must_use]
+    pub fn moves(&self) -> &Moves {
+        &self.moves
+    }
+
+    pub fn observe(&self, table: &Table, player: u8, out: &mut ObservationT) {
+        self.adapter.observe(table, player, out);
+    }
+}
+
+impl Game for Cards {
+    type World = Table;
+    type Action = Move;
+
+    fn to_act(&self, world: &Table) -> Option<u8> {
+        world.outcome.is_none().then_some(world.to_act)
+    }
+
+    fn legal(&self, world: &Table, player: u8) -> Vec<Move> {
+        world
+            .legal(&self.params, &self.moves, player)
+            .iter()
+            .enumerate()
+            .filter(|&(_, &ok)| ok == 1)
+            .filter_map(|(i, _)| i32::try_from(i).ok().and_then(|i| self.moves.decode(i)))
+            .collect()
+    }
+
+    fn apply(&self, world: &mut Table, player: u8, action: Move) {
+        let _ = world.play(&self.params, player, &action);
+    }
+
+    fn value(&self, world: &Table, me: u8) -> f64 {
+        leaf(world, me)
+    }
+
+    fn public(&self, _world: &Table, _player: u8, action: Move) -> u64 {
+        match action {
+            Move::Call => 0,
+            Move::Lay { claim, counts } => {
+                let n: u64 = counts.iter().map(|&c| u64::from(c)).sum();
+                1 + u64::from(claim) * 16 + n
+            }
+        }
+    }
+}
+
+pub trait LayModel {
+    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Oracle {
+    pub person: Person,
+    pub me: u8,
+}
+
+impl Model<Cards> for Oracle {
+    fn policy(&self, game: &Cards, world: &Table, player: u8) -> Vec<(Move, f64)> {
+        self.person.moves(&game.params, world, player)
+    }
+
+    fn observe(&mut self, game: &Cards, before: &Table, player: u8, action: Move) {
+        learn(
+            &mut self.person,
+            &game.params,
+            before,
+            player,
+            &action,
+            self.me,
+        );
+    }
+}
+
+impl LayModel for Oracle {
+    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)> {
+        self.person.lay_odds(params, hand, claim, n)
+    }
+}
+
+pub struct PolicyPrior {
+    policy: TurnPolicy,
+    obs: ObservationT,
+    probabilities: Vec<f32>,
+}
+
+impl PolicyPrior {
+    #[must_use]
+    pub fn new(policy: TurnPolicy) -> Self {
+        Self {
+            policy,
+            obs: ObservationT::default(),
+            probabilities: Vec::new(),
+        }
+    }
+}
+
+impl Prior<Cards> for PolicyPrior {
+    fn prior(&mut self, game: &Cards, world: &Table, me: u8, legal: &[Move]) -> Vec<f64> {
+        game.observe(world, me, &mut self.obs);
+        let features = self.obs.state.as_deref().unwrap_or_default();
+        let mask = self.obs.legal.as_deref().unwrap_or_default();
+        self.policy
+            .probabilities(features, mask, &mut self.probabilities);
+        legal
+            .iter()
+            .map(|m| {
+                game.moves
+                    .index(m)
+                    .and_then(|i| usize::try_from(i).ok())
+                    .and_then(|i| self.probabilities.get(i))
+                    .map_or(0.0, |&p| f64::from(p))
+            })
+            .collect()
+    }
+}
+
+fn unit(rng: &mut ChaCha8Rng) -> f64 {
+    (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+fn take_random(from: u64, n: u32, rng: &mut ChaCha8Rng) -> u64 {
+    let mut chosen = 0u64;
+    let mut rest = from;
+    for _ in 0..n {
+        let size = rest.count_ones();
+        if size == 0 {
+            break;
+        }
+        let mut pick = rng.next_u32() % size;
+        let mut bits = rest;
+        while pick > 0 {
+            bits &= bits - 1;
+            pick -= 1;
+        }
+        let bit = bits & bits.wrapping_neg();
+        chosen |= bit;
+        rest &= !bit;
+    }
+    chosen
+}
+
+fn take_counts(params: &Params, from: u64, counts: &Counts, rng: &mut ChaCha8Rng) -> u64 {
+    let c = u32::from(params.copies);
+    let mut mask = 0u64;
+    for (rank, &n) in counts.iter().enumerate().take(usize::from(params.ranks)) {
+        let of_rank = from & (((1u64 << c) - 1) << (rank as u32 * c));
+        mask |= take_random(of_rank, u32::from(n), rng);
+    }
+    mask
+}
+
+pub fn world<L: LayModel>(
+    game: &Cards,
+    obs: &ObservationT,
+    model: &L,
+    rng: &mut ChaCha8Rng,
+) -> Table {
+    let params = &game.params;
+    let me = usize::from(obs.player.min(1));
+    let other = 1 - me;
+    let mut last_world = table_from_view(params, obs, rng);
+    for _ in 0..WORLD_TRIES {
+        let mut t = table_from_view(params, obs, rng);
+        let theirs_last = t.batches > 0 && usize::from(t.last_by) == other;
+        if !theirs_last {
+            return t;
+        }
+        let last_n = t.last.count_ones();
+        let laid_n = t.laid[other].count_ones();
+        let possession = t.hands[other] | t.laid[other];
+        let earlier = take_random(possession, laid_n.saturating_sub(last_n), rng);
+        let before = possession & !earlier;
+        let claim = t.claim.map_or(0, usize::from);
+        let odds = model.lay_odds(params, &by_rank(params, before), claim, last_n);
+        let weight: f64 = odds.iter().map(|o| o.1.max(0.0)).sum();
+        if weight <= 0.0 || unit(rng) >= weight {
+            last_world = t;
+            continue;
+        }
+        let u = unit(rng) * weight;
+        let mut acc = 0.0;
+        let mut counts: Counts = [0; MAX_RANKS];
+        for (c, p) in &odds {
+            acc += p.max(0.0);
+            counts = *c;
+            if u < acc {
+                break;
+            }
+        }
+        let last = take_counts(params, before, &counts, rng);
+        if last.count_ones() != last_n {
+            last_world = t;
+            continue;
+        }
+        t.last = last;
+        t.laid[other] = earlier | last;
+        t.hands[other] = before & !last;
+        if t.validate(params).is_ok() {
+            return t;
+        }
+        last_world = t;
+    }
+    last_world
+}
+
+pub fn choose<M: Model<Cards> + LayModel>(
+    game: &Cards,
+    obs: &ObservationT,
+    model: &M,
+    prior: &mut PolicyPrior,
+    budget: Budget,
+    rng: &mut ChaCha8Rng,
+) -> Option<Move> {
+    let me = obs.player.min(1);
+    let mut setup = Setup {
+        game,
+        model,
+        prior,
+        me,
+        budget,
+    };
+    let mut sample = |r: &mut ChaCha8Rng| world(game, obs, model, r);
+    decide(&mut setup, &mut sample, rng)
+}
