@@ -112,3 +112,20 @@ fn the_shown_hook_is_thrown_from_where_it_would_land() {
         "to a point inside hook reach"
     );
 }
+
+#[test]
+fn a_slow_fighter_still_opens_the_feint_with_the_hook() {
+    let mut s = bout(1.6);
+    s.bodies[0].speed = 1.2;
+    let c = feint(&s, Height::High);
+    s.fighters[0].x = s.fighters[1].x - 0.6;
+    let v = values(&s, &c, 400);
+    assert_eq!(
+        [v[2], v[3]],
+        [2.0, 1.0],
+        "the walk took long, but no cancel yet"
+    );
+    s.fighters[0].feints += 1;
+    let v = values(&s, &c, 400);
+    assert_eq!([v[2], v[3]], [1.0, -1.0], "after the cancel it jabs low");
+}

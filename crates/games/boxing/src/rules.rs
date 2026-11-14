@@ -134,7 +134,10 @@ impl Params {
             self.guard_switch,
             self.break_ticks,
         ];
-        if timers.iter().any(|&t| t > 10 * self.tick_hz) {
+        if timers
+            .iter()
+            .any(|&t| u64::from(t) > 10 * u64::from(self.tick_hz))
+        {
             return Err("a move lasts at most ten seconds");
         }
         if self.jab_points == 0

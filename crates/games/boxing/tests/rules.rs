@@ -100,6 +100,15 @@ fn params_without_a_slower_hook_or_room_are_refused() {
 }
 
 #[test]
+fn validation_answers_without_overflowing_on_extreme_rates() {
+    let p = Params {
+        tick_hz: u32::MAX,
+        ..Params::default()
+    };
+    assert_eq!(p.validate(), Ok(()), "a fast clock alone is a valid setup");
+}
+
+#[test]
 fn a_jab_lands_exactly_after_its_wind_up_and_the_fighters_part() {
     let mut b = bout();
     close(&mut b, 0.7);

@@ -176,7 +176,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
                     intent: 3,
                     deceptive: true,
                     horizon_ticks: length,
-                    param: [0.0, 0.0],
+                    param: [s.fighters[usize::from(me)].feints as f32, 0.0],
                     shown: Some(shown.class()),
                     real: Some(shown.other().class()),
                 });
@@ -184,7 +184,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
         }
     }
 
-    fn act(&self, s: &Bout, me: PlayerId, c: &Choice, elapsed: u64, aim: [f64; 2]) -> ActionT {
+    fn act(&self, s: &Bout, me: PlayerId, c: &Choice, _elapsed: u64, aim: [f64; 2]) -> ActionT {
         let seat = me.min(1);
         let v = View::of(s, seat);
         let f = &s.fighters[usize::from(seat)];
@@ -216,7 +216,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
                     (None, shown_for >= SHOW_MIN && bit)
                 }
                 Stage::Recover { .. } => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),
-                Stage::Idle if elapsed < u64::from(s.windup(seat, Kind::Hook)) => {
+                Stage::Idle if f64::from(f.feints) == f64::from(c.param[0]) => {
                     (Self::strike_at(&v, range, true, (Kind::Hook, shown)), false)
                 }
                 Stage::Idle => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),

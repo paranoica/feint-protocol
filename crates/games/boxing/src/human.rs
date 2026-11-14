@@ -107,7 +107,7 @@ impl Human {
 
     fn count(&mut self, bot: &crate::Fighter, points: i64, mine: i64) {
         if mine > self.my_points && self.exposed {
-            self.outcomes.conceded_open += 1;
+            self.outcomes.conceded_open += u32::try_from(mine - self.my_points).unwrap_or(0);
         }
         self.my_points = mine;
         if bot.feints != self.counted[1] {

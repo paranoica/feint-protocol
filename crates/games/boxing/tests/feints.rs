@@ -13,7 +13,7 @@ fn cancelled_wind_ups_against_the_human_model() {
     eprintln!(
         "level 5 over {MATCHES} matches: {} cancelled wind-ups, the human bit on {} ({:.2}); \
          strikes after a feint landed {} of {} ({:.2}), honest {} of {} ({:.2}); \
-         the human scored {} times while the bot recovered from a cancel",
+         the human scored {} points while the bot recovered from a cancel",
         t.feints,
         b.feint_bit,
         f64::from(b.feint_bit) / f64::from(b.feints.max(1)),
