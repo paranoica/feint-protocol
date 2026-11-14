@@ -313,10 +313,31 @@ fn the_receiver_wins_the_point_by_making_its_thirteenth_return() {
         0.0,
     );
     let events = run(&mut t, 1);
+    assert!(events.is_empty(), "not on contact");
+    let events = run(&mut t, 240);
     assert_eq!(
-        events,
-        vec![PointEvent::Point { winner: receiver }],
-        "the 13th return wins"
+        events.first(),
+        Some(&PointEvent::Point { winner: receiver }),
+        "the 13th return wins once it lands"
+    );
+    let mut wide = table(0);
+    rally_to(&mut wide, p.max_returns - 1);
+    wide.steer(
+        receiver,
+        [side * 1.5, 0.0],
+        Some(Swing {
+            aim: [1.0, 1.2],
+            flight: 0.6,
+        }),
+        0.0,
+    );
+    let events = run(&mut wide, 240);
+    assert_eq!(
+        events.first(),
+        Some(&PointEvent::Point {
+            winner: 1 - receiver
+        }),
+        "an out 13th return loses"
     );
     let mut early = table(0);
     rally_to(&mut early, p.max_returns - 2);
@@ -329,8 +350,9 @@ fn the_receiver_wins_the_point_by_making_its_thirteenth_return() {
         }),
         0.0,
     );
-    let events = run(&mut early, 1);
+    let events = run(&mut early, 150);
     assert!(events.is_empty(), "the 12th return plays on");
+    assert_eq!(early.bounces, 1);
     let mut idle = table(0);
     rally_to(&mut idle, p.max_returns - 1);
     idle.steer(receiver, [side * 1.5, 0.0], None, 0.0);

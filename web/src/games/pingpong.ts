@@ -207,7 +207,7 @@ export const pingpongView: GameView = {
       ctx.fillStyle = "rgba(231,238,248,0.6)";
       ctx.font = "600 15px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Move with the mouse · ↑ / ↓ pick the corner · click to serve, hold for a fast shot · Shift turns the disguise on or off", width / 2, height - 18);
+      ctx.fillText("Move with the mouse · ↑ / ↓ pick the corner · click to serve within 3 s · hold in a rally for a fast shot · Shift turns the disguise on or off", width / 2, height - 18);
     }
   },
 
@@ -256,7 +256,7 @@ export const pingpongView: GameView = {
     const target: Pair = [limit(cursor[0], layout.halfLength + layout.backRoom), limit(cursor[1], layout.halfWidth + layout.sideRoom)];
     const v = match.view();
     const serving = v[0] === 0 && v[13] === 0;
-    const values = shotValues(target, aim, fast, disguise);
+    const values = shotValues(target, aim, fast && !serving, disguise);
     values[2] = serving && !fast ? 0 : 1;
     match.set_input(new Float32Array(values));
   },

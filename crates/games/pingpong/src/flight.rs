@@ -1,4 +1,4 @@
-use crate::rules::{Phase, Table};
+use crate::rules::{Phase, Table, contact, crosses_net, lands};
 
 const LOW: f64 = 0.08;
 
@@ -35,11 +35,12 @@ pub fn intercept(t: &Table, receiver: u8) -> Option<Intercept> {
             pos[1] + vel[1] * dt,
             pos[2] + vel[2] * dt,
         ];
-        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
-            let on_table = next[0].abs() <= p.half_length && next[1].abs() <= p.half_width;
-            if bounces == 0 && on_table && side * next[0] > 0.0 {
+        if lands(pos, next) {
+            let [x, y] = contact(pos, next);
+            let on_table = x.abs() <= p.half_length && y.abs() <= p.half_width;
+            if bounces == 0 && on_table && side * x > 0.0 {
                 bounces = 1;
-                pos = [next[0], next[1], 0.0];
+                pos = [x, y, 0.0];
                 vel[2] = -vel[2] * p.bounce;
                 continue;
             }
@@ -78,17 +79,13 @@ pub fn good(t: &Table) -> Option<bool> {
             pos[1] + vel[1] * dt,
             pos[2] + vel[2] * dt,
         ];
-        if pos[0] * next[0] < 0.0 {
-            let k = pos[0] / (pos[0] - next[0]);
-            let z = pos[2] + (next[2] - pos[2]) * k;
-            let y = pos[1] + (next[1] - pos[1]) * k;
-            if z < p.net_height && z >= 0.0 && y.abs() <= p.half_width + p.net_height {
-                return Some(false);
-            }
+        if crosses_net(pos, next, p) {
+            return Some(false);
         }
-        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
-            let on = next[0].abs() <= p.half_length && next[1].abs() <= p.half_width;
-            return Some(on && side * next[0] > 0.0);
+        if lands(pos, next) {
+            let [x, y] = contact(pos, next);
+            let on = x.abs() <= p.half_length && y.abs() <= p.half_width;
+            return Some(on && side * x > 0.0);
         }
         pos = next;
     }
@@ -111,8 +108,8 @@ pub fn landing(t: &Table) -> Option<[f64; 2]> {
             pos[1] + vel[1] * dt,
             pos[2] + vel[2] * dt,
         ];
-        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
-            return Some([next[0], next[1]]);
+        if lands(pos, next) {
+            return Some(contact(pos, next));
         }
         pos = next;
     }

@@ -185,51 +185,64 @@ fn the_hit_counter_and_rally_survive_an_observation() {
 fn the_bot_reads_where_the_opponent_played_and_where_it_covered() {
     use feint_ai::Playbook;
     let book = PingPongPlaybook::new(Params::default());
-    let mut game = mid_rally();
-    let s0 = game.live().clone();
-    let server = s0.server;
-    let receiver = 1 - server;
     let read_back = |g: &PingPong, me: u8| {
         let mut obs = ObservationT::default();
         g.observe(g.live(), me, &mut obs);
         g.state_from_observation(&obs, &mut ChaCha8Rng::seed_from_u64(0))
     };
-    let mut before = read_back(&game, server);
-    let mut covered = None;
-    let mut events = Vec::new();
-    for _ in 0..400 {
-        game.advance(&mut events);
-        let after = read_back(&game, server);
-        let r = book.read(&before, &after, receiver);
-        covered = covered.or(r.covered);
-        before = after;
-    }
-    assert!(
-        covered.is_some(),
-        "the receiver's position at the landing is read"
+    let serve = |g: &mut PingPong| {
+        let server = g.live().server;
+        let pos = g.live().paddles[usize::from(server)].pos;
+        let m = pingpong::mirror(server);
+        let mut a = ActionT::default();
+        a.player = server;
+        a.values = Some(vec![
+            (m * pos[0]) as f32,
+            (m * pos[1]) as f32,
+            1.0,
+            1.0,
+            0.5,
+            0.6,
+            0.8,
+        ]);
+        g.apply(&a).unwrap();
+        let mut events = Vec::new();
+        g.advance(&mut events);
+    };
+    let mut game = PingPong::new(Params::default(), 3);
+    let b = bodies(&game);
+    game.reset(4, &b).unwrap();
+    let server = game.live().server;
+    let receiver = 1 - server;
+    let before = read_back(&game, receiver);
+    serve(&mut game);
+    let after = read_back(&game, receiver);
+    assert_eq!(
+        book.read(&before, &after, server).shot,
+        Some(0),
+        "their serve to their right lands on my left"
     );
-    let mut fresh = PingPong::new(Params::default(), 3);
-    let b = bodies(&fresh);
-    fresh.reset(4, &b).unwrap();
-    let mut before = read_back(&fresh, receiver);
-    let pos = fresh.live().paddles[usize::from(server)].pos;
-    let m = pingpong::mirror(server);
-    let mut a = ActionT::default();
-    a.player = server;
-    a.values = Some(vec![
-        (m * pos[0]) as f32,
-        (m * pos[1]) as f32,
-        1.0,
-        1.0,
-        0.5,
-        0.6,
-        0.8,
-    ]);
-    fresh.apply(&a).unwrap();
-    fresh.advance(&mut events);
-    let after = read_back(&fresh, receiver);
-    let shot = book.read(&before, &after, server).shot;
-    assert_eq!(shot, Some(0), "their serve to their right lands on my left");
-    before = after;
-    let _ = before;
+    let mut game = PingPong::new(Params::default(), 3);
+    game.reset(4, &b).unwrap();
+    let before = read_back(&game, server);
+    serve(&mut game);
+    let after = read_back(&game, server);
+    let theirs = pingpong::mirror(server) * game.live().paddles[usize::from(receiver)].pos[1];
+    let want = if theirs < -0.2 {
+        0
+    } else if theirs > 0.2 {
+        2
+    } else {
+        1
+    };
+    assert_eq!(
+        book.read(&before, &after, receiver).covered,
+        Some(want),
+        "where the receiver stands when the bot hits"
+    );
+    assert_eq!(
+        book.read(&after, &after, receiver).covered,
+        None,
+        "only at the hit"
+    );
 }

@@ -288,11 +288,7 @@ impl Playbook<PingPong> for PingPongPlaybook {
         if after.hits != before.hits && after.hitter == Some(them) {
             read.shot = landing(after).map(|l| class_of_y(mirror(me) * l[1]));
         }
-        if after.hitter == Some(me)
-            && after.bounces == 1
-            && before.bounces == 0
-            && after.hits == before.hits
-        {
+        if after.hits != before.hits && after.hitter == Some(me) {
             read.covered = Some(class_of_y(
                 mirror(me) * after.paddles[usize::from(them)].pos[1],
             ));

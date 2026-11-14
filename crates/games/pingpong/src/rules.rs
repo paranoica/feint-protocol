@@ -201,6 +201,31 @@ pub struct Table {
     pub facing_at_hit: f64,
 }
 
+#[must_use]
+pub fn contact(before: [f64; 3], after: [f64; 3]) -> [f64; 2] {
+    let k = before[2] / (before[2] - after[2]);
+    [
+        before[0] + (after[0] - before[0]) * k,
+        before[1] + (after[1] - before[1]) * k,
+    ]
+}
+
+#[must_use]
+pub fn crosses_net(before: [f64; 3], after: [f64; 3], p: &Params) -> bool {
+    if before[0] * after[0] < 0.0 || (before[0] != 0.0 && after[0] == 0.0) {
+        let k = before[0] / (before[0] - after[0]);
+        let z = before[2] + (after[2] - before[2]) * k;
+        let y = before[1] + (after[1] - before[1]) * k;
+        return z < p.net_height && z >= 0.0 && y.abs() <= p.half_width + p.net_height;
+    }
+    false
+}
+
+#[must_use]
+pub fn lands(before: [f64; 3], after: [f64; 3]) -> bool {
+    (before[2] > 0.0 && after[2] <= 0.0) || (before[2] == 0.0 && after[2] < 0.0)
+}
+
 fn side_x(seat: u8) -> f64 {
     if seat == 0 { -1.0 } else { 1.0 }
 }
@@ -309,7 +334,7 @@ impl Table {
             && b[2] <= self.params.hit_top
     }
 
-    fn try_hit(&mut self, seat: u8, events: &mut Vec<PointEvent>) -> bool {
+    fn try_hit(&mut self, seat: u8) -> bool {
         if self.to_hit() != Some(seat) || !self.in_reach(seat) {
             return false;
         }
@@ -342,9 +367,6 @@ impl Table {
         self.rally += 1;
         self.phase = Phase::Rally;
         self.t = 0;
-        if seat != self.server && self.rally >= 2 * self.params.max_returns {
-            self.point(seat, events);
-        }
         true
     }
 
@@ -387,22 +409,19 @@ impl Table {
             return;
         };
         let p = self.params.clone();
-        if before[0] * after[0] < 0.0 || (before[0] != 0.0 && after[0] == 0.0) {
-            let k = before[0] / (before[0] - after[0]);
-            let z = before[2] + (after[2] - before[2]) * k;
-            let y = before[1] + (after[1] - before[1]) * k;
-            if z < p.net_height && z >= 0.0 && y.abs() <= p.half_width + p.net_height {
-                self.point(1 - hitter, events);
-                return;
-            }
+        if crosses_net(before, after, &p) {
+            self.point(1 - hitter, events);
+            return;
         }
-        if (before[2] > 0.0 && after[2] <= 0.0) || (before[2] == 0.0 && after[2] < 0.0) {
-            let k = before[2] / (before[2] - after[2]);
-            let x = before[0] + (after[0] - before[0]) * k;
-            let y = before[1] + (after[1] - before[1]) * k;
+        if lands(before, after) {
+            let [x, y] = contact(before, after);
             let on_table = x.abs() <= p.half_length && y.abs() <= p.half_width;
             let receiver_side = side_x(1 - hitter) * x > 0.0;
             if on_table && receiver_side && self.bounces == 0 {
+                if hitter != self.server && self.rally >= 2 * p.max_returns {
+                    self.point(hitter, events);
+                    return;
+                }
                 self.bounces = 1;
                 self.ball.pos = [x, y, 0.0];
                 self.ball.vel[2] = -self.ball.vel[2] * p.bounce;
@@ -425,14 +444,14 @@ impl Table {
         match self.phase {
             Phase::Serve => {
                 self.hold_ball();
-                if !self.try_hit(self.server, events) && self.t >= self.params.serve_ticks {
+                if !self.try_hit(self.server) && self.t >= self.params.serve_ticks {
                     let server = self.server;
                     self.point(1 - server, events);
                 }
             }
             Phase::Rally => {
                 for seat in 0..2u8 {
-                    if self.try_hit(seat, events) {
+                    if self.try_hit(seat) {
                         return;
                     }
                 }
