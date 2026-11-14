@@ -19,7 +19,7 @@ libs="$(cargo rustc -q --locked --release -p feint-ffi --lib --crate-type static
 project=examples/godot
 mkdir -p "$project/bin"
 gcc -std=c11 -Wall -Wextra -Werror -Wno-cast-function-type -O2 -fPIC -fvisibility=hidden -shared \
-  -Iinclude -I"$project/extension" "$project/extension/feint_godot.c" \
+  -Iinclude -I"$project/extension" "$project/extension/feint_godot.c" "$project/extension/feint_match.c" \
   target/release/libfeint_ffi.a $libs -Wl,--exclude-libs,ALL \
   -o "$project/bin/libfeint_godot.so"
 exported="$(nm -D --defined-only "$project/bin/libfeint_godot.so" | awk '{print $3}' | grep -v '^_' || true)"
