@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { card_checkpoints, card_games, initSync, WebCards } from "../src/wasm/feint_web.js";
 import {
   callIndex,
+  cardRecord,
   cardsWord,
   eventText,
   moveFor,
@@ -154,4 +155,29 @@ test("a whole card match plays through the screen's helpers in wasm", () => {
   });
   assert.ok(m.record().length > 0);
   m.free();
+});
+
+test("the card record sums believe rows over levels and counts draws", () => {
+  const row = (game: string, level: number, matches: number, won: number, lost: number) => ({
+    game,
+    level,
+    matches,
+    won,
+    lost,
+    mine: 0,
+    theirs: 0,
+  });
+  assert.equal(
+    cardRecord([row("believe", 5, 4, 1, 2), row("airhockey", 5, 9, 9, 0), row("believe", 3, 3, 2, 0)]),
+    "Сыграно партий: 7 — побед 3, поражений 2, ничьих 2",
+  );
+  assert.equal(cardRecord([row("believe", 5, 1, 0, 1)]), "Сыграно партий: 1 — побед 0, поражений 1, ничьих 0");
+});
+
+test("no believe rows read as not played yet", () => {
+  assert.equal(cardRecord([]), "Вы ещё не сыграли ни одной партии");
+  assert.equal(
+    cardRecord([{ game: "penalty", level: 5, matches: 3, won: 1, lost: 1, mine: 4, theirs: 4 }]),
+    "Вы ещё не сыграли ни одной партии",
+  );
 });

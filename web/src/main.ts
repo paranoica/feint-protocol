@@ -20,7 +20,7 @@ import {
 } from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
-import { CARD_TICK_MS, CardBoard, ending, HOW_TO_PLAY } from "./games/believe.ts";
+import { CARD_TICK_MS, CardBoard, cardRecord, ending, HOW_TO_PLAY } from "./games/believe.ts";
 import { fakeLinks, parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
@@ -90,6 +90,7 @@ function show(next: Screen) {
   if (screen.name === "level") {
     $<HTMLInputElement>("nick").value = screen.nick;
     void loadComparison(screen.nick);
+    void loadCardRecord(screen.nick);
   }
   if (screen.name === "result" && screen.replay) {
     const r = screen.replay;
@@ -213,6 +214,7 @@ async function loadComparison(nick: string) {
     }
     let results = parseResults([]);
     try {
+      await saves.settled(SAVE_WAIT_MS);
       const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
       results = mine.ok ? parseResults(await mine.json()) : results;
     } catch {
@@ -239,6 +241,26 @@ async function loadComparison(nick: string) {
   } catch {
     holder.hidden ||= turn === comparing;
   }
+}
+
+let recording = 0;
+
+async function loadCardRecord(nick: string) {
+  const turn = ++recording;
+  let text: string | null = null;
+  try {
+    await saves.settled(SAVE_WAIT_MS);
+    const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
+    text = mine.ok ? cardRecord(parseResults(await mine.json())) : null;
+  } catch {
+    text = null;
+  }
+  const line = document.getElementById("cards-record");
+  if (turn !== recording || !line) {
+    return;
+  }
+  line.textContent = text ?? "";
+  line.hidden = text === null;
 }
 
 async function fetchTicket(): Promise<Ticket | null> {
@@ -598,7 +620,11 @@ function buildCardsCard(holder: HTMLElement) {
   play.dataset.cards = "believe";
   play.textContent = "Играть";
   play.addEventListener("click", () => void beginCards());
-  card.append(title, pitch, rules, play);
+  const record = document.createElement("p");
+  record.id = "cards-record";
+  record.className = "hint";
+  record.hidden = true;
+  card.append(title, pitch, rules, record, play);
   holder.append(card);
 }
 
