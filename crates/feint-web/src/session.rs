@@ -268,7 +268,11 @@ impl<G: HubGame> Play<G> {
         let spec = game.spec();
         let make = |level: u8| {
             let difficulty = Difficulty::preset(level).ok_or(SessionError::Level)?;
-            let bot = Bot::new(difficulty, G::book(), &spec).map_err(|_| SessionError::Level)?;
+            let mut bot =
+                Bot::new(difficulty, G::book(), &spec).map_err(|_| SessionError::Level)?;
+            if let Some(id) = G::shipped_advisor(level) {
+                bot.advise(G::advisor(level, id)?);
+            }
             Ok::<_, SessionError>((bot, difficulty.body(&spec)))
         };
         let (mut left_bot, left_body) = make(left)?;

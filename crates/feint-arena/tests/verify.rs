@@ -409,7 +409,7 @@ fn a_level_four_shootout_names_its_context_model_and_verifies() {
     assert_eq!(
         verify(&plain, None).err(),
         Some(VerifyError::Level),
-        "levels 3 and 4 play with the advisor, so a plain hand-made record is refused"
+        "level 4 plays with the advisor, so a plain hand-made record is refused"
     );
 }
 
@@ -420,6 +420,15 @@ fn an_advisor_where_none_ships_is_refused() {
         r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED));
     });
     assert_eq!(verify(&advised, None).err(), Some(VerifyError::Level));
+    let (three, _) = common::shootout(3, 13, None);
+    let advised = forge(&three.record(), |r| {
+        r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED));
+    });
+    assert_eq!(
+        verify(&advised, None).err(),
+        Some(VerifyError::Level),
+        "level 3 has no advisor"
+    );
     let hockey = scripted(3, 9, 600);
     let advised = forge(&hockey.record(), |r| {
         r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED));
