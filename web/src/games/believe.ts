@@ -1,3 +1,5 @@
+import type { Result } from "../compare.ts";
+
 export const RANK_LABELS = ["9", "10", "В", "Д", "К"];
 export const RANK_PLURAL = ["девятки", "десятки", "валеты", "дамы", "короли"];
 export const MAX_BATCH = 3;
@@ -72,6 +74,16 @@ export function verdict(outcome: number | undefined): string | null {
 export function ending(outcome: number | undefined): { title: string; upload: boolean } {
   const title = verdict(outcome);
   return title === null ? { title: "Время вышло — партия не закончена", upload: false } : { title, upload: true };
+}
+
+export function cardRecord(results: Result[]): string {
+  const rows = results.filter((r) => r.game === "believe");
+  const sum = (key: "matches" | "won" | "lost") => rows.reduce((a, r) => a + r[key], 0);
+  const [matches, won, lost] = [sum("matches"), sum("won"), sum("lost")];
+  if (matches === 0) {
+    return "Вы ещё не сыграли ни одной партии";
+  }
+  return `Сыграно партий: ${matches} — побед ${won}, поражений ${lost}, ничьих ${matches - won - lost}`;
 }
 
 export function pick(picked: number[], hand: number[], rank: number): number[] {
