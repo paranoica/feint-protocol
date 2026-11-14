@@ -299,7 +299,7 @@ impl feint_ai::Advisor<Shootout> for ContextAdvisor {
     fn see(&mut self, state: &Shootout, me: PlayerId) {
         self.tokens.see(state, me);
         let n = self.tokens.tokens().len();
-        if n != self.asked {
+        if n != self.asked && n < KICKS {
             self.asked = n;
             self.answers = ask(&self.model, self.tokens.tokens());
         }

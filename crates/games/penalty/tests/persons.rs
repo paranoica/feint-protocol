@@ -237,3 +237,17 @@ fn a_shooter_who_knows_the_person_scores_more_than_a_blind_one() {
         shooter(&blind)
     );
 }
+
+#[test]
+fn the_context_model_changes_how_the_bot_plays() {
+    let model = std::sync::Arc::new(penalty::trained::model(penalty::trained::SHIPPED).unwrap());
+    let differs = (TEST_PERSONS..TEST_PERSONS + 6).any(|person| {
+        let advised = penalty::persons::one_match_with(4, person, &|_| {
+            Some(Box::new(penalty::context::ContextAdvisor::new(
+                std::sync::Arc::clone(&model),
+            )))
+        });
+        advised.kicks != one_match(4, Advice::Count, person).kicks
+    });
+    assert!(differs, "the advisor never changed a kick in six matches");
+}

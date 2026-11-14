@@ -387,6 +387,8 @@ fn a_trained_record_relabelled_as_hand_made_is_a_mismatch() {
     assert_eq!(verify(&forged, None).err(), Some(VerifyError::Mismatch));
 }
 
+const ADVISED_SHOOTOUT: u64 = 0x3a1e_c278_c59e_254a;
+
 #[test]
 fn a_level_four_shootout_names_its_context_model_and_verifies() {
     let (s, _) = common::shootout(4, 11, None);
@@ -398,10 +400,17 @@ fn a_level_four_shootout_names_its_context_model_and_verifies() {
     );
     let v = verify(&bytes, None).unwrap();
     assert_eq!(v.digest, s.digest());
+    assert_eq!(v.digest, ADVISED_SHOOTOUT, "the advised path is pinned");
     let unknown = forge(&bytes, |r| {
         r.header.opponent = feint_ai::Opponent::Advised(nonzero(penalty::trained::SHIPPED ^ 1));
     });
     assert_eq!(verify(&unknown, None).err(), Some(VerifyError::Checkpoint));
+    let plain = forge(&bytes, |r| r.header.opponent = feint_ai::Opponent::HandMade);
+    assert_eq!(
+        verify(&plain, None).err(),
+        Some(VerifyError::Level),
+        "levels 3 and 4 play with the advisor, so a plain hand-made record is refused"
+    );
 }
 
 #[test]

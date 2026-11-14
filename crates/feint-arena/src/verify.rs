@@ -113,6 +113,9 @@ fn verify_game<G: HubGame>(
     }
     let mut human = Replayer::new(human_actions(&record)?);
     let mut bot = match record.header.opponent {
+        Opponent::HandMade if G::shipped_advisor(level).is_some() => {
+            return Err(VerifyError::Level);
+        }
         Opponent::HandMade | Opponent::Advised(_) => {
             let mut bot =
                 Bot::new(difficulty, G::book(), &game.spec()).map_err(|_| VerifyError::Level)?;

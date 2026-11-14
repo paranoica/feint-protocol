@@ -79,7 +79,7 @@ fn the_advisor_updates_after_each_kick_and_forgets_a_match() {
     }
     assert_eq!(answered.len(), features.len() + 1);
     for (n, odds) in answered.iter().enumerate() {
-        let (corner, ..) = expected(&model, &features[..n]);
+        let (corner, ..) = expected(&model, &features[..n.min(9)]);
         for (k, p) in odds {
             assert!(
                 (p - corner[usize::from(*k)]).abs() < 1e-12,
@@ -90,4 +90,44 @@ fn the_advisor_updates_after_each_kick_and_forgets_a_match() {
     advisor.new_match();
     let (corner, ..) = expected(&model, &[]);
     assert!((advisor.shot_odds().unwrap()[0].1 - corner[0]).abs() < 1e-12);
+}
+
+#[test]
+fn answers_stop_moving_after_the_kicks_the_model_was_trained_on() {
+    let model = tiny();
+    let mut advisor = ContextAdvisor::new(Arc::clone(&model));
+    let mut tokenizer = penalty::context::Tokenizer::default();
+    let mut long = penalty::persons::match_states(4, Habits::person(9), 0, 9);
+    let tail: Vec<_> = long.iter().rev().take(4000).cloned().collect();
+    let mut shifted = tail;
+    for s in &mut shifted {
+        s.kicks += 10;
+    }
+    long.extend(shifted.into_iter().rev());
+    let mut after_nine = None;
+    for s in &long {
+        advisor.see(s, 0);
+        tokenizer.see(s, 0);
+        if tokenizer.tokens().len() == 9 && after_nine.is_none() {
+            after_nine = advisor.shot_odds();
+        }
+    }
+    assert!(
+        tokenizer.tokens().len() > 10,
+        "{}",
+        tokenizer.tokens().len()
+    );
+    assert_eq!(advisor.shot_odds(), after_nine);
+}
+
+#[test]
+fn a_higher_confidence_withholds_dive_answers_but_not_the_odds() {
+    let model = tiny();
+    let sure = ContextAdvisor::with_confidence(Arc::clone(&model), 1.01);
+    let plain = ContextAdvisor::new(Arc::clone(&model));
+    for shown in [0u8, 2] {
+        assert_eq!(sure.likely_cover(shown), None);
+        assert_eq!(sure.their_odds(shown), plain.their_odds(shown));
+    }
+    assert_eq!(sure.shot_odds(), plain.shot_odds());
 }

@@ -143,8 +143,8 @@ the fixed preset 5), `bodies` (one `BodyParams` per player), `bot` (`HandMade` o
 and `checkpoint`. With `Trained`, `checkpoint` is the trained policy's id and must not be 0.
 With `HandMade`, 0 means the core's own opponent model, and any other value is the id of the
 in-match context model that advises the hand-made bot (penalty levels 3 and 4); the arena
-rebuilds the bot with that model and refuses an id it does not ship or a level that has no
-advisor. A plain hand-made header writes neither field, so its bytes are the same as before
+rebuilds the bot with that model and refuses an id it does not ship, a level that has no
+advisor, and a plain hand-made record at a level that has one. A plain hand-made header writes neither field, so its bytes are the same as before
 they existed.
 
 `MatchResult`: `score`, `duration_ticks`, `level`, `seed`.

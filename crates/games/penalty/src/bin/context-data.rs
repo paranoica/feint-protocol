@@ -10,6 +10,8 @@ use penalty::context::{
 };
 use penalty::persons::{Advice, Habits, match_tokens, match_tokens_with};
 
+const ROUND_TWO_CONFIDENCE: f64 = 0.6;
+
 fn habit_row(h: &Habits) -> [f32; 9] {
     [
         h.corner[0],
@@ -73,7 +75,10 @@ fn main() -> ExitCode {
                             let tokens = match (&model, id % 3) {
                                 (Some(m), 0) => match_tokens_with(
                                     4,
-                                    Box::new(ContextAdvisor::new(Arc::clone(m))),
+                                    Box::new(ContextAdvisor::with_confidence(
+                                        Arc::clone(m),
+                                        ROUND_TWO_CONFIDENCE,
+                                    )),
                                     habits,
                                     seat,
                                     id,

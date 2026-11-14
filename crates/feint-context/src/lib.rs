@@ -167,7 +167,7 @@ impl ContextModel {
         let width = number(&st, "width")?;
         let layers = number(&st, "layers")?;
         let heads = number(&st, "heads")?;
-        if heads == 0 || width == 0 || width % heads != 0 {
+        if heads == 0 || width == 0 || width % heads != 0 || width.checked_mul(4).is_none() {
             return Err(ContextError::Format("width and heads".into()));
         }
         let eps: f32 = st

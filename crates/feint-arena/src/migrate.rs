@@ -249,7 +249,7 @@ fn same_ticks(path: &Path, replay: &Replay) -> Result<bool, MigrateError> {
 }
 
 fn replay_hand_made(record: &Record) -> Option<Replay> {
-    if record.header.opponent != Opponent::HandMade {
+    if matches!(record.header.opponent, Opponent::Trained(_)) {
         return None;
     }
     let version = record.header.game_version;

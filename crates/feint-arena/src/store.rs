@@ -439,8 +439,8 @@ fn write_files(temp: &Staged, bytes: &[u8], verified: &Verified) -> Result<(), S
         header.levels[1],
         header.seed,
         match header.opponent {
-            Opponent::HandMade => 0,
-            Opponent::Trained(id) | Opponent::Advised(id) => id.get(),
+            Opponent::HandMade | Opponent::Advised(_) => 0,
+            Opponent::Trained(id) => id.get(),
         },
         &file,
     )
