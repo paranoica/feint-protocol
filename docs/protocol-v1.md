@@ -176,8 +176,12 @@ match: `game_id`, `classes`, and the counts and weights of its opponent model (`
      played with, and re-encodes to the same bytes;
   2. replayed: only when the hand-made bot now plays the match otherwise (`Mismatch`; the
      bot changed without a game version bump): the recorded inputs of both players are
-     replayed through the game, and every tick must give the Parquet file the arena wrote
-     from the accepted run, byte for byte, plus the stored digest and score;
+     replayed through the game, every column the stored Parquet file has (at least `tick`,
+     `events` and the game's columns; files from before stage 2 lack `checkpoint`) must
+     equal the replay value for value at every tick, and the stored digest and score must
+     match. The row's `profile_used` is not proven for these records: the replay does not
+     run the bot, so a wrong profile and a changed bot look the same; the migration never
+     writes that column;
   3. byte-proven: only when the record's game version is older than the one built today;
      nothing can replay it, so the byte proof alone carries it.
 

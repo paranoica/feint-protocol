@@ -598,6 +598,7 @@ fn backup(root: &Path, plan: &Plan) -> Result<bool, MigrateError> {
     conn.execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])?;
     drop(conn);
     fs::File::open(&target)?.sync_all()?;
+    let mut dirs = std::collections::BTreeSet::new();
     for file in files_under(&canon.join("matches"))? {
         let rel = file
             .strip_prefix(&canon)
@@ -605,9 +606,18 @@ fn backup(root: &Path, plan: &Plan) -> Result<bool, MigrateError> {
         let to = tmp.join(rel);
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent)?;
+            let mut dir = parent.to_path_buf();
+            while dir != tmp && dirs.insert(dir.clone()) {
+                if !dir.pop() {
+                    break;
+                }
+            }
         }
         fs::copy(&file, &to)?;
         fs::File::open(&to)?.sync_all()?;
+    }
+    for dir in dirs.iter().rev() {
+        sync_dir(dir)?;
     }
     sync_dir(&tmp)?;
     backup_holds(&tmp, &canon, plan)?;
