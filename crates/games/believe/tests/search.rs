@@ -269,10 +269,10 @@ fn worlds_believe_a_lie_as_often_as_the_players_rule_and_the_deal_make_it() {
     let game = Cards::default();
     let params = game.params();
     let mut t = Table::empty(params);
-    let take = |t: &mut Table, ids: &[u32]| ids.iter().fold(0u64, |m, &i| m | (1 << i));
-    t.hands[0] = take(&mut t, &[0, 1, 4, 5, 8, 9, 12, 13]);
+    let take = |ids: &[u32]| ids.iter().fold(0u64, |m, &i| m | (1 << i));
+    t.hands[0] = take(&[0, 1, 4, 5, 8, 9, 12, 13]);
     t.laid[1] = 1 << 16;
-    t.hands[1] = take(&mut t, &[2, 6, 10, 14, 17, 18]);
+    t.hands[1] = take(&[2, 6, 10, 14, 17, 18]);
     t.aside = params.deck_mask() & !(t.hands[0] | t.hands[1] | t.laid[1]);
     t.last = t.laid[1];
     t.last_by = 1;
