@@ -111,10 +111,8 @@ impl<A: Copy + PartialEq> Search<A> {
         self.nodes.len() - 1
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn extend<G, P>(
-        &mut self,
-        node: usize,
+        edges: &mut Vec<Edge<A>>,
         game: &G,
         world: &G::World,
         me: u8,
@@ -130,7 +128,6 @@ impl<A: Copy + PartialEq> Search<A> {
         let kept = top(&p, k);
         let mass: f64 = kept.iter().map(|&i| p[i].max(0.0)).sum();
         let even = 1.0 / kept.len().max(1) as f64;
-        let edges = &mut self.nodes[node].edges;
         for i in kept {
             if edges.iter().any(|e| e.action == legal[i]) {
                 continue;
@@ -199,7 +196,15 @@ impl<A: Copy + PartialEq> Search<A> {
                     let edges = &self.nodes[node].edges;
                     let missing = legal.iter().any(|a| !edges.iter().any(|e| e.action == *a));
                     if edges.is_empty() || (missing && edges.len() < budget.top_k) {
-                        self.extend(node, game, &world, me, setup.prior, budget.top_k, &legal);
+                        Self::extend(
+                            &mut self.nodes[node].edges,
+                            game,
+                            &world,
+                            me,
+                            setup.prior,
+                            budget.top_k,
+                            &legal,
+                        );
                     }
                     let Some(i) = self.select(node, &legal, budget.explore) else {
                         break;
