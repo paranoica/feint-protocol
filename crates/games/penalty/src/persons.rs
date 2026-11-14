@@ -123,6 +123,12 @@ impl Predictor for Oracle {
     fn knowing_beats_reading(&self) -> bool {
         false
     }
+
+    fn shot_odds(&self) -> Option<Vec<(u8, f64)>> {
+        let c = self.habits.corner.map(f64::from);
+        let total: f64 = c.iter().sum();
+        (total > 0.0).then(|| (0..3u8).zip(c).map(|(k, w)| (k, w / total)).collect())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -351,6 +351,11 @@ impl Playbook<Penalty> for PenaltyPlaybook {
         }
     }
 
+    fn unknown(&self, s: &Shootout, me: PlayerId) -> Option<Vec<(Stance, f64)>> {
+        let third = 1.0 / 3.0;
+        (me == s.keeper()).then(|| (0..3).map(|k| (Stance::Shoot(k), third)).collect())
+    }
+
     fn possession(&self, s: &Shootout, me: PlayerId) -> Option<u64> {
         (me == s.shooter() && !matches!(s.phase, Phase::Settle | Phase::Over))
             .then_some(u64::from(s.kicks))

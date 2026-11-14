@@ -112,7 +112,15 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
                 .map(|(s, p)| (s, p / mass))
                 .collect::<Vec<_>>()
         });
-        let outcomes = odds.as_ref().map_or(1, Vec::len).max(1);
+        let unknown = self
+            .playbook
+            .unknown(state, self.me)
+            .map(|uniform| self.insight.shot_odds(depth).unwrap_or(uniform));
+        let outcomes = odds
+            .as_ref()
+            .or(unknown.as_ref())
+            .map_or(1, Vec::len)
+            .max(1);
         let errors = self.own_errors(usize::try_from(fits).unwrap_or(usize::MAX) / outcomes);
         let rollouts = options
             .len()
@@ -124,8 +132,15 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
             let elapsed = current
                 .filter(|c| c.choice.id == choice.id)
                 .map_or(0, |c| now.saturating_sub(c.since));
-            let single = [(self.insight.stance(depth, choice), 1.0)];
-            let weighed = odds.as_deref().unwrap_or(&single);
+            let stance = self.insight.stance(depth, choice);
+            let single = [(stance, 1.0)];
+            let weighed = match (&odds, &unknown) {
+                (Some(odds), _) => odds.as_slice(),
+                (None, Some(unknown)) if matches!(stance, Stance::Naive | Stance::Shoot(_)) => {
+                    unknown.as_slice()
+                }
+                _ => &single,
+            };
             let mut score = 0.0;
             for &(own, w) in &errors {
                 for &(stance, p) in weighed {

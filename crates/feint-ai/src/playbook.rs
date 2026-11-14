@@ -90,6 +90,11 @@ pub trait Playbook<A: GameAdapter> {
     fn signal_classes(&self) -> u8 {
         3
     }
+
+    fn unknown(&self, state: &A::State, me: PlayerId) -> Option<Vec<(Stance, f64)>> {
+        let _ = (state, me);
+        None
+    }
 }
 
 pub trait Controller<A: GameAdapter> {

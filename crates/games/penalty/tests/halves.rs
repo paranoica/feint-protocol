@@ -30,10 +30,14 @@ fn halves_against_new_persons() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(2_000);
+    let level: u8 = std::env::var("HALVES_LEVEL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
     report(2, Advice::Count, matches);
-    let blind = report(5, Advice::Blind, matches);
-    report(5, Advice::Count, matches);
-    let oracle = report(5, Advice::Oracle, matches);
+    let blind = report(level, Advice::Blind, matches);
+    report(level, Advice::Count, matches);
+    let oracle = report(level, Advice::Oracle, matches);
     println!(
         "ceiling: oracle share {:.3} against blind {:.3}, gain {:+.3}",
         oracle.0,

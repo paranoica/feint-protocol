@@ -358,6 +358,9 @@ pub trait Predictor: Send {
     fn likely_real(&self, shown: u8) -> Option<u8>;
     fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>>;
     fn knowing_beats_reading(&self) -> bool;
+    fn shot_odds(&self) -> Option<Vec<(u8, f64)>> {
+        None
+    }
 }
 
 impl Predictor for OpponentModel {
@@ -379,5 +382,16 @@ impl Predictor for OpponentModel {
 
     fn knowing_beats_reading(&self) -> bool {
         OpponentModel::knowing_beats_reading(self)
+    }
+
+    fn shot_odds(&self) -> Option<Vec<(u8, f64)>> {
+        let total: f64 = self.shots.iter().map(|v| v + 1.0).sum();
+        (self.shot_events >= MIN_EVIDENCE).then(|| {
+            self.shots
+                .iter()
+                .enumerate()
+                .filter_map(|(k, v)| Some((u8::try_from(k).ok()?, (v + 1.0) / total)))
+                .collect()
+        })
     }
 }

@@ -286,6 +286,15 @@ impl<S: Clone> Insight<S> {
         }
     }
 
+    pub(crate) fn shot_odds(&self, depth: u8) -> Option<Vec<(Stance, f64)>> {
+        let odds = self.answers()?.shot_odds()?;
+        (depth >= 1).then(|| {
+            odds.into_iter()
+                .map(|(k, p)| (Stance::Shoot(k), p))
+                .collect()
+        })
+    }
+
     pub(crate) fn answers(&self) -> Option<&dyn Predictor> {
         match &self.advisor {
             Some(advisor) => Some(advisor.as_ref()),
