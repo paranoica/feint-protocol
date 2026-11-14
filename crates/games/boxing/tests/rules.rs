@@ -284,6 +284,10 @@ fn the_guard_holds_during_a_wind_up_and_opens_in_recovery() {
         events.contains(&Event::Blocked { by: 0 }),
         "the cancel recovery is over before a jab lands, so the guard is back: {events:?}"
     );
+    assert!(
+        b.fighters[1].cancelled,
+        "seat 1 has not struck since its cancel"
+    );
 }
 
 #[test]
@@ -306,6 +310,7 @@ fn a_cancel_turns_the_wind_up_into_a_recovery_without_a_strike() {
     );
     assert_eq!(b.fighters[0].feints, 1);
     assert_eq!(b.fighters[0].strikes, 0);
+    assert!(b.fighters[0].cancelled, "the last motion was a cancel");
     let events = run(&mut b, p.hook_windup);
     assert!(
         events.is_empty(),
@@ -313,6 +318,42 @@ fn a_cancel_turns_the_wind_up_into_a_recovery_without_a_strike() {
     );
     assert_eq!(b.score, [0, 0]);
     assert_eq!(b.fighters[0].stage, Stage::Idle);
+}
+
+fn cancelled(gap: f64) -> Bout {
+    let mut b = bout();
+    close(&mut b, gap);
+    attack(&mut b, 1, Kind::Hook, Height::High);
+    run(&mut b, 1);
+    let f = b.fighters[1];
+    b.order(1, f.x, f.guard, None, true);
+    run(&mut b, Params::default().cancel_recover + 1);
+    assert!(b.fighters[1].cancelled);
+    assert_eq!(b.fighters[1].stage, Stage::Idle);
+    b
+}
+
+#[test]
+fn a_strike_ends_the_cancelled_state_even_without_a_break() {
+    let p = Params::default();
+    let mut b = cancelled(p.jab_reach + 0.1);
+    hold(&mut b, 0, Height::High);
+    attack(&mut b, 1, Kind::Jab, Height::Low);
+    let events = run(&mut b, p.jab_windup + 1);
+    assert_eq!(events, vec![Event::Whiff { by: 1 }]);
+    assert!(!b.fighters[1].cancelled);
+}
+
+#[test]
+fn a_break_ends_the_cancelled_state() {
+    let p = Params::default();
+    let mut b = cancelled(0.7);
+    hold(&mut b, 1, Height::Low);
+    attack(&mut b, 0, Kind::Jab, Height::High);
+    let events = run(&mut b, p.jab_windup + 1);
+    assert_eq!(events, vec![Event::Hit { by: 0, points: 1 }]);
+    assert_eq!(b.fighters[1].strikes, 0);
+    assert!(!b.fighters[1].cancelled);
 }
 
 #[test]

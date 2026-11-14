@@ -6,7 +6,7 @@ use feint_protocol::{
 use crate::rules::{Body, Bout, Event, Height, Kind, Params, Phase, STAGE_LEN, Stage, facing};
 
 pub const GAME_VERSION: u32 = 1;
-pub const OBSERVATION_LEN: usize = 24;
+pub const OBSERVATION_LEN: usize = 26;
 pub const ACTION_LEN: usize = 5;
 const LEFT_CAP: u32 = 1 << 16;
 const COUNT_CAP: f64 = 1e6;
@@ -149,6 +149,8 @@ impl GameAdapter for Boxing {
         observation.extend([
             dim("my_feints", 0.0, COUNT_CAP as f32, "count"),
             dim("their_feints", 0.0, COUNT_CAP as f32, "count"),
+            dim("my_cancelled", 0.0, 1.0, "flag"),
+            dim("their_cancelled", 0.0, 1.0, "flag"),
         ]);
         spec.observation = Some(observation);
         spec.body_params = Some(vec![
@@ -241,6 +243,7 @@ impl GameAdapter for Boxing {
             state.extend([f64::from(f.strikes), last_code(f.last)].map(|v| v as f32));
         }
         state.extend([f64::from(mine.feints), f64::from(theirs.feints)].map(|v| v as f32));
+        state.extend([mine.cancelled, theirs.cancelled].map(|c| f32::from(u8::from(c))));
         let signals = out.opponent_signals.get_or_insert_with(Vec::new);
         signals.clear();
         signals.extend(windup_signal(theirs.stage, m * theirs.x));
@@ -286,6 +289,7 @@ impl GameAdapter for Boxing {
                 _ => None,
             };
             f.feints = count(feints);
+            f.cancelled = value(feints + 2) >= 0.5;
             f
         };
         s.fighters[usize::from(me)] = fighter(0, 2, 18, 22);

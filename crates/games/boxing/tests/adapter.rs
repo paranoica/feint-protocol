@@ -303,3 +303,19 @@ fn a_bot_match_against_the_human_model_is_deterministic() {
     assert!(first.2, "the match ends");
     assert!(first.1[0] + first.1[1] > 0, "someone lands a punch");
 }
+
+#[test]
+fn a_cancel_is_visible_and_reads_back() {
+    let mut game = mid_exchange();
+    send(&mut game, order(1, 0.0, Height::Low, None, true)).unwrap();
+    send(&mut game, order(0, 0.0, Height::High, None, false)).unwrap();
+    step(&mut game, 1);
+    assert!(game.live().fighters[1].cancelled);
+    for seat in [0u8, 1] {
+        let mut obs = ObservationT::default();
+        game.observe(game.live(), seat, &mut obs);
+        let back = game.state_from_observation(&obs, &mut ChaCha8Rng::seed_from_u64(0));
+        assert!(back.fighters[1].cancelled, "seat {seat}");
+        assert!(!back.fighters[0].cancelled, "seat {seat}");
+    }
+}

@@ -90,6 +90,7 @@ fn after_the_cancel_the_feint_jabs_the_other_height() {
     let mut s = bout(0.75);
     let c = feint(&s, Height::High);
     s.fighters[0].stage = Stage::Recover { left: 10 };
+    s.fighters[0].cancelled = true;
     let v = values(&s, &c, 120);
     assert_eq!([v[2], v[3]], [1.0, -1.0], "a low jab");
     let s = bout(0.6);
@@ -125,7 +126,16 @@ fn a_slow_fighter_still_opens_the_feint_with_the_hook() {
         [2.0, 1.0],
         "the walk took long, but no cancel yet"
     );
-    s.fighters[0].feints += 1;
+    s.fighters[0].cancelled = true;
     let v = values(&s, &c, 400);
     assert_eq!([v[2], v[3]], [1.0, -1.0], "after the cancel it jabs low");
+}
+
+#[test]
+fn the_feint_plan_does_not_depend_on_when_the_choice_was_made() {
+    let mut s = bout(0.6);
+    let held = feint(&s, Height::High);
+    s.fighters[0].cancelled = true;
+    let fresh = feint(&s, Height::High);
+    assert_eq!(values(&s, &held, 0), values(&s, &fresh, 0));
 }

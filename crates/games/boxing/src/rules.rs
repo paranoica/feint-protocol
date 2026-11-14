@@ -310,6 +310,7 @@ pub struct Fighter {
     pub strikes: u32,
     pub last: Option<Height>,
     pub feints: u32,
+    pub cancelled: bool,
 }
 
 impl Fighter {
@@ -325,6 +326,7 @@ impl Fighter {
             strikes: 0,
             last: None,
             feints: 0,
+            cancelled: false,
         }
     }
 
@@ -458,6 +460,7 @@ impl Bout {
             f.stage = Stage::Idle;
             f.queued = None;
             f.cancel = false;
+            f.cancelled = false;
         }
     }
 
@@ -521,6 +524,7 @@ impl Bout {
                 },
                 Stage::WindUp { .. } if cancel => {
                     f.feints += 1;
+                    f.cancelled = true;
                     events.push(Event::Feint { by: seat });
                     Stage::Recover {
                         left: p.cancel_recover,
@@ -528,6 +532,7 @@ impl Bout {
                 }
                 Stage::WindUp { kind, height, left } if left <= 1 => {
                     f.strikes += 1;
+                    f.cancelled = false;
                     f.last = Some(height);
                     let reached = gap <= p.reach(kind);
                     let blocked = reached && covers[1 - i] == Some(height);
@@ -639,6 +644,7 @@ impl Bout {
                 u64::from(f.strikes),
                 f.last.map_or(0, |h| h.code().to_bits()),
                 u64::from(f.feints),
+                u64::from(f.cancelled),
             ]);
             words.extend(f.stage.code().map(f64::to_bits));
             words.push(f.queued.map_or(0, |(k, h)| {

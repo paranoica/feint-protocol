@@ -176,7 +176,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
                     intent: 3,
                     deceptive: true,
                     horizon_ticks: length,
-                    param: [s.fighters[usize::from(me)].feints as f32, 0.0],
+                    param: [0.0, 0.0],
                     shown: Some(shown.class()),
                     real: Some(shown.other().class()),
                 });
@@ -216,7 +216,7 @@ impl Playbook<Boxing> for BoxingPlaybook {
                     (None, shown_for >= SHOW_MIN && bit)
                 }
                 Stage::Recover { .. } => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),
-                Stage::Idle if f64::from(f.feints) == f64::from(c.param[0]) => {
+                Stage::Idle if !f.cancelled => {
                     (Self::strike_at(&v, range, true, (Kind::Hook, shown)), false)
                 }
                 Stage::Idle => (Self::strike_at(&v, jab, true, (Kind::Jab, real)), false),
