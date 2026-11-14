@@ -1,4 +1,7 @@
 use feint_ai::search::{Budget, Game, Model, Prior, Setup, decide};
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use feint_protocol::{ChaCha8Rng, GameAdapter, ObservationT};
 use feint_turn::TurnPolicy;
 use rand_chacha::rand_core::RngCore;
@@ -258,4 +261,77 @@ pub fn choose<M: Model<Cards> + LayModel>(
     };
     let mut sample = |r: &mut ChaCha8Rng| world(game, obs, model, r);
     decide(&mut setup, &mut sample, rng)
+}
+
+#[derive(Clone)]
+pub struct PolicyModel {
+    policy: Rc<RefCell<TurnPolicy>>,
+}
+
+impl PolicyModel {
+    #[must_use]
+    pub fn new(policy: TurnPolicy) -> Self {
+        Self {
+            policy: Rc::new(RefCell::new(policy)),
+        }
+    }
+}
+
+impl Model<Cards> for PolicyModel {
+    fn policy(&self, game: &Cards, world: &Table, player: u8) -> Vec<(Move, f64)> {
+        let mut obs = ObservationT::default();
+        game.observe(world, player, &mut obs);
+        let features = obs.state.as_deref().unwrap_or_default();
+        let mask = obs.legal.as_deref().unwrap_or_default();
+        let mut probabilities = Vec::new();
+        self.policy
+            .borrow_mut()
+            .probabilities(features, mask, &mut probabilities);
+        probabilities
+            .iter()
+            .enumerate()
+            .filter(|&(i, &p)| p > 0.0 && mask.get(i) == Some(&1))
+            .filter_map(|(i, &p)| {
+                let m = game.moves.decode(i32::try_from(i).ok()?)?;
+                Some((m, f64::from(p)))
+            })
+            .collect()
+    }
+
+    fn observe(&mut self, _game: &Cards, _before: &Table, _player: u8, _action: Move) {}
+}
+
+impl LayModel for PolicyModel {
+    fn lay_odds(&self, params: &Params, hand: &Counts, claim: usize, n: u32) -> Vec<(Counts, f64)> {
+        let _ = claim;
+        let mut out = Vec::new();
+        let ranks = usize::from(params.ranks);
+        let mut current: Counts = [0; MAX_RANKS];
+        fn walk(
+            hand: &Counts,
+            ranks: usize,
+            from: usize,
+            left: u32,
+            current: &mut Counts,
+            out: &mut Vec<(Counts, f64)>,
+        ) {
+            if left == 0 {
+                out.push((*current, 1.0));
+                return;
+            }
+            for rank in from..ranks {
+                if current[rank] < hand[rank] {
+                    current[rank] += 1;
+                    walk(hand, ranks, rank, left - 1, current, out);
+                    current[rank] -= 1;
+                }
+            }
+        }
+        walk(hand, ranks, 0, n, &mut current, &mut out);
+        let k = out.len().max(1) as f64;
+        for o in &mut out {
+            o.1 = 1.0 / k;
+        }
+        out
+    }
 }
