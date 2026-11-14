@@ -248,8 +248,13 @@ async function loadCardRecord(nick: string) {
   const turn = ++recording;
   let text: string | null = null;
   try {
-    const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
-    text = mine.ok ? cardRecord(parseResults(await mine.json())) : null;
+    await saves.settled(SAVE_WAIT_MS);
+    if (nick.trim() === "") {
+      text = cardRecord([]);
+    } else {
+      const mine = await fetch(`/api/results?nick=${encodeURIComponent(nick)}`);
+      text = mine.ok ? cardRecord(parseResults(await mine.json())) : null;
+    }
   } catch {
     text = null;
   }
