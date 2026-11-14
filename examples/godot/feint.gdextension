@@ -1,0 +1,8 @@
+[configuration]
+
+entry_symbol = "feint_godot_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+linux.x86_64 = "res://bin/libfeint_godot.so"

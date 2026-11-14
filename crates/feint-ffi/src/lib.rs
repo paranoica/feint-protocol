@@ -15,6 +15,9 @@ pub const FEINT_ERR_BROKEN: isize = -4;
 pub const FEINT_ERR_PANIC: isize = -5;
 pub const FEINT_ACTION_MAX: usize = 256;
 pub const FEINT_OBSERVATION_MAX: usize = 1024;
+pub const FEINT_POSITIONS: usize = 12;
+pub const FEINT_LAYOUT: usize = 5;
+pub const FEINT_VALUES_MAX: usize = 16;
 
 pub struct FeintGame {
     game: AirHockey,
@@ -27,6 +30,10 @@ pub struct FeintBot {
     last: Option<(u64, Vec<u8>)>,
     broken: bool,
 }
+
+mod table;
+
+pub use table::{feint_action_encode, feint_game_layout, feint_game_positions};
 
 static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
 
@@ -54,7 +61,7 @@ unsafe fn input<'a>(ptr: *const u8, len: usize) -> Result<&'a [u8], isize> {
     Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
 }
 
-unsafe fn output(bytes: &[u8], out: *mut u8, cap: usize) -> isize {
+pub(crate) unsafe fn output(bytes: &[u8], out: *mut u8, cap: usize) -> isize {
     if bytes.len() > cap {
         return FEINT_ERR_SMALL;
     }
@@ -89,11 +96,11 @@ fn guarded(broken: &mut bool, f: impl FnOnce() -> isize) -> isize {
     }
 }
 
-fn read_only(f: impl FnOnce() -> isize) -> isize {
+pub(crate) fn read_only(f: impl FnOnce() -> isize) -> isize {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(FEINT_ERR_PANIC)
 }
 
-unsafe fn live<'a>(game: *const FeintGame) -> Result<&'a FeintGame, isize> {
+pub(crate) unsafe fn live<'a>(game: *const FeintGame) -> Result<&'a FeintGame, isize> {
     match unsafe { game.as_ref() } {
         None => Err(FEINT_ERR_NULL),
         Some(g) if g.broken => Err(FEINT_ERR_BROKEN),

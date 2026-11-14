@@ -17,6 +17,12 @@
 
 #define FEINT_OBSERVATION_MAX 1024
 
+#define FEINT_POSITIONS 12
+
+#define FEINT_LAYOUT 5
+
+#define FEINT_VALUES_MAX 16
+
 typedef struct FeintBot FeintBot;
 
 typedef struct FeintGame FeintGame;
@@ -54,3 +60,14 @@ ptrdiff_t feint_bot_tick(struct FeintBot *bot,
                          size_t len,
                          uint8_t *out,
                          size_t cap);
+
+ptrdiff_t feint_game_positions(const struct FeintGame *game, float *out, size_t cap);
+
+ptrdiff_t feint_game_layout(const struct FeintGame *game, float *out, size_t cap);
+
+ptrdiff_t feint_action_encode(uint64_t tick,
+                              uint8_t player,
+                              const float *values,
+                              size_t n,
+                              uint8_t *out,
+                              size_t cap);
