@@ -9,6 +9,7 @@ pub mod playbook;
 pub mod reaction;
 pub mod record;
 pub mod runner;
+pub mod search;
 pub mod standing;
 
 pub use anticipate::{Anticipation, clamp_to_space};

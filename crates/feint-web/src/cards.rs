@@ -4,12 +4,11 @@ use believe::ledger::{Fact, Ledger};
 use believe::{Believe, GAME_VERSION, Move, Params};
 use feint_ai::{Controller, Opponent, RunHeader, RunReport, Runner, encode_record};
 use feint_protocol::{ActionT, BodyParamsT, GameAdapter, GameSpecT, ObservationT, PlayerId};
-use feint_turn::TurnPilot;
 
 use crate::session::SessionError;
 
 pub const CARD_GAME_ID: &str = "believe";
-pub const CARD_LEVEL: u8 = 5;
+pub const CARD_LEVEL: u8 = believe::bot::POLICY_LEVEL;
 pub const CARD_CAP_TICKS: u64 = 36_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,7 +174,7 @@ pub struct CardMatch {
     runner: Option<Runner>,
     report: Option<RunReport>,
     human: Queued,
-    bot: TurnPilot,
+    bot: Box<dyn Controller<Believe>>,
     events: Vec<CardEvent>,
     read: usize,
     ledger: Ledger,
@@ -183,26 +182,41 @@ pub struct CardMatch {
 
 #[must_use]
 pub fn card_header(seed: u64, checkpoint: NonZeroU64) -> RunHeader {
+    card_header_at(seed, checkpoint, CARD_LEVEL)
+}
+
+#[must_use]
+pub fn card_header_at(seed: u64, checkpoint: NonZeroU64, level: u8) -> RunHeader {
     RunHeader {
         game_id: CARD_GAME_ID.into(),
         game_version: GAME_VERSION,
         seed,
         bodies: vec![BodyParamsT::default(); 2],
-        levels: [0, CARD_LEVEL],
+        levels: [0, level],
         opponent: Opponent::Trained(checkpoint),
     }
 }
 
 impl CardMatch {
     pub fn new(seed: u64, checkpoint: u64) -> Result<Self, SessionError> {
+        Self::with_level(seed, checkpoint, CARD_LEVEL)
+    }
+
+    pub fn with_level(seed: u64, checkpoint: u64, level: u8) -> Result<Self, SessionError> {
         let id = NonZeroU64::new(checkpoint).ok_or(SessionError::Checkpoint)?;
-        let policy = believe::trained::policy(checkpoint).map_err(|_| SessionError::Checkpoint)?;
+        let mut bot = believe::bot::for_level(level, checkpoint).map_err(|e| match e {
+            believe::bot::BotError::Level => SessionError::Level,
+            believe::bot::BotError::Checkpoint(_) => SessionError::Checkpoint,
+        })?;
         let params = Params::default();
         let mut game = Believe::new(params.clone()).map_err(|_| SessionError::Unsupported)?;
         let mut human = Queued::default();
-        let mut bot = TurnPilot::new(policy);
-        let runner = Runner::start(&mut game, [&mut human, &mut bot], card_header(seed, id))
-            .map_err(|_| SessionError::Unsupported)?;
+        let runner = Runner::start(
+            &mut game,
+            [&mut human, bot.as_mut()],
+            card_header_at(seed, id, level),
+        )
+        .map_err(|_| SessionError::Unsupported)?;
         Ok(Self {
             game,
             ledger: Ledger::new(&params),
@@ -277,7 +291,7 @@ impl CardMatch {
             let Some(runner) = self.runner.as_mut() else {
                 break;
             };
-            let more = runner.step(&mut self.game, [&mut self.human, &mut self.bot]);
+            let more = runner.step(&mut self.game, [&mut self.human, self.bot.as_mut()]);
             let fresh: Vec<ActionT> = runner.actions()[self.read..].to_vec();
             self.read = runner.actions().len();
             let capped = runner.ticks() >= CARD_CAP_TICKS;
@@ -287,7 +301,7 @@ impl CardMatch {
             if !more || capped || self.game.result().is_some() {
                 if let Some(runner) = self.runner.take() {
                     self.report =
-                        Some(runner.finish(&mut self.game, [&mut self.human, &mut self.bot]));
+                        Some(runner.finish(&mut self.game, [&mut self.human, self.bot.as_mut()]));
                 }
                 break;
             }

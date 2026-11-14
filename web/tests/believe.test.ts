@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { card_checkpoints, card_games, initSync, WebCards } from "../src/wasm/feint_web.js";
+import { card_checkpoints, card_games, card_levels, initSync, WebCards } from "../src/wasm/feint_web.js";
 import {
   callIndex,
+  cardLevels,
   cardRecord,
   cardsWord,
   eventText,
@@ -109,13 +110,40 @@ test("a move is found only among the legal ones", () => {
   assert.equal(callIndex([4, 9], describe), null);
 });
 
-test("the card screen opens from the hub and returns to it", () => {
+test("the card screen opens from the hub at a level and returns to it", () => {
   const hub = first("ann");
-  assert.deepEqual(cards(hub, "  bob "), { name: "cards", nick: "bob" });
+  assert.deepEqual(cards(hub, "  bob ", 7), { name: "cards", nick: "bob", level: 7 });
   const game = start(hub, "airhockey", 3, "ann");
-  assert.equal(cards(game, "bob"), game, "not from a running match");
-  assert.deepEqual(leaveCards({ name: "cards", nick: "bob" }), { name: "level", nick: "bob" });
+  assert.equal(cards(game, "bob", 7), game, "not from a running match");
+  assert.deepEqual(leaveCards({ name: "cards", nick: "bob", level: 7 }), { name: "level", nick: "bob" });
   assert.equal(leaveCards(hub), hub);
+});
+
+test("every card level the bot offers has a name, the policy first", () => {
+  const offered = Array.from(card_levels());
+  assert.deepEqual(offered, [5, 6, 7, 8]);
+  const named = cardLevels(offered);
+  assert.deepEqual(
+    named.map((l) => l.level),
+    [5, 6, 7, 8],
+  );
+  assert.equal(named[0].label, "Обученный бот");
+  assert.equal(named[3].label, "Думает на 3 хода");
+  assert.deepEqual(cardLevels([5, 9]).map((l) => l.level), [5], "an unknown level is not offered");
+});
+
+test("a searched card level plays a legal move in wasm", () => {
+  const m = WebCards.with_level(0xbe1e, card_checkpoints()[0], 6);
+  let ticks = 0;
+  while (!m.finished() && ticks < 600) {
+    m.advance(1);
+    ticks += 1;
+    if (m.my_turn()) {
+      break;
+    }
+  }
+  assert.ok(m.my_turn() || m.finished());
+  assert.throws(() => WebCards.with_level(1, card_checkpoints()[0], 4));
 });
 
 test("a whole card match plays through the screen's helpers in wasm", () => {

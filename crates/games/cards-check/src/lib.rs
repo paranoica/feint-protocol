@@ -81,6 +81,55 @@ pub fn believe_digest() -> u64 {
     h
 }
 
+pub const SEARCH_LEVELS: [u8; 2] = [6, 8];
+
+fn searched(level: u8, seed: u64) -> Option<(u64, u64)> {
+    let checkpoint = believe::trained::CHECKPOINTS.first()?.id;
+    let mut game = Believe::new(Params::default()).ok()?;
+    let mut bot = believe::bot::for_level(level, checkpoint).ok()?;
+    let mut rival = Scripted::new(Style::Counter);
+    let header = RunHeader {
+        game_id: "believe".into(),
+        game_version: believe::GAME_VERSION,
+        seed,
+        bodies: bodies().to_vec(),
+        levels: [level, 0],
+        opponent: Opponent::HandMade,
+    };
+    let report = run_match(&mut game, [bot.as_mut(), &mut rival], header, 10_000).ok()?;
+    let mine = report.actions.iter().filter(|a| a.player == 0).count() as u64;
+    Some((report.digest, mine))
+}
+
+#[must_use]
+pub fn search_digest() -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325_u64;
+    for level in SEARCH_LEVELS {
+        match searched(level, u64::from(level)) {
+            Some((digest, mine)) => h = fold(fold(h, digest), mine),
+            None => return 0,
+        }
+    }
+    h
+}
+
+#[must_use]
+pub fn search_decisions(level: u8) -> u64 {
+    searched(level, 7).map_or(0, |(_, mine)| mine)
+}
+
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn run_search_digest() -> u64 {
+    search_digest()
+}
+
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn run_search_decisions(level: u32) -> u64 {
+    u8::try_from(level).map_or(0, search_decisions)
+}
+
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn run_kuhn_digest() -> u64 {
@@ -103,5 +152,11 @@ mod tests {
         assert_ne!(believe_digest(), 0);
         assert_eq!(kuhn_digest(), kuhn_digest());
         assert_eq!(believe_digest(), believe_digest());
+    }
+
+    #[test]
+    fn a_searched_level_plays_and_an_unknown_level_does_not() {
+        assert!(search_decisions(6) > 0);
+        assert_eq!(search_decisions(4), 0);
     }
 }

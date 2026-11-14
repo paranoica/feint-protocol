@@ -14,7 +14,11 @@ fn next(state: &mut u64) -> u64 {
 }
 
 fn played(seed: u64, moves: usize) -> CardMatch {
-    let mut m = CardMatch::new(seed, SHIPPED).unwrap();
+    played_at(seed, moves, feint_web::cards::CARD_LEVEL)
+}
+
+fn played_at(seed: u64, moves: usize, level: u8) -> CardMatch {
+    let mut m = CardMatch::with_level(seed, SHIPPED, level).unwrap();
     let mut rng = seed | 1;
     let mut made = 0;
     let mut ticks = 0;
@@ -120,7 +124,7 @@ fn a_card_record_with_another_header_is_refused() {
             VerifyError::Level,
         ),
         (
-            forge(&bytes, |r| r.header.levels = [0, 6]),
+            forge(&bytes, |r| r.header.levels = [0, 9]),
             VerifyError::Level,
         ),
         (
@@ -182,4 +186,46 @@ fn a_card_record_with_a_stranger_seat_or_a_double_move_is_refused() {
         r.actions.insert(human, copy);
     });
     assert_eq!(verify(&twice, None).err(), Some(VerifyError::Twice));
+}
+
+#[test]
+fn a_searched_card_match_verifies_and_only_as_its_own_level() {
+    let m = played_at(5, usize::MAX, 6);
+    assert!(m.finished());
+    let bytes = m.record();
+    let record = decode_record(&bytes).unwrap();
+    assert_eq!(record.header.levels, [0, 6]);
+    let verified = verify(&bytes, None).unwrap_or_else(|e| panic!("{e:?}"));
+    assert!(verified.finished);
+    assert_eq!(verified.digest, m.digest());
+    assert_eq!(
+        verify(&forge(&bytes, |r| r.header.levels = [0, 5]), None).err(),
+        Some(VerifyError::Mismatch)
+    );
+}
+
+#[test]
+fn a_card_bot_of_an_unknown_level_is_not_built() {
+    assert!(CardMatch::with_level(1, SHIPPED, 4).is_err());
+    assert!(CardMatch::with_level(1, SHIPPED, 9).is_err());
+    assert!(CardMatch::with_level(1, SHIPPED, 8).is_ok());
+}
+
+#[test]
+fn a_card_record_stops_replaying_at_its_first_wrong_bot_move() {
+    let m = played_at(5, 4, 6);
+    let bytes = m.record();
+    let mut record = decode_record(&bytes).unwrap();
+    let first = record.actions.iter().position(|a| a.player == 1).unwrap();
+    record.actions[first].discrete = (record.actions[first].discrete + 1) % 276;
+    let started = std::time::Instant::now();
+    assert_eq!(
+        verify(&encode_record(&record), None).err(),
+        Some(VerifyError::Mismatch)
+    );
+    let wrong = started.elapsed();
+    let started = std::time::Instant::now();
+    assert!(verify(&bytes, None).is_ok());
+    let whole = started.elapsed();
+    assert!(wrong * 4 < whole, "{wrong:?} vs {whole:?}");
 }

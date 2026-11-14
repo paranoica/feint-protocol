@@ -6,8 +6,7 @@ use feint_ai::{
     decode_record, encode_record,
 };
 use feint_protocol::ActionT;
-use feint_turn::TurnPilot;
-use feint_web::cards::{CARD_CAP_TICKS, CARD_GAME_ID, CARD_LEVEL, card_header};
+use feint_web::cards::{CARD_CAP_TICKS, CARD_GAME_ID, card_header_at};
 use feint_web::{Column, HubGame, Play, Replayer, SessionError};
 use penalty::Penalty;
 
@@ -212,24 +211,33 @@ fn verify_cards(
     let Opponent::Trained(checkpoint) = record.header.opponent else {
         return Err(VerifyError::Level);
     };
-    if record.header.levels != [0, CARD_LEVEL] {
+    let [0, level] = record.header.levels else {
         return Err(VerifyError::Level);
-    }
+    };
     if record.ticks == 0 || record.ticks > CARD_CAP_TICKS {
         return Err(VerifyError::Ticks);
     }
-    let policy = believe::trained::policy(checkpoint.get()).map_err(|_| VerifyError::Checkpoint)?;
-    let header = card_header(record.header.seed, checkpoint);
+    let mut bot = believe::bot::for_level(level, checkpoint.get()).map_err(|e| match e {
+        believe::bot::BotError::Level => VerifyError::Level,
+        believe::bot::BotError::Checkpoint(_) => VerifyError::Checkpoint,
+    })?;
+    let header = card_header_at(record.header.seed, checkpoint, level);
     if header != record.header {
         return Err(VerifyError::Bodies);
     }
     let mut game = Believe::default();
     let mut human = Replayer::new(human_actions(&record)?);
-    let mut bot = TurnPilot::new(policy);
-    let mut runner = Runner::start(&mut game, [&mut human, &mut bot], header)
+    let mut runner = Runner::start(&mut game, [&mut human, bot.as_mut()], header)
         .map_err(|_| VerifyError::Bodies)?;
-    while runner.ticks() < record.ticks && runner.step(&mut game, [&mut human, &mut bot]) {}
-    let report = runner.finish(&mut game, [&mut human, &mut bot]);
+    let mut seen = 0;
+    while runner.ticks() < record.ticks && runner.step(&mut game, [&mut human, bot.as_mut()]) {
+        let fresh = &runner.actions()[seen..];
+        if record.actions.get(seen..seen + fresh.len()) != Some(fresh) {
+            return Err(VerifyError::Mismatch);
+        }
+        seen = runner.actions().len();
+    }
+    let report = runner.finish(&mut game, [&mut human, bot.as_mut()]);
     if encode_record(&report.record()) != bytes {
         return Err(VerifyError::Mismatch);
     }

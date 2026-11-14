@@ -423,6 +423,12 @@ pub fn card_games() -> Vec<String> {
 
 #[must_use]
 #[wasm_bindgen]
+pub fn card_levels() -> Vec<u8> {
+    believe::bot::LEVELS.to_vec()
+}
+
+#[must_use]
+#[wasm_bindgen]
 pub fn card_checkpoints() -> Vec<String> {
     believe::trained::CHECKPOINTS
         .iter()
@@ -442,6 +448,14 @@ impl WebCards {
         let checkpoint = parse_checkpoint(checkpoint)
             .ok_or_else(|| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
         let inner = crate::cards::CardMatch::new(u64::from(seed), checkpoint)
+            .map_err(|e| JsValue::from_str(&format!("no card bot: {e:?}")))?;
+        Ok(Self { inner })
+    }
+
+    pub fn with_level(seed: u32, checkpoint: &str, level: u8) -> Result<WebCards, JsValue> {
+        let checkpoint = parse_checkpoint(checkpoint)
+            .ok_or_else(|| JsValue::from_str("the checkpoint is a 16-digit hex id"))?;
+        let inner = crate::cards::CardMatch::with_level(u64::from(seed), checkpoint, level)
             .map_err(|e| JsValue::from_str(&format!("no card bot: {e:?}")))?;
         Ok(Self { inner })
     }

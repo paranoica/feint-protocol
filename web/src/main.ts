@@ -1,4 +1,4 @@
-import init, { card_checkpoints, card_games, checkpoints, games, WebCards, WebMatch } from "./wasm/feint_web.js";
+import init, { card_checkpoints, card_games, card_levels, checkpoints, games, WebCards, WebMatch } from "./wasm/feint_web.js";
 import { due, makeClock } from "./clock.ts";
 import { pixels } from "./geometry.ts";
 import { countdown } from "./hud.ts";
@@ -20,7 +20,7 @@ import {
 } from "./screens.ts";
 import { profileWanted, trainedCheckpoint, trainedOffered, type BotKind } from "./bots.ts";
 import { GAMES, gameById } from "./games/index.ts";
-import { CARD_TICK_MS, CardBoard, cardRecord, ending, HOW_TO_PLAY } from "./games/believe.ts";
+import { CARD_START_LEVEL, CARD_TICK_MS, CardBoard, cardLevels, cardRecord, ending, HOW_TO_PLAY } from "./games/believe.ts";
 import { fakeLinks, parseComparison, parseFakes, parseResults, renderComparison, renderFakes } from "./compare.ts";
 import type { GameView, Pair } from "./games/types.ts";
 
@@ -368,8 +368,8 @@ function cardTick(ticket: Ticket | null, nick: string, id: number) {
   }
 }
 
-async function beginCards() {
-  const next = cards(screen, $<HTMLInputElement>("nick").value);
+async function beginCards(level: number) {
+  const next = cards(screen, $<HTMLInputElement>("nick").value, level);
   const checkpoint = Array.from(card_checkpoints())[0];
   if (next.name !== "cards" || starting || checkpoint === undefined) {
     return;
@@ -381,7 +381,7 @@ async function beginCards() {
     await saves.settled(SAVE_WAIT_MS);
     ticket = await fetchTicket();
     stopCards();
-    table = new WebCards(ticket?.seed ?? localSeed(Math.random), checkpoint);
+    table = WebCards.with_level(ticket?.seed ?? localSeed(Math.random), checkpoint, next.level);
   } catch {
     stopCards();
     return;
@@ -389,7 +389,8 @@ async function beginCards() {
     starting = false;
   }
   board = new CardBoard($("cards-board"), table);
-  $("cards-who").textContent = next.nick;
+  const named = cardLevels([next.level])[0];
+  $("cards-who").textContent = named ? `${next.nick} · ${named.label}` : next.nick;
   $("cards-end").hidden = true;
   $("cards-saved").textContent = "";
   $("cards-verdict").textContent = "";
@@ -615,11 +616,17 @@ function buildCardsCard(holder: HTMLElement) {
     list.append(item);
   }
   rules.append(summary, list);
-  const play = document.createElement("button");
-  play.className = "primary";
-  play.dataset.cards = "believe";
-  play.textContent = "Играть";
-  play.addEventListener("click", () => void beginCards());
+  const play = document.createElement("div");
+  play.className = "levels";
+  for (const { level, label } of cardLevels(Array.from(card_levels()))) {
+    const button = document.createElement("button");
+    button.className = level === CARD_START_LEVEL ? "primary" : "";
+    button.dataset.cards = "believe";
+    button.dataset.level = String(level);
+    button.textContent = label;
+    button.addEventListener("click", () => void beginCards(level));
+    play.append(button);
+  }
   const record = document.createElement("p");
   record.id = "cards-record";
   record.className = "hint";
