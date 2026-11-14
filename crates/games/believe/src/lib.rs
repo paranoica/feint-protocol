@@ -1,4 +1,5 @@
 mod adapter;
+pub mod bot;
 pub mod check;
 pub mod ledger;
 pub mod minds;

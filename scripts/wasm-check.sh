@@ -33,6 +33,20 @@ if [[ "$cards_debug" != "$cards_release" || "$cards_debug" != "$cards_wasm" ]]; 
   exit 1
 fi
 
+search_release="$(cargo run -q --locked --release -p cards-check -- search 2>/dev/null)"
+read -r search_wasm search_ms < <(node crates/games/cards-check/search.mjs \
+  target/wasm32-unknown-unknown/release/cards_check.wasm)
+echo "card search native release: $search_release"
+echo "card search wasm32:         $search_wasm (slowest level $search_ms ms per move)"
+if [[ "$search_release" != "$search_wasm" ]]; then
+  echo "the card search is not deterministic across builds" >&2
+  exit 1
+fi
+if (( search_ms > 250 )); then
+  echo "a card search move takes $search_ms ms in wasm, over 250" >&2
+  exit 1
+fi
+
 cargo build -q --locked --release -p feint-ml-check --lib --target wasm32-unknown-unknown
 ml_debug="$(cargo run -q --locked -p feint-ml-check)"
 ml_release="$(cargo run -q --locked --release -p feint-ml-check)"
