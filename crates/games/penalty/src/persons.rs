@@ -1,13 +1,15 @@
 use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
-use feint_ai::{Bot, Difficulty, Opponent, Predictor, RunHeader, Runner, run_match};
+use feint_ai::{Advisor, Bot, Difficulty, Opponent, Predictor, RunHeader, Runner, run_match};
 use feint_protocol::{GameAdapter, PlayerId};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 
+use crate::context::{KickToken, Tokenizer};
 pub use crate::human::{Habits, Kick};
 use crate::human::{Human, human_body};
-use crate::{Params, Penalty, PenaltyPlaybook};
+use crate::{Params, Penalty, PenaltyPlaybook, Shootout};
 
 pub const TEST_PERSONS: u64 = 1 << 40;
 
@@ -39,6 +41,10 @@ impl Habits {
 }
 
 pub struct Blind;
+
+impl Advisor<Shootout> for Blind {}
+
+impl Advisor<Shootout> for Oracle {}
 
 impl Predictor for Blind {
     fn likely_shot(&self) -> Option<u8> {
@@ -271,4 +277,80 @@ pub fn digest_against(d: Difficulty, mut human: Human, seed: u64) -> u64 {
     run_match(&mut game, [&mut bot, &mut human], head, 240 * 900)
         .unwrap_or_else(|e| panic!("a match runs: {e:?}"))
         .digest
+}
+
+struct Recorder {
+    inner: Box<dyn Advisor<Shootout>>,
+    tokens: Arc<Mutex<Tokenizer>>,
+}
+
+impl Predictor for Recorder {
+    fn likely_shot(&self) -> Option<u8> {
+        self.inner.likely_shot()
+    }
+
+    fn likely_cover(&self, shown: u8) -> Option<u8> {
+        self.inner.likely_cover(shown)
+    }
+
+    fn likely_real(&self, shown: u8) -> Option<u8> {
+        self.inner.likely_real(shown)
+    }
+
+    fn their_odds(&self, shown: u8) -> Option<Vec<(Option<u8>, f64)>> {
+        self.inner.their_odds(shown)
+    }
+
+    fn knowing_beats_reading(&self) -> bool {
+        self.inner.knowing_beats_reading()
+    }
+
+    fn shot_odds(&self) -> Option<Vec<(u8, f64)>> {
+        self.inner.shot_odds()
+    }
+}
+
+impl Advisor<Shootout> for Recorder {
+    fn see(&mut self, state: &Shootout, me: PlayerId) {
+        self.inner.see(state, me);
+        if let Ok(mut t) = self.tokens.lock() {
+            t.see(state, me);
+        }
+    }
+}
+
+#[must_use]
+pub fn match_tokens(
+    d: Difficulty,
+    advice: Advice,
+    habits: Habits,
+    seat: PlayerId,
+    seed: u64,
+) -> Vec<KickToken> {
+    let params = measured_params();
+    let mut game = Penalty::new(params.clone(), 5);
+    let spec = game.spec();
+    let mut bot = Bot::new(d, PenaltyPlaybook::new(params), &spec)
+        .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
+    let inner: Box<dyn Advisor<Shootout>> = match advice {
+        Advice::Oracle => Box::new(Oracle::new(habits)),
+        Advice::Blind | Advice::Count => Box::new(Blind),
+    };
+    let tokens = Arc::new(Mutex::new(Tokenizer::default()));
+    bot.advise(Box::new(Recorder {
+        inner,
+        tokens: Arc::clone(&tokens),
+    }));
+    let mut human = Human::with_habits(habits);
+    let head = header(d, &game, seat, seed);
+    let played = if seat == 0 {
+        run_match(&mut game, [&mut bot, &mut human], head, 240 * 900)
+    } else {
+        run_match(&mut game, [&mut human, &mut bot], head, 240 * 900)
+    };
+    played.unwrap_or_else(|e| panic!("a measured match runs: {e:?}"));
+    tokens
+        .lock()
+        .map(|t| t.tokens().to_vec())
+        .unwrap_or_default()
 }

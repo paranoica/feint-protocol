@@ -9,7 +9,7 @@ use crate::anticipate::{Anticipation, clamp_to_space};
 use crate::difficulty::Difficulty;
 use crate::insight::{Insight, STEADY_SAMPLES, Seen};
 use crate::long_game::Plan;
-use crate::model::{Predictor, Profile, ProfileError};
+use crate::model::{Advisor, Profile, ProfileError};
 use crate::playbook::{Choice, Controller, Playbook};
 use crate::reaction::{Cadence, ReactionBuffer, delay_ticks};
 
@@ -136,7 +136,7 @@ impl<A: GameAdapter, P: Playbook<A>> Bot<A, P> {
         self.insight.load_profile(profile, game_id)
     }
 
-    pub fn advise(&mut self, advisor: Box<dyn Predictor>) {
+    pub fn advise(&mut self, advisor: Box<dyn Advisor<A::State>>) {
         self.insight.advise(advisor);
     }
 

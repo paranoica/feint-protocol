@@ -352,6 +352,14 @@ impl OpponentModel {
     }
 }
 
+pub trait Advisor<S>: Predictor {
+    fn see(&mut self, state: &S, me: feint_protocol::PlayerId) {
+        let _ = (state, me);
+    }
+
+    fn new_match(&mut self) {}
+}
+
 pub trait Predictor: Send {
     fn likely_shot(&self) -> Option<u8>;
     fn likely_cover(&self, shown: u8) -> Option<u8>;

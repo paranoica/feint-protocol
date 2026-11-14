@@ -69,7 +69,7 @@ impl PenaltyPlaybook {
         }
     }
 
-    fn lean_class(lean: f64) -> Option<u8> {
+    pub(crate) fn lean_class(lean: f64) -> Option<u8> {
         (lean.abs() > READ_LEAN).then_some(if lean < 0.0 { 0 } else { 2 })
     }
 
