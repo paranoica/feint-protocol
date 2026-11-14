@@ -200,7 +200,7 @@ struct Answers {
     follow: f64,
 }
 
-pub const CONFIDENCE: f64 = 0.6;
+pub const CONFIDENCE: f64 = 0.5;
 
 pub struct ContextAdvisor {
     model: std::sync::Arc<feint_context::ContextModel>,
