@@ -2,8 +2,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use penalty::context::{KICKS, KickToken, TARGETS, TOKEN_WIDTH, npy_f32, npy_i8};
-use penalty::persons::{Advice, Habits, match_tokens};
+use std::sync::Arc;
+
+use feint_context::ContextModel;
+use penalty::context::{
+    ContextAdvisor, KICKS, KickToken, LAYOUT, TARGETS, TOKEN_WIDTH, npy_f32, npy_i8,
+};
+use penalty::persons::{Advice, Habits, match_tokens, match_tokens_with};
 
 fn habit_row(h: &Habits) -> [f32; 9] {
     [
@@ -21,9 +26,29 @@ fn habit_row(h: &Habits) -> [f32; 9] {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [out, first, count, threads] = args.as_slice() else {
-        eprintln!("usage: context-data <out dir> <first person> <persons> <threads>");
-        return ExitCode::FAILURE;
+    let (out, first, count, threads, model) = match args.as_slice() {
+        [o, f, c, t] => (o, f, c, t, None),
+        [o, f, c, t, m] => (o, f, c, t, Some(m)),
+        _ => {
+            eprintln!(
+                "usage: context-data <out dir> <first person> <persons> <threads> [context model]"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let model = match model.map(std::fs::read) {
+        None => None,
+        Some(Ok(bytes)) => match ContextModel::from_safetensors(&bytes, LAYOUT) {
+            Ok(m) => Some(Arc::new(m)),
+            Err(e) => {
+                eprintln!("context model: {e:?}");
+                return ExitCode::FAILURE;
+            }
+        },
+        Some(Err(e)) => {
+            eprintln!("context model: {e}");
+            return ExitCode::FAILURE;
+        }
     };
     let (Ok(first), Ok(count), Ok(threads)) = (
         first.parse::<u64>(),
@@ -38,17 +63,39 @@ fn main() -> ExitCode {
     let chunks: Vec<Vec<(u64, Vec<KickToken>)>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|t| {
+                let model = model.clone();
                 scope.spawn(move || {
                     (first + t..first + count)
                         .step_by(threads as usize)
                         .map(|id| {
-                            let advice = if id % 2 == 0 {
-                                Advice::Blind
-                            } else {
-                                Advice::Oracle
-                            };
+                            let habits = Habits::person(id);
                             let seat = u8::from(id % 4 >= 2);
-                            (id, match_tokens(4, advice, Habits::person(id), seat, id))
+                            let tokens = match (&model, id % 3) {
+                                (Some(m), 0) => match_tokens_with(
+                                    4,
+                                    Box::new(ContextAdvisor::new(Arc::clone(m))),
+                                    habits,
+                                    seat,
+                                    id,
+                                ),
+                                (Some(_), r) => {
+                                    let advice = if r == 1 {
+                                        Advice::Oracle
+                                    } else {
+                                        Advice::Blind
+                                    };
+                                    match_tokens(4, advice, habits, seat, id)
+                                }
+                                (None, _) => {
+                                    let advice = if id % 2 == 0 {
+                                        Advice::Blind
+                                    } else {
+                                        Advice::Oracle
+                                    };
+                                    match_tokens(4, advice, habits, seat, id)
+                                }
+                            };
+                            (id, tokens)
                         })
                         .collect::<Vec<_>>()
                 })

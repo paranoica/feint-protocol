@@ -177,7 +177,9 @@ def shot_curves(targets: np.ndarray, habits: np.ndarray) -> dict[str, list[float
 def train(args: argparse.Namespace) -> None:
     torch.manual_seed(args.seed)
     torch.set_num_threads(args.threads)
-    all_tokens, all_targets, _ = load_data(args.data)
+    parts = [load_data(folder) for folder in args.data]
+    all_tokens = np.concatenate([p[0] for p in parts])
+    all_targets = np.concatenate([p[1] for p in parts])
     held = max(1, len(all_tokens) // 20)
     tokens, targets = all_tokens[held:], all_targets[held:]
     val_tokens, val_targets = all_tokens[:held], all_targets[:held]
@@ -227,7 +229,7 @@ def train(args: argparse.Namespace) -> None:
 
 def parse(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="feint_train.context")
-    p.add_argument("--data", type=Path, required=True)
+    p.add_argument("--data", type=Path, nargs="+", required=True)
     p.add_argument("--test", type=Path, required=True)
     p.add_argument("--out", type=Path, default=Path("runs/context"))
     p.add_argument("--epochs", type=int, default=30)

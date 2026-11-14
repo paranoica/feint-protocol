@@ -437,17 +437,36 @@ pub fn match_tokens(
     seat: PlayerId,
     seed: u64,
 ) -> Vec<KickToken> {
-    recorded(level, advice, habits, seat, seed, false).0
+    recorded(
+        level,
+        advisor_for(advice, habits),
+        habits,
+        seat,
+        seed,
+        false,
+    )
+    .0
+}
+
+#[must_use]
+pub fn match_tokens_with(
+    level: u8,
+    inner: Box<dyn Advisor<Shootout>>,
+    habits: Habits,
+    seat: PlayerId,
+    seed: u64,
+) -> Vec<KickToken> {
+    recorded(level, Some(inner), habits, seat, seed, false).0
 }
 
 #[must_use]
 pub fn match_states(level: u8, habits: Habits, seat: PlayerId, seed: u64) -> Vec<Shootout> {
-    recorded(level, Advice::Blind, habits, seat, seed, true).1
+    recorded(level, Some(Box::new(Blind)), habits, seat, seed, true).1
 }
 
 fn recorded(
     level: u8,
-    advice: Advice,
+    inner: Option<Box<dyn Advisor<Shootout>>>,
     habits: Habits,
     seat: PlayerId,
     seed: u64,
@@ -458,13 +477,9 @@ fn recorded(
     let spec = game.spec();
     let mut bot = Bot::new(preset(level), PenaltyPlaybook::new(params), &spec)
         .unwrap_or_else(|e| panic!("a preset difficulty builds a bot: {e:?}"));
-    let inner: Box<dyn Advisor<Shootout>> = match advice {
-        Advice::Oracle => Box::new(Oracle::new(habits)),
-        Advice::Blind => Box::new(Blind),
-        Advice::Count => {
-            panic!("recording replaces the count model's answers: ask for Blind or Oracle")
-        }
-    };
+    let inner = inner.unwrap_or_else(|| {
+        panic!("recording replaces the count model's answers: ask for an advisor")
+    });
     let tokens = Arc::new(Mutex::new(Tokenizer::default()));
     let states = keep_states.then(|| Arc::new(Mutex::new(Vec::new())));
     bot.advise(Box::new(Recorder {
