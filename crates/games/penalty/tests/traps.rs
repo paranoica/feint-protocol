@@ -157,3 +157,19 @@ fn the_log_holds_every_kick_with_the_outcome_that_was_counted() {
         assert_eq!(first_shooter, id % 2 == 1);
     }
 }
+
+#[test]
+fn equal_rates_make_an_even_shootout_whoever_shoots_first() {
+    use penalty::traps::{Odds, Rules};
+    for bot in [0, 1] {
+        let odds = Odds::new(Rules::SHOOTOUT, bot, 0.7, 0.7);
+        assert!((odds.at(0, [0, 0]) - 0.5).abs() < 1e-12, "{bot}");
+        let sure = Odds::new(Rules::SHOOTOUT, bot, 1.0, 0.0);
+        assert!((sure.at(0, [0, 0]) - 1.0).abs() < 1e-12, "{bot}");
+    }
+    let rules = Rules::SHOOTOUT;
+    assert!(rules.decided(6, [3, 0]));
+    assert!(!rules.decided(6, [2, 0]));
+    assert!(rules.decided(9, [4, 2]) && !rules.decided(9, [3, 2]));
+    assert!(rules.decided(12, [6, 5]) && !rules.decided(12, [6, 6]) && rules.decided(20, [9, 9]));
+}

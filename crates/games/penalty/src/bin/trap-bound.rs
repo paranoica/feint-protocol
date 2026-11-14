@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use penalty::styles::{KeeperStyle, Mind, ShooterStyle};
-use penalty::traps::{Abstract, Table, play};
+use penalty::traps::{Abstract, Odds, Rules, Shootout, Table, play};
 
-const DEPTHS: [u32; 3] = [1, 2, 3];
+const BOT_SCORES: f64 = 0.85;
+const PERSON_SCORES: f64 = 0.15;
 
 fn keeper_name(m: &Mind) -> &'static str {
     match m.keeper {
@@ -50,9 +51,9 @@ fn rate(won: u32, n: u32) -> f64 {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [first, count, deception, react, family] = args.as_slice() else {
+    let [first, count, deception, react, family, mode] = args.as_slice() else {
         eprintln!(
-            "usage: trap-bound <first person> <persons> <deception> <react save> <person|held-out>"
+            "usage: trap-bound <first person> <persons> <deception> <react save> <person|held-out> <share|wins>"
         );
         return ExitCode::FAILURE;
     };
@@ -74,6 +75,21 @@ fn main() -> ExitCode {
         }
     };
     let table = Table { react_save: react };
+    let wins = match mode.as_str() {
+        "share" => false,
+        "wins" => true,
+        _ => {
+            eprintln!("mode is share or wins");
+            return ExitCode::FAILURE;
+        }
+    };
+    let odds = [
+        Odds::new(Rules::SHOOTOUT, 0, BOT_SCORES, PERSON_SCORES),
+        Odds::new(Rules::SHOOTOUT, 1, BOT_SCORES, PERSON_SCORES),
+    ];
+    let odds = &odds;
+    let depths: &[u32] = if wins { &[1, 2] } else { &[1, 2, 3] };
+    let last = depths.len() - 1;
     let threads = 8u64;
     let rows: Vec<Row> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
@@ -83,9 +99,21 @@ fn main() -> ExitCode {
                         .step_by(threads as usize)
                         .map(|id| {
                             let mind = make(id);
-                            let results = DEPTHS
+                            let bot_first = id % 2 == 0;
+                            let results = depths
                                 .iter()
-                                .map(|&d| play(&mind, d, deception, &table, id % 2 == 0, id))
+                                .map(|&d| {
+                                    if wins {
+                                        let shootout = Shootout {
+                                            odds: &odds[usize::from(!bot_first)],
+                                            table,
+                                            deception,
+                                        };
+                                        shootout.play(&mind, d, id)
+                                    } else {
+                                        play(&mind, d, deception, &table, bot_first, id)
+                                    }
+                                })
                                 .collect();
                             (
                                 id,
@@ -111,7 +139,7 @@ fn main() -> ExitCode {
         "{} {family} persons from {first}, deception {deception}, react save {react}",
         rows.len()
     );
-    for (i, d) in DEPTHS.iter().enumerate() {
+    for (i, d) in depths.iter().enumerate() {
         let shares: Vec<f64> = rows.iter().map(|r| r.results[i].share()).collect();
         let (m, se) = mean_se(&shares);
         let shoot = rows.iter().fold([0, 0], |a, r| {
@@ -126,20 +154,32 @@ fn main() -> ExitCode {
                 a[1] + r.results[i].keeping[1],
             ]
         });
+        let results: Vec<f64> = rows.iter().map(|r| r.results[i].result).collect();
+        let (w, wse) = mean_se(&results);
         println!(
-            "depth {d}: share {m:.4} ± {se:.4}  shooting {:.4}  keeping {:.4}",
+            "depth {d}: share {m:.4} ± {se:.4}  shooting {:.4}  keeping {:.4}  result {w:.4} ± {wse:.4}",
             rate(shoot[0], shoot[1]),
             rate(keep[0], keep[1])
         );
     }
-    for (i, d) in DEPTHS.iter().enumerate().skip(1) {
+    for (i, d) in depths.iter().enumerate().skip(1) {
         let diffs: Vec<f64> = rows
             .iter()
             .map(|r| r.results[i].share() - r.results[0].share())
             .collect();
         let (m, se) = mean_se(&diffs);
         println!(
-            "depth {d} - depth 1: {m:+.4} ± {se:.4} (95% {:+.4} .. {:+.4})",
+            "depth {d} - depth 1: share {m:+.4} ± {se:.4} (95% {:+.4} .. {:+.4})",
+            m - 1.96 * se,
+            m + 1.96 * se
+        );
+        let diffs: Vec<f64> = rows
+            .iter()
+            .map(|r| r.results[i].result - r.results[0].result)
+            .collect();
+        let (m, se) = mean_se(&diffs);
+        println!(
+            "depth {d} - depth 1: result {m:+.4} ± {se:.4} (95% {:+.4} .. {:+.4})",
             m - 1.96 * se,
             m + 1.96 * se
         );
@@ -150,12 +190,15 @@ fn main() -> ExitCode {
         let keep = |i: usize| rate(r.results[i].keeping[0], r.results[i].keeping[1]);
         by.entry(format!("keeper {}", r.keeper))
             .or_default()
-            .push((shoot(2) - shoot(0), shoot(0)));
+            .push((shoot(last) - shoot(0), shoot(0)));
         by.entry(format!("shooter {}", r.shooter))
             .or_default()
-            .push((keep(2) - keep(0), keep(0)));
+            .push((keep(last) - keep(0), keep(0)));
     }
-    println!("by style, the bot's role against it: depth 3 - depth 1 (depth-1 rate)");
+    println!(
+        "by style, the bot's role against it: depth {} - depth 1 (depth-1 rate)",
+        depths[last]
+    );
     for (name, v) in &by {
         let diffs: Vec<f64> = v.iter().map(|x| x.0).collect();
         let base: Vec<f64> = v.iter().map(|x| x.1).collect();
