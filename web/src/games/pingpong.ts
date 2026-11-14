@@ -196,11 +196,18 @@ export const pingpongView: GameView = {
     } else if (phase === 2 && scene.scorer !== null) {
       const who = scene.scorer;
       banner(ctx, who === 0 ? (watching ? "Left scores" : "Your point") : watching ? "Right scores" : "Bot's point", plain(who));
-    } else if (!watching && phase === 0 && v[13] === 0) {
+    }
+    if (!watching) {
+      ctx.fillStyle = disguise ? colors.bot : "rgba(231,238,248,0.5)";
+      ctx.font = "600 14px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`corner: ${["left", "middle", "right"][aim]} · ${disguise ? "disguise ON" : "honest"}`, 16, 24);
+    }
+    if (!scene.countdown && !watching && phase === 0 && v[13] === 0) {
       ctx.fillStyle = "rgba(231,238,248,0.6)";
       ctx.font = "600 15px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Move with the mouse · ↑ / ↓ pick the corner · hold the mouse for a fast shot · Shift turns the disguise on or off", width / 2, height - 18);
+      ctx.fillText("Move with the mouse · ↑ / ↓ pick the corner · click to serve, hold for a fast shot · Shift turns the disguise on or off", width / 2, height - 18);
     }
   },
 
@@ -231,7 +238,9 @@ export const pingpongView: GameView = {
 
   key(event) {
     if (event.key === "Shift") {
-      disguise = !disguise;
+      if (!event.repeat) {
+        disguise = !disguise;
+      }
       return true;
     }
     const next = aimFromKey(event.key, aim);
@@ -245,7 +254,11 @@ export const pingpongView: GameView = {
   send(match) {
     const limit = (v: number, m: number) => Math.max(-m, Math.min(m, v));
     const target: Pair = [limit(cursor[0], layout.halfLength + layout.backRoom), limit(cursor[1], layout.halfWidth + layout.sideRoom)];
-    match.set_input(new Float32Array(shotValues(target, aim, fast, disguise)));
+    const v = match.view();
+    const serving = v[0] === 0 && v[13] === 0;
+    const values = shotValues(target, aim, fast, disguise);
+    values[2] = serving && !fast ? 0 : 1;
+    match.set_input(new Float32Array(values));
   },
 
   sideColors() {

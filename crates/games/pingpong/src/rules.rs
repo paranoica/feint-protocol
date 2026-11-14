@@ -313,11 +313,6 @@ impl Table {
         if self.to_hit() != Some(seat) || !self.in_reach(seat) {
             return false;
         }
-        if seat != self.server && self.rally >= 2 * self.params.max_returns {
-            let receiver = 1 - self.server;
-            self.point(receiver, events);
-            return true;
-        }
         let pad = self.paddles[usize::from(seat)];
         let Some(swing) = pad.swing else {
             return false;
@@ -347,6 +342,9 @@ impl Table {
         self.rally += 1;
         self.phase = Phase::Rally;
         self.t = 0;
+        if seat != self.server && self.rally >= 2 * self.params.max_returns {
+            self.point(seat, events);
+        }
         true
     }
 
@@ -362,7 +360,8 @@ impl Table {
             events.push(PointEvent::Over);
             return;
         }
-        if total.is_multiple_of(p.serves_each) {
+        let deuce = a >= p.points_to_win - 1 && b >= p.points_to_win - 1;
+        if deuce || total.is_multiple_of(p.serves_each) {
             self.server = 1 - self.server;
         }
         self.phase = Phase::Settle;
@@ -397,7 +396,7 @@ impl Table {
                 return;
             }
         }
-        if before[2] > 0.0 && after[2] <= 0.0 {
+        if (before[2] > 0.0 && after[2] <= 0.0) || (before[2] == 0.0 && after[2] < 0.0) {
             let k = before[2] / (before[2] - after[2]);
             let x = before[0] + (after[0] - before[0]) * k;
             let y = before[1] + (after[1] - before[1]) * k;

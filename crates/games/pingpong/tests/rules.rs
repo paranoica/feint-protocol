@@ -283,3 +283,75 @@ fn a_seed_repeats_the_digest() {
     run(&mut c, 500);
     assert_ne!(a.digest(), c.digest());
 }
+
+fn rally_to(t: &mut Table, returns: u32) {
+    t.phase = Phase::Rally;
+    t.rally = 2 * returns + 1;
+    t.hitter = Some(t.server);
+    t.bounces = 1;
+    let receiver = 1 - t.server;
+    let side = if receiver == 0 { -1.0 } else { 1.0 };
+    t.ball.pos = [side * 1.5, 0.0, 0.3];
+    t.ball.vel = [0.0; 3];
+    t.paddles[usize::from(receiver)].pos = [side * 1.5, 0.0];
+}
+
+#[test]
+fn the_receiver_wins_the_point_by_making_its_thirteenth_return() {
+    let p = Params::default();
+    let mut t = table(0);
+    let receiver = 1 - t.server;
+    rally_to(&mut t, p.max_returns - 1);
+    let side = if receiver == 0 { -1.0 } else { 1.0 };
+    t.steer(
+        receiver,
+        [side * 1.5, 0.0],
+        Some(Swing {
+            aim: [1.0, 0.0],
+            flight: 0.6,
+        }),
+        0.0,
+    );
+    let events = run(&mut t, 1);
+    assert_eq!(
+        events,
+        vec![PointEvent::Point { winner: receiver }],
+        "the 13th return wins"
+    );
+    let mut early = table(0);
+    rally_to(&mut early, p.max_returns - 2);
+    early.steer(
+        receiver,
+        [side * 1.5, 0.0],
+        Some(Swing {
+            aim: [1.0, 0.0],
+            flight: 0.6,
+        }),
+        0.0,
+    );
+    let events = run(&mut early, 1);
+    assert!(events.is_empty(), "the 12th return plays on");
+    let mut idle = table(0);
+    rally_to(&mut idle, p.max_returns - 1);
+    idle.steer(receiver, [side * 1.5, 0.0], None, 0.0);
+    let events = run(&mut idle, 1);
+    assert!(events.is_empty(), "no swing, no return");
+}
+
+#[test]
+fn at_deuce_the_serve_changes_every_point() {
+    let p = Params::default();
+    let mut t = table(0);
+    t.score = [p.points_to_win - 1, p.points_to_win - 1];
+    let mut servers = Vec::new();
+    for _ in 0..3 {
+        servers.push(t.server);
+        let mut events = Vec::new();
+        while events.is_empty() {
+            t.step(&mut events);
+        }
+        run(&mut t, p.settle_ticks + 1);
+    }
+    assert_ne!(servers[0], servers[1]);
+    assert_ne!(servers[1], servers[2]);
+}

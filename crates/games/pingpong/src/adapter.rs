@@ -6,7 +6,7 @@ use feint_protocol::{
 use crate::rules::{Ball, Body, Params, Phase, PointEvent, Swing, Table};
 
 pub const GAME_VERSION: u32 = 1;
-pub const OBSERVATION_LEN: usize = 21;
+pub const OBSERVATION_LEN: usize = 23;
 pub const ACTION_LEN: usize = 7;
 
 pub struct PingPong {
@@ -147,6 +147,8 @@ impl GameAdapter for PingPong {
             dim("my_serve", 0.0, 1.0, "flag"),
             dim("my_turn", 0.0, 1.0, "flag"),
             dim("bounces", 0.0, 1.0, "count"),
+            dim("hits", 0.0, 1e6, "count"),
+            dim("rally", 0.0, 100.0, "count"),
         ]);
         spec.observation = Some(observation);
         spec.body_params = Some(vec![
@@ -250,6 +252,8 @@ impl GameAdapter for PingPong {
             f64::from(u8::from(s.server == me)),
             f64::from(u8::from(s.to_hit() == Some(me))),
             f64::from(s.bounces),
+            f64::from(s.hits),
+            f64::from(s.rally),
         ];
         state.extend(values.map(|v| v as f32));
         let signals = out.opponent_signals.get_or_insert_with(Vec::new);
@@ -294,7 +298,8 @@ impl GameAdapter for PingPong {
         s.t = ((value(17) * hz).round().max(0.0) as u32).min(p.serve_ticks.max(p.settle_ticks));
         s.server = if value(18) >= 0.5 { me } else { them };
         s.bounces = u8::from(value(20) >= 0.5);
-        s.rally = u32::from(s.phase == Phase::Rally);
+        s.hits = value(21).round().clamp(0.0, 1e6) as u32;
+        s.rally = value(22).round().clamp(0.0, 100.0) as u32;
         s.hitter = (s.phase == Phase::Rally).then(|| {
             if value(19) >= 0.5 || value(11) < 0.0 {
                 them

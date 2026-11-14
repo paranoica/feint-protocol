@@ -2,7 +2,7 @@ use feint_ai::{Choice, Cue, Playbook, Read, Stance};
 use feint_protocol::{ActionT, PlayerId};
 
 use crate::adapter::{PingPong, mirror};
-use crate::flight::{coming_to, intercept, landing};
+use crate::flight::{coming_to, good, intercept, landing};
 use crate::rules::{Params, Phase, Table};
 
 const SIDE_Y: f64 = 0.5;
@@ -260,13 +260,8 @@ impl Playbook<PingPong> for PingPongPlaybook {
                 let receiver = 1 - h;
                 let sign = if h == me { 1.0 } else { -1.0 };
                 match intercept(s, receiver) {
-                    None => {
-                        sign * if s.bounces == 0 && landing(s).is_none() {
-                            -1.0
-                        } else {
-                            0.0
-                        }
-                    }
+                    _ if good(s) == Some(false) => -sign,
+                    None => 0.0,
                     Some(i) => {
                         let pad = s.paddles[usize::from(receiver)];
                         let d = [i.at[0] - pad.pos[0], i.at[1] - pad.pos[1]];
@@ -289,9 +284,18 @@ impl Playbook<PingPong> for PingPongPlaybook {
     fn read(&self, before: &Table, after: &Table, them: PlayerId) -> Read {
         let them = them.min(1);
         let mut read = Read::default();
+        let me = 1 - them;
         if after.hits != before.hits && after.hitter == Some(them) {
-            let me = 1 - them;
             read.shot = landing(after).map(|l| class_of_y(mirror(me) * l[1]));
+        }
+        if after.hitter == Some(me)
+            && after.bounces == 1
+            && before.bounces == 0
+            && after.hits == before.hits
+        {
+            read.covered = Some(class_of_y(
+                mirror(me) * after.paddles[usize::from(them)].pos[1],
+            ));
         }
         read
     }

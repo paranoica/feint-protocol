@@ -35,7 +35,7 @@ pub fn intercept(t: &Table, receiver: u8) -> Option<Intercept> {
             pos[1] + vel[1] * dt,
             pos[2] + vel[2] * dt,
         ];
-        if pos[2] > 0.0 && next[2] <= 0.0 {
+        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
             let on_table = next[0].abs() <= p.half_length && next[1].abs() <= p.half_width;
             if bounces == 0 && on_table && side * next[0] > 0.0 {
                 bounces = 1;
@@ -62,6 +62,40 @@ pub fn intercept(t: &Table, receiver: u8) -> Option<Intercept> {
 }
 
 #[must_use]
+pub fn good(t: &Table) -> Option<bool> {
+    let hitter = t
+        .hitter
+        .filter(|_| t.phase == Phase::Rally && t.bounces == 0)?;
+    let p = &t.params;
+    let dt = p.dt();
+    let side = if hitter == 0 { 1.0 } else { -1.0 };
+    let mut pos = t.ball.pos;
+    let mut vel = t.ball.vel;
+    for _ in 0..2 * p.tick_hz {
+        vel[2] -= p.gravity * dt;
+        let next = [
+            pos[0] + vel[0] * dt,
+            pos[1] + vel[1] * dt,
+            pos[2] + vel[2] * dt,
+        ];
+        if pos[0] * next[0] < 0.0 {
+            let k = pos[0] / (pos[0] - next[0]);
+            let z = pos[2] + (next[2] - pos[2]) * k;
+            let y = pos[1] + (next[1] - pos[1]) * k;
+            if z < p.net_height && z >= 0.0 && y.abs() <= p.half_width + p.net_height {
+                return Some(false);
+            }
+        }
+        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
+            let on = next[0].abs() <= p.half_length && next[1].abs() <= p.half_width;
+            return Some(on && side * next[0] > 0.0);
+        }
+        pos = next;
+    }
+    None
+}
+
+#[must_use]
 pub fn landing(t: &Table) -> Option<[f64; 2]> {
     if t.phase != Phase::Rally || t.bounces != 0 {
         return None;
@@ -77,7 +111,7 @@ pub fn landing(t: &Table) -> Option<[f64; 2]> {
             pos[1] + vel[1] * dt,
             pos[2] + vel[2] * dt,
         ];
-        if pos[2] > 0.0 && next[2] <= 0.0 {
+        if (pos[2] > 0.0 && next[2] <= 0.0) || (pos[2] == 0.0 && next[2] < 0.0) {
             return Some([next[0], next[1]]);
         }
         pos = next;
