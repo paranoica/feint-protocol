@@ -47,17 +47,6 @@ ptrdiff_t feint_game_score(const struct FeintGame *game, int64_t *first, int64_t
 
 ptrdiff_t feint_game_digest(const struct FeintGame *game, uint64_t *out);
 
-ptrdiff_t feint_game_positions(const struct FeintGame *game, float *out, size_t cap);
-
-ptrdiff_t feint_game_layout(const struct FeintGame *game, float *out, size_t cap);
-
-ptrdiff_t feint_action_encode(uint64_t tick,
-                              uint8_t player,
-                              const float *values,
-                              size_t n,
-                              uint8_t *out,
-                              size_t cap);
-
 struct FeintBot *feint_bot_new(uint8_t level,
                                uint64_t seed,
                                uint8_t player,
@@ -71,3 +60,14 @@ ptrdiff_t feint_bot_tick(struct FeintBot *bot,
                          size_t len,
                          uint8_t *out,
                          size_t cap);
+
+ptrdiff_t feint_game_positions(const struct FeintGame *game, float *out, size_t cap);
+
+ptrdiff_t feint_game_layout(const struct FeintGame *game, float *out, size_t cap);
+
+ptrdiff_t feint_action_encode(uint64_t tick,
+                              uint8_t player,
+                              const float *values,
+                              size_t n,
+                              uint8_t *out,
+                              size_t cap);

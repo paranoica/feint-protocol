@@ -23,3 +23,6 @@ node_modules/
 /.playwright-mcp/
 /crates/feint-gym/target/
 /python/runs/
+
+examples/godot/bin/
+examples/godot/.godot/

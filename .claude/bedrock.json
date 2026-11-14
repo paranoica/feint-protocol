@@ -23,7 +23,9 @@
       "plugins/bedrock/skills/code-review/*",
       "plugins/bedrock/skills/design-creator/*",
       "plugins/bedrock/skills/humanize/*",
-      "crates/feint-protocol/src/generated/*"
+      "crates/feint-protocol/src/generated/*",
+      "examples/godot/extension/gdextension_interface.h",
+      "examples/godot/extension/GODOT-LICENSE.txt"
     ]
   },
   "commands": {
@@ -161,6 +163,10 @@
     },
     "migrate-v1": {
       "run": "cargo run --release --locked -q -p feint-arena --bin migrate-v1 -- {args}",
+      "heavy": true
+    },
+    "godot-check": {
+      "run": "scripts/godot-check.sh",
       "heavy": true
     }
   },

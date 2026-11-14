@@ -1,0 +1,10 @@
+[configuration]
+
+entry_symbol = "feint_godot_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+linux.x86_64.editor_runtime = "res://bin/libfeint_godot.so"
+linux.x86_64.template_debug = "res://bin/libfeint_godot.so"
+linux.x86_64.template_release = "res://bin/libfeint_godot.so"
