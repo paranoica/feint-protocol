@@ -528,10 +528,18 @@ fn penalty_level_four_plays_with_the_context_model_and_says_so() {
 }
 
 #[test]
-fn spectating_penalty_level_four_runs_the_advised_bots_and_records_nothing() {
-    let mut p = feint_web::Play::<penalty::Penalty>::spectate(4, 4, 1).unwrap();
-    p.advance(2_000);
-    assert!(p.spectating());
-    assert!(p.record().is_empty());
-    assert!(feint_web::Play::<penalty::Penalty>::spectate(4, 3, 1).is_ok());
+fn spectating_penalty_level_four_runs_the_advised_bots() {
+    let advised = feint_web::Play::<penalty::Penalty>::spectate(4, 4, 1).unwrap();
+    for seat in [0, 1] {
+        assert!(
+            advised.insight_of(seat).likely_shot.is_some(),
+            "the context model answers from the first kick, seat {seat}"
+        );
+    }
+    let mixed = feint_web::Play::<penalty::Penalty>::spectate(3, 4, 1).unwrap();
+    assert!(
+        mixed.insight_of(0).likely_shot.is_none(),
+        "level 3 keeps the count model"
+    );
+    assert!(mixed.insight_of(1).likely_shot.is_some());
 }
