@@ -73,6 +73,11 @@ impl BoxingPlaybook {
         Self { params }
     }
 
+    #[must_use]
+    pub fn class_point(&self, class: u8) -> [f64; 2] {
+        [0.0, Height::of_class(class).code()]
+    }
+
     fn shot_id(kind: Kind, height: Height) -> u16 {
         Self::SHOTS + 2 * u16::from(kind == Kind::Hook) + u16::from(height.class())
     }

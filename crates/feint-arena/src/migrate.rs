@@ -6,6 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use airhockey::AirHockey;
 use arrow::compute::concat_batches;
 use arrow::record_batch::RecordBatch;
+use boxing::Boxing;
 use duel::QuickDraw;
 use feint_ai::{Opponent, Record, decode_profile, decode_record};
 use feint_protocol::{
@@ -259,6 +260,7 @@ fn replay_hand_made(record: &Record) -> Option<Replay> {
         Penalty::ID if version == Penalty::VERSION => trajectory::<Penalty>(record),
         QuickDraw::ID if version == QuickDraw::VERSION => trajectory::<QuickDraw>(record),
         PingPong::ID if version == PingPong::VERSION => trajectory::<PingPong>(record),
+        Boxing::ID if version == Boxing::VERSION => trajectory::<Boxing>(record),
         _ => None,
     }
 }
@@ -270,6 +272,7 @@ fn older_game_version(record: &Record) -> bool {
         Penalty::ID => version < Penalty::VERSION,
         QuickDraw::ID => version < QuickDraw::VERSION,
         PingPong::ID => version < PingPong::VERSION,
+        Boxing::ID => version < Boxing::VERSION,
         CARD_GAME_ID => version < believe::GAME_VERSION,
         _ => false,
     }

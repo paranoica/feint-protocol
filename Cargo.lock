@@ -462,6 +462,7 @@ dependencies = [
  "arrow",
  "axum",
  "believe",
+ "boxing",
  "duel",
  "feint-ai",
  "feint-ml",
@@ -482,6 +483,7 @@ name = "feint-compare"
 version = "0.1.0"
 dependencies = [
  "airhockey",
+ "boxing",
  "duel",
  "feint-ai",
  "feint-ml",
@@ -557,6 +559,7 @@ version = "0.1.0"
 dependencies = [
  "airhockey",
  "believe",
+ "boxing",
  "duel",
  "feint-ai",
  "feint-compare",

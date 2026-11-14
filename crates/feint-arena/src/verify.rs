@@ -1,5 +1,6 @@
 use airhockey::AirHockey;
 use believe::Believe;
+use boxing::Boxing;
 use duel::QuickDraw;
 use feint_ai::{
     Bot, Controller, Difficulty, Memory, Opponent, Profile, Record, RecordError, Runner,
@@ -85,6 +86,7 @@ pub fn verify(bytes: &[u8], profile: Option<&Profile>) -> Result<Verified, Verif
         Penalty::ID => verify_game::<Penalty>(record, bytes, profile),
         QuickDraw::ID => verify_game::<QuickDraw>(record, bytes, profile),
         PingPong::ID => verify_game::<PingPong>(record, bytes, profile),
+        Boxing::ID => verify_game::<Boxing>(record, bytes, profile),
         CARD_GAME_ID => verify_cards(record, bytes, profile),
         _ => Err(VerifyError::Game),
     }

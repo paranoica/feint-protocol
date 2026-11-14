@@ -11,6 +11,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use boxing::Boxing;
 use duel::QuickDraw;
 use feint_ai::decode_profile;
 use feint_web::HubGame;
@@ -215,7 +216,15 @@ async fn profile(State(arena): State<Arc<Arena>>, uri: Uri) -> Response {
         return error(StatusCode::BAD_REQUEST, "nick");
     };
     let game = query(&uri, "game").unwrap_or_else(|| AirHockey::ID.to_owned());
-    if ![AirHockey::ID, Penalty::ID, QuickDraw::ID, PingPong::ID].contains(&game.as_str()) {
+    if ![
+        AirHockey::ID,
+        Penalty::ID,
+        QuickDraw::ID,
+        PingPong::ID,
+        Boxing::ID,
+    ]
+    .contains(&game.as_str())
+    {
         return error(StatusCode::BAD_REQUEST, "game");
     }
     let work = arena.clone();
