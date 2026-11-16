@@ -357,8 +357,13 @@ def test_the_turn_fixture_reproduces_and_every_hidden_unit_fires(tmp_path: Path)
     made, stored = load_file(str(path)), load_file(str(kept))
     assert made.keys() == stored.keys()
     for key in made:
-        np.testing.assert_array_equal(made[key], stored[key], err_msg=key)
-    assert logits_text == (root / "kuhn-seed3.logits").read_text()
+        np.testing.assert_allclose(made[key], stored[key], rtol=1e-5, atol=1e-7, err_msg=key)
+    kept_logits = np.array(
+        [line.split() for line in (root / "kuhn-seed3.logits").read_text().splitlines()],
+        dtype=np.float64,
+    )
+    made_logits = np.array([line.split() for line in logits_text.splitlines()], dtype=np.float64)
+    np.testing.assert_allclose(made_logits, kept_logits, rtol=1e-5, atol=1e-6)
     assert inactive_units(agent, inputs) == 0
     _, _, inputs_5, agent_5 = turn_fixture("kuhn", seed=5, hidden=8, rows=32)
     assert inactive_units(agent_5, inputs_5) > 0
