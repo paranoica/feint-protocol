@@ -365,6 +365,9 @@ test("a table tennis serve is aimed by where the paddle stands", () => {
 });
 
 function fakeMatch(view: number[]) {
+  const host = globalThis as Record<string, unknown>;
+  host.document ??= { documentElement: {} };
+  host.getComputedStyle ??= () => ({ getPropertyValue: () => "" });
   const sent: number[][] = [];
   const match = {
     layout: () => Float32Array.from([1.37, 0.7625, 0.1525, 0.32, 2, 1]),
@@ -376,9 +379,6 @@ function fakeMatch(view: number[]) {
 }
 
 test("the table tennis paddle starts in the middle before the mouse moves, and a held button serves once", () => {
-  const host = globalThis as Record<string, unknown>;
-  host.document ??= { documentElement: {} };
-  host.getComputedStyle ??= () => ({ getPropertyValue: () => "" });
   const v = new Array(14).fill(0);
   v[1] = 0.2;
   v[5] = -1.77;
