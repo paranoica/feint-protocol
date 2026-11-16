@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { games, initSync, WebMatch } from "../src/wasm/feint_web.js";
-import { readPaddles, shotValues } from "../src/games/pingpong.ts";
+import { assistValues, autoDepth, contactAim, lateralAt, makeCamera, project, readPaddles, shotValues } from "../src/games/pingpong.ts";
 import { attackFromKey, boxingValues, guardFromKey, readFighters } from "../src/games/boxing.ts";
 
 initSync({ module: readFileSync(new URL("../src/wasm/feint_web_bg.wasm", import.meta.url)) });
@@ -254,6 +254,77 @@ test("a boxing match runs in wasm: the fighter walks to the input and a jab land
     game.advance(64);
   }
   assert.ok(game.finished());
+  game.free();
+});
+
+const TABLE = { halfLength: 1.37, halfWidth: 0.7625, reach: 0.32, backRoom: 2, sideRoom: 1 };
+
+test("table tennis keeps the paddle at the ready line and steps behind a ball that bounced on its side", () => {
+  const view = (phase: number, bx: number, hitter: number, bounces: number, server = 1) => {
+    const v = new Array(14).fill(0);
+    v[0] = phase;
+    v[2] = bx;
+    v[5] = -1.5;
+    v[11] = hitter;
+    v[12] = bounces;
+    v[13] = server;
+    return v;
+  };
+  const ready = -(TABLE.halfLength + 0.4);
+  assert.equal(autoDepth(view(1, 0.5, 0, 0), TABLE), ready, "my own ball goes away");
+  assert.equal(autoDepth(view(1, 0.5, 1, 0), TABLE), ready, "theirs has not bounced yet");
+  assert.ok(Math.abs(autoDepth(view(1, -1.0, 1, 1), TABLE) - -1.15) < 1e-9, "behind the bounced ball");
+  assert.equal(autoDepth(view(1, -3.3, 1, 1), TABLE), -(TABLE.halfLength + TABLE.backRoom), "never past the back wall");
+  assert.equal(autoDepth(view(0, 0, -1, 0, 0), TABLE), -1.5, "the server stays where it serves from");
+  assert.equal(autoDepth(view(2, 0, 0, 0), TABLE), ready);
+});
+
+test("table tennis aims by where the ball meets the paddle", () => {
+  assert.equal(contactAim(0.1, 0.1, 0.32), 0);
+  assert.ok(Math.abs(contactAim(0.26, 0.1, 0.32) - 0.275) < 1e-9, "half the reach to the left: half way to the corner");
+  assert.equal(contactAim(5, 0, 0.32), 0.55, "the edge sends it to the corner");
+  assert.equal(contactAim(-5, 0, 0.32), -0.55);
+});
+
+test("the table tennis camera maps the mouse back to the side it shows", () => {
+  const cam = makeCamera(1280, 720, TABLE);
+  for (const [x, y] of [[-1.6, 0.4], [-1.2, -0.7], [0.5, 0.2]] as const) {
+    const [sx] = project(cam, x, y, 0);
+    assert.ok(Math.abs(lateralAt(cam, sx, x) - y) < 1e-9, `${x},${y}`);
+  }
+  const near = project(cam, -TABLE.halfLength, TABLE.halfWidth, 0);
+  const far = project(cam, TABLE.halfLength, TABLE.halfWidth, 0);
+  assert.ok(near[1] > far[1], "my end is at the bottom");
+  assert.ok(Math.abs(near[0] - 640) > Math.abs(far[0] - 640), "the far end is narrower");
+  assert.ok(near[0] < 640, "positive y is to my left");
+  for (const [sx, sy] of [near, far]) {
+    assert.ok(sx >= 0 && sx <= 1280 && sy >= 0 && sy <= 720, `${sx},${sy} on screen`);
+  }
+  for (const x of [-(TABLE.halfLength + 0.5), TABLE.halfLength + 0.5]) {
+    const [, sy] = project(cam, x, 0, 0.25);
+    assert.ok(sy > 20 && sy < 700, `a paddle at the ready line ${x} is in view: ${sy}`);
+  }
+});
+
+test("a table tennis player who only follows the ball sideways with the assist beats level 1", () => {
+  const game = WebMatch.create("pingpong", 1, 11);
+  let returns = 0;
+  let last = -1;
+  while (!game.finished() && game.tick() < 240 * 900) {
+    const v = Array.from(game.view());
+    const serving = v[0] === 0 && v[13] === 0;
+    const lateral = v[0] === 1 && v[11] === 1 ? v[3] : 0;
+    game.set_input(new Float32Array(assistValues(v, lateral, TABLE, false, false, serving && v[1] > 1)));
+    if (v[11] === 0 && last !== 0) {
+      returns += 1;
+    }
+    last = v[11];
+    game.advance(2);
+  }
+  assert.ok(game.finished());
+  const [mine, theirs] = Array.from(game.score());
+  assert.ok(mine > theirs, `${mine}:${theirs}`);
+  assert.ok(returns > 20, `${returns}`);
   game.free();
 });
 
