@@ -16,7 +16,6 @@ export interface Paddle {
   facing: number;
 }
 
-const AIMS = [-0.5, 0, 0.5];
 const SIDES = ["their left", "the middle", "their right"];
 const DEPTH = 1.0;
 const SLOW = 0.7;
@@ -44,6 +43,9 @@ let width = 1;
 let height = 1;
 let camera: Camera = makeCamera(1, 1, layout);
 let mouseX = 0;
+let moved = false;
+let clicked = false;
+let net = 0.1525;
 let fast = false;
 let disguise = false;
 let colors = { you: "#22d3ee", bot: "#fb7185", ink: "#e7eef8" };
@@ -98,19 +100,17 @@ export function contactAim(ballY: number, paddleY: number, reach: number): numbe
   return offset * CORNER;
 }
 
-export function shotValues(target: Pair, side: number, quick: boolean, disguised: boolean): number[] {
-  const y = AIMS[Math.max(0, Math.min(2, side))];
-  const shown = y === 0 ? 0 : Math.sign(y) * SHOWN;
-  return [target[0], target[1], 1, DEPTH, y, quick ? FAST : SLOW, disguised ? -shown : shown];
+export function serveAim(paddleY: number, halfWidth: number): number {
+  return Math.max(-1, Math.min(1, paddleY / halfWidth)) * CORNER;
 }
 
 export function assistValues(v: number[], side: number, table: Layout, quick: boolean, disguised: boolean, serve: boolean): number[] {
   const [mine] = readPaddles(v);
+  const serving = v[0] === 0 && v[13] === 0;
   const near = Math.abs(v[2] - mine.x) < AIM_RANGE;
-  const aim = near ? contactAim(v[3], mine.y, table.reach) : 0;
+  const aim = serving ? serveAim(mine.y, table.halfWidth) : near ? contactAim(v[3], mine.y, table.reach) : 0;
   const shown = Math.abs(aim) < 0.15 ? 0 : Math.sign(aim) * SHOWN;
   const limit = (x: number, m: number) => Math.max(-m, Math.min(m, x));
-  const serving = v[0] === 0 && v[13] === 0;
   return [
     limit(autoDepth(v, table), table.halfLength + table.backRoom),
     limit(side, table.halfWidth + table.sideRoom),
@@ -178,11 +178,11 @@ function table(ctx: CanvasRenderingContext2D) {
   line(ctx, [-L, 0, 0], [L, 0, 0]);
   ctx.strokeStyle = "rgba(255,255,255,0.95)";
   ctx.lineWidth = 3;
-  line(ctx, [0, W + 0.15, 0.1525], [0, -W - 0.15, 0.1525]);
+  line(ctx, [0, W + 0.15, net], [0, -W - 0.15, net]);
   ctx.strokeStyle = "rgba(255,255,255,0.35)";
   ctx.lineWidth = 1;
-  line(ctx, [0, W + 0.15, 0], [0, W + 0.15, 0.1525]);
-  line(ctx, [0, -W - 0.15, 0], [0, -W - 0.15, 0.1525]);
+  line(ctx, [0, W + 0.15, 0], [0, W + 0.15, net]);
+  line(ctx, [0, -W - 0.15, 0], [0, -W - 0.15, net]);
 }
 
 function paddle(ctx: CanvasRenderingContext2D, p: Paddle, color: string) {
@@ -252,10 +252,13 @@ export const pingpongView: GameView = {
   inputTicks: 2,
 
   setup(match) {
-    const [halfLength, halfWidth, , reach, backRoom, sideRoom] = Array.from(match.layout());
+    const [halfLength, halfWidth, netHeight, reach, backRoom, sideRoom] = Array.from(match.layout());
     layout = { halfLength, halfWidth, reach, backRoom, sideRoom };
+    net = netHeight;
     camera = makeCamera(width, height, layout);
     mouseX = width / 2;
+    moved = false;
+    clicked = false;
     fast = false;
     disguise = false;
     colors = {
@@ -269,6 +272,9 @@ export const pingpongView: GameView = {
     width = w;
     height = h;
     camera = makeCamera(w, h, layout);
+    if (!moved) {
+      mouseX = w / 2;
+    }
   },
 
   draw(scene: Scene) {
@@ -282,14 +288,12 @@ export const pingpongView: GameView = {
     const paddles = readPaddles(v);
     const plain = (seat: number) => (seat === 0 ? colors.you : colors.bot);
     const seatColor = (seat: number) => (debug && (watching || seat === 1) ? intentColor(match.intent_of(seat)) : plain(seat));
-    paddle(ctx, paddles[1], seatColor(1));
-    if (v[2] >= paddles[0].x) {
-      ball(ctx, v[2], v[3], v[4]);
-      paddle(ctx, paddles[0], seatColor(0));
-    } else {
-      paddle(ctx, paddles[0], seatColor(0));
-      ball(ctx, v[2], v[3], v[4]);
-    }
+    const things: [number, () => void][] = [
+      [paddles[1].x, () => paddle(ctx, paddles[1], seatColor(1))],
+      [v[2], () => ball(ctx, v[2], v[3], v[4])],
+      [paddles[0].x, () => paddle(ctx, paddles[0], seatColor(0))],
+    ];
+    things.sort((a, b) => b[0] - a[0]).forEach(([, paint]) => paint());
     if (scene.countdown) {
       banner(ctx, scene.countdown, colors.ink);
     } else if (phase === 2 && scene.scorer !== null) {
@@ -323,11 +327,13 @@ export const pingpongView: GameView = {
   press(event, rect) {
     this.move(event, rect);
     fast = true;
+    clicked = true;
     return true;
   },
 
   move(event, rect) {
     mouseX = event.clientX - rect.left;
+    moved = true;
   },
 
   release() {
@@ -349,7 +355,8 @@ export const pingpongView: GameView = {
     const v = Array.from(match.view());
     const [mine] = readPaddles(v);
     const side = lateralAt(camera, mouseX, mine.x);
-    match.set_input(new Float32Array(assistValues(v, side, layout, fast, disguise, fast)));
+    match.set_input(new Float32Array(assistValues(v, side, layout, fast, disguise, clicked)));
+    clicked = false;
   },
 
   sideColors() {

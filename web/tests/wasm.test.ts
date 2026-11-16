@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { games, initSync, WebMatch } from "../src/wasm/feint_web.js";
-import { assistValues, autoDepth, contactAim, lateralAt, makeCamera, project, readPaddles, shotValues } from "../src/games/pingpong.ts";
+import { assistValues, autoDepth, contactAim, lateralAt, makeCamera, pingpongView, project, readPaddles, serveAim } from "../src/games/pingpong.ts";
 import { attackFromKey, boxingValues, guardFromKey, readFighters } from "../src/games/boxing.ts";
 
 initSync({ module: readFileSync(new URL("../src/wasm/feint_web_bg.wasm", import.meta.url)) });
@@ -197,13 +197,12 @@ test("a table tennis match runs in wasm, the paddle follows the input and points
   assert.equal(game.game_id(), "pingpong");
   assert.equal(game.arena(), true);
   assert.equal(game.layout().length, 6);
-  const target: [number, number] = [-1.9, 0.3];
-  game.set_input(new Float32Array(shotValues(target, 2, false, false)));
-  game.advance(480);
+  game.set_input(new Float32Array(assistValues(Array.from(game.view()), 0.3, TABLE, false, false, false)));
+  game.advance(200);
   const v = Array.from(game.view());
   assert.equal(v.length, 14);
   const [mine] = readPaddles(v);
-  assert.ok(Math.abs(mine.x - target[0]) < 0.05 && Math.abs(mine.y - target[1]) < 0.05, `${mine.x},${mine.y}`);
+  assert.ok(Math.abs(mine.y - 0.3) < 0.05, `${mine.y}`);
   for (let i = 0; i < 240 * 1800 && !game.finished(); i += 64) {
     game.advance(64);
   }
@@ -343,5 +342,58 @@ test("a table tennis serve goes by itself after a second and a half, a click ser
   const theirs = serve(2.5);
   theirs[13] = 1;
   assert.equal(assistValues(theirs, 0, TABLE, false, false, false)[2], 1, "a receiver keeps the swing ready");
+});
+
+test("a table tennis serve is aimed by where the paddle stands", () => {
+  const serving = (y: number) => {
+    const v = new Array(14).fill(0);
+    v[1] = 0.2;
+    v[2] = -1.77;
+    v[3] = y;
+    v[5] = -1.77;
+    v[6] = y;
+    v[13] = 0;
+    return v;
+  };
+  assert.equal(serveAim(0, TABLE.halfWidth), 0);
+  assert.ok(Math.abs(serveAim(TABLE.halfWidth / 2, TABLE.halfWidth) - 0.275) < 1e-9);
+  assert.equal(serveAim(-2, TABLE.halfWidth), -0.55);
+  const left = assistValues(serving(TABLE.halfWidth), TABLE.halfWidth, TABLE, false, false, true);
+  assert.equal(left[4], 0.55, "standing at the left edge serves to the left corner");
+  assert.equal(left[6], 0.8, "an honest serve faces where it goes");
+  assert.equal(assistValues(serving(0), 0, TABLE, false, false, true)[4], 0);
+});
+
+function fakeMatch(view: number[]) {
+  const sent: number[][] = [];
+  const match = {
+    layout: () => Float32Array.from([1.37, 0.7625, 0.1525, 0.32, 2, 1]),
+    view: () => Float32Array.from(view),
+    set_input: (values: Float32Array) => sent.push(Array.from(values)),
+    push_input: () => undefined,
+  };
+  return { match: match as unknown as WebMatch, sent };
+}
+
+test("the table tennis paddle starts in the middle before the mouse moves, and a held button serves once", () => {
+  const host = globalThis as Record<string, unknown>;
+  host.document ??= { documentElement: {} };
+  host.getComputedStyle ??= () => ({ getPropertyValue: () => "" });
+  const v = new Array(14).fill(0);
+  v[1] = 0.2;
+  v[5] = -1.77;
+  v[13] = 0;
+  const { match, sent } = fakeMatch(v);
+  pingpongView.setup(match);
+  pingpongView.resize(1280, 720, 1);
+  pingpongView.send(match);
+  assert.ok(Math.abs(sent[0][1]) < 1e-9, `the paddle aims for the middle: ${sent[0][1]}`);
+  assert.equal(sent[0][2], 0, "no serve without a click");
+  const rect = { left: 0, top: 0 } as DOMRect;
+  pingpongView.press({ clientX: 640, clientY: 600 } as PointerEvent, rect);
+  pingpongView.send(match);
+  pingpongView.send(match);
+  assert.equal(sent[1][2], 1, "the click serves");
+  assert.equal(sent[2][2], 0, "holding the button does not serve again");
 });
 
