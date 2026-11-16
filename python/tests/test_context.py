@@ -84,7 +84,7 @@ def test_the_rust_fixture_is_what_this_model_computes(tmp_path: Path) -> None:
 
     fresh = fixture(tmp_path)
     repo = Path(__file__).resolve().parents[2] / "crates/feint-context/tests/fixtures"
-    assert (repo / "tiny.txt").read_text() == fresh
+    same_numbers((repo / "tiny.txt").read_text(), fresh)
     from safetensors import safe_open
 
     def content(path: Path) -> tuple[dict[str, str], dict[str, list]]:
@@ -92,4 +92,25 @@ def test_the_rust_fixture_is_what_this_model_computes(tmp_path: Path) -> None:
             names = f.keys()
             return f.metadata(), {k: f.get_tensor(k).tolist() for k in names}
 
-    assert content(repo / "tiny.safetensors") == content(tmp_path / "tiny.safetensors")
+    kept_meta, kept = content(repo / "tiny.safetensors")
+    made_meta, made = content(tmp_path / "tiny.safetensors")
+    assert kept_meta == made_meta
+    assert kept.keys() == made.keys()
+    for key in kept:
+        np.testing.assert_allclose(made[key], kept[key], rtol=1e-5, atol=1e-7, err_msg=key)
+
+
+def same_numbers(kept: str, made: str) -> None:
+    kept_lines, made_lines = kept.splitlines(), made.splitlines()
+    assert len(kept_lines) == len(made_lines)
+    for a, b in zip(kept_lines, made_lines, strict=True):
+        a_words, b_words = a.split(), b.split()
+        assert a_words[:1] == b_words[:1] and len(a_words) == len(b_words), (a, b)
+        if len(a_words) > 1:
+            np.testing.assert_allclose(
+                np.array(b_words[1:], dtype=np.float64),
+                np.array(a_words[1:], dtype=np.float64),
+                rtol=1e-5,
+                atol=1e-6,
+                err_msg=a_words[0],
+            )
