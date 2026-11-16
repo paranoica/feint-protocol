@@ -1,0 +1,18 @@
+Feint
+Copyright 2026 paranoica
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes third-party material under its own licence:
+
+1. The Godot GDExtension interface header
+   examples/godot/extension/gdextension_interface.h
+   Copyright (c) 2014-present Godot Engine contributors.
+   Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+   MIT License, see examples/godot/extension/GODOT-LICENSE.txt.
+
+2. The bedrock project template
+   plugins/bedrock/ (with bench/ and tests/, not part of Feint itself)
+   Copyright (c) 2026 paranoica.
+   MIT License, see plugins/bedrock/LICENSE; the material it adapts from other projects
+   is listed in plugins/bedrock/NOTICE.
