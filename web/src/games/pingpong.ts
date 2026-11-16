@@ -30,6 +30,7 @@ const CAM_HEIGHT = 1.7;
 const BLADE = 0.09;
 const PADDLE_Z = 0.25;
 const AUTO_SERVE = 1.5;
+const CLICK_MS = 300;
 
 export interface Camera {
   f: number;
@@ -44,7 +45,7 @@ let height = 1;
 let camera: Camera = makeCamera(1, 1, layout);
 let mouseX = 0;
 let moved = false;
-let clicked = false;
+let clickedAt = -Infinity;
 let net = 0.1525;
 let fast = false;
 let disguise = false;
@@ -258,7 +259,7 @@ export const pingpongView: GameView = {
     camera = makeCamera(width, height, layout);
     mouseX = width / 2;
     moved = false;
-    clicked = false;
+    clickedAt = -Infinity;
     fast = false;
     disguise = false;
     colors = {
@@ -327,7 +328,7 @@ export const pingpongView: GameView = {
   press(event, rect) {
     this.move(event, rect);
     fast = true;
-    clicked = true;
+    clickedAt = performance.now();
     return true;
   },
 
@@ -355,8 +356,9 @@ export const pingpongView: GameView = {
     const v = Array.from(match.view());
     const [mine] = readPaddles(v);
     const side = lateralAt(camera, mouseX, mine.x);
+    const clicked = performance.now() - clickedAt < CLICK_MS;
     match.set_input(new Float32Array(assistValues(v, side, layout, fast, disguise, clicked)));
-    clicked = false;
+    clickedAt = -Infinity;
   },
 
   sideColors() {

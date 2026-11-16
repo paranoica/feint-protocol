@@ -397,3 +397,25 @@ test("the table tennis paddle starts in the middle before the mouse moves, and a
   assert.equal(sent[2][2], 0, "holding the button does not serve again");
 });
 
+test("a table tennis click during the countdown does not serve when play starts", () => {
+  const v = new Array(14).fill(0);
+  v[1] = 0;
+  v[5] = -1.77;
+  v[13] = 0;
+  const { match, sent } = fakeMatch(v);
+  pingpongView.setup(match);
+  pingpongView.resize(1280, 720, 1);
+  const clock = performance.now;
+  let now = 1000;
+  performance.now = () => now;
+  try {
+    pingpongView.press({ clientX: 640, clientY: 600 } as PointerEvent, { left: 0, top: 0 } as DOMRect);
+    pingpongView.release({} as PointerEvent);
+    now += 2500;
+    pingpongView.send(match);
+  } finally {
+    performance.now = clock;
+  }
+  assert.equal(sent[0][2], 0, "a click 2.5 s old is spent");
+});
+
