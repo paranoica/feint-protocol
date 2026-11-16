@@ -328,3 +328,20 @@ test("a table tennis player who only follows the ball sideways with the assist b
   game.free();
 });
 
+test("a table tennis serve goes by itself after a second and a half, a click serves at once", () => {
+  const serve = (t: number) => {
+    const v = new Array(14).fill(0);
+    v[1] = t;
+    v[5] = -1.5;
+    v[13] = 0;
+    return v;
+  };
+  assert.equal(assistValues(serve(0.2), 0, TABLE, false, false, false)[2], 0, "waiting for the click");
+  assert.equal(assistValues(serve(0.2), 0, TABLE, false, false, true)[2], 1, "a click serves");
+  assert.equal(assistValues(serve(1.49), 0, TABLE, false, false, false)[2], 0);
+  assert.equal(assistValues(serve(1.5), 0, TABLE, false, false, false)[2], 1, "no click: it serves anyway");
+  const theirs = serve(2.5);
+  theirs[13] = 1;
+  assert.equal(assistValues(theirs, 0, TABLE, false, false, false)[2], 1, "a receiver keeps the swing ready");
+});
+

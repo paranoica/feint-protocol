@@ -30,6 +30,7 @@ const CAM_BACK = 2.4;
 const CAM_HEIGHT = 1.7;
 const BLADE = 0.09;
 const PADDLE_Z = 0.25;
+const AUTO_SERVE = 1.5;
 
 export interface Camera {
   f: number;
@@ -113,7 +114,7 @@ export function assistValues(v: number[], side: number, table: Layout, quick: bo
   return [
     limit(autoDepth(v, table), table.halfLength + table.backRoom),
     limit(side, table.halfWidth + table.sideRoom),
-    serving && !serve ? 0 : 1,
+    serving && !serve && v[1] < AUTO_SERVE ? 0 : 1,
     DEPTH,
     aim,
     quick && !serving ? FAST : SLOW,
@@ -305,7 +306,7 @@ export const pingpongView: GameView = {
       ctx.fillStyle = "rgba(231,238,248,0.6)";
       ctx.font = "600 15px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Mouse moves the paddle sideways · click to serve within 3 s · the paddle's edge sends the ball to a corner · hold for a fast shot · Shift: disguise", width / 2, height - 18);
+      ctx.fillText("Mouse moves the paddle sideways · click to serve (or it serves itself) · the paddle's edge sends the ball to a corner · hold for a fast shot · Shift: disguise", width / 2, height - 18);
     }
   },
 
