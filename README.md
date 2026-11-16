@@ -6,14 +6,17 @@ reaction time and body speed. One core runs every game; each game is an adapter.
 
 Six games run on it in the browser, each with five hand-made levels:
 
-| Game | What the bot reads and fakes |
-|---|---|
-| Air hockey | the mallet's line before a shot; holds a show to one corner, shoots the other |
-| Penalty shootout | the shooter's body before the kick; the keeper must guess |
-| Quick-draw duel | the draw; a released draw is a fake, a step aside dodges the bullet |
-| Table tennis | the paddle's facing before contact; a disguised shot shows the other corner |
-| Boxing | the visible wind-up; a hook is shown, cancelled once the guard follows, and a jab goes to the other height |
-| «Верю — не верю» (Cheat) | a card bluffing game against a trained policy, with levels that search one to three moves ahead |
+| Game | The tell the bot reads | How the bot fakes |
+|---|---|---|
+| Air hockey | where your mallet lines up before a shot | lines up on one corner, holds it, shoots the other |
+| Penalty shootout | the shooter's lean before the kick | leans one way, kicks the other |
+| Quick-draw duel | your hand starting to draw | draws half way and drops it, so you dodge too early |
+| Table tennis | which way your paddle faces before contact | faces one corner and hits the other, with a slower ball |
+| Boxing | the wind-up: hook or jab, high or low | shows a hook, cancels it once your guard moves, jabs the other height |
+| I Doubt It (cards) | what has been laid and called so far, and the cards it holds | bluffs when you are likely to believe it; higher levels plan one to three moves ahead |
+
+I Doubt It (also known as Cheat) is a card game of bluffing: you lay cards face down, say what
+they are, and the other player either believes you or calls the lie.
 
 There is also a trained (PPO) air-hockey bot, a local arena that stores every match and
 re-verifies it by replaying it natively, and a C library with a Godot example to embed the core
